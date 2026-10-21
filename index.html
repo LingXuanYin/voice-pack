@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN" data-ui="zh" data-title-zh="voice-pack：给 agent 用的音色包 skill" data-title-en="voice-pack: the voice pack skill for your agent">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>voice-pack：给 agent 用的音色包 skill</title>
+<meta name="description" content="voice-pack 是给 agent 用的 skill：音色包的格式和工具。一个声音的参考集和配音指引装成一个包，谁拿到都能用。The voice pack skill for agents: a voice's references and dubbing guidance in one pack anyone can use.">
+<meta name="theme-color" content="#E6E7E5">
+<link rel="canonical" href="https://lingxuanyin.github.io/voice-pack/">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="voice-pack">
+<meta property="og:title" content="voice-pack：给 agent 用的音色包 skill">
+<meta property="og:description" content="一个声音的参考集和配音指引装成一个包，谁拿到都能用。流程按所需能力写，模型由你接。">
+<meta property="og:url" content="https://lingxuanyin.github.io/voice-pack/">
+<meta property="og:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-2.0.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="voice-pack 2.0：音色包 skill 能单独装了">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-2.0.png">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/boot.js"></script>
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main"><span data-l="zh">跳到正文</span><span data-l="en">Skip to content</span></a>
+<div class="sheet">
+  <span class="crop crop--tl" aria-hidden="true"></span><span class="crop crop--tr" aria-hidden="true"></span>
+
+  <span class="die-label die-label--glue" aria-hidden="true">粘贴 GLUE</span>
+  <header class="glue">
+    <a class="wordmark" href="./">voice-pack</a>
+    <nav class="nav" aria-label="页面" data-label-zh="页面" data-label-en="Page">
+      <a href="#does"><span data-l="zh">能做什么</span><span data-l="en">What it does</span></a>
+      <a href="#inside"><span data-l="zh">盒子里有什么</span><span data-l="en">What's inside</span></a>
+      <a href="#models"><span data-l="zh">接模型</span><span data-l="en">Models</span></a>
+      <a href="#start"><span data-l="zh">开始</span><span data-l="en">Get started</span></a>
+      <a href="2.0/"><span data-l="zh">2.0 发布了</span><span data-l="en">2.0 is out</span></a>
+    </nav>
+    <div class="tools">
+      <a class="pill pill--short" href="#install"><span data-l="zh">装上</span><span data-l="en">Install</span></a>
+      <button class="pill" type="button" data-set-lang="en" data-l="zh" lang="en">English</button>
+      <button class="pill" type="button" data-set-lang="zh" data-l="en" lang="zh-CN">中文</button>
+      <button class="pill" type="button" data-theme-toggle aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <span data-l="zh">深色</span><span data-l="en">Dark</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="box">
+
+    <section class="face face--front face--flapped" id="front" aria-labelledby="name">
+      <h1 class="name" id="name">voice-pack</h1>
+      <p class="hook"><span data-l="zh">一个声音的参考集和配音指引，装成一个包。谁拿到，都能用。</span><span data-l="en">A voice's reference clips and its dubbing guidance, sealed in one pack. Whoever has it can use it.</span></p>
+      <p class="sub"><span data-l="zh">voice-pack 是给 agent 用的 skill：音色包的格式，和造声音、配音、做包、验包的一整套工具。流程按所需能力写，模型由你接。</span><span data-l="en">voice-pack is a skill for your agent: the voice pack format, plus the tools to make voices, dub scripts, and build and check packs. Every flow is written by the capability it needs; you plug in the model.</span></p>
+      <div class="front-foot">
+        <div>
+          <p class="print"><span data-l="zh">版本 2.0.0 · Apache-2.0 · 这一面的两段声音都是合成的</span><span data-l="en">Version 2.0.0 · Apache-2.0 · Both voices on this panel are synthetic</span></p>
+          <p class="player-status" data-player-status aria-live="polite"></p>
+        </div>
+        <div class="sticker" data-sticker data-state="idle" data-side="a">
+          <button type="button" class="sticker__button" aria-pressed="false" aria-label="播放这两段合成的声音：A 面设计出来的，B 面克隆的" data-label-zh="播放这两段合成的声音：A 面设计出来的，B 面克隆的" data-label-en="Play the two synthetic voices: side A designed, side B cloned">
+            <span class="sticker__disc" aria-hidden="true">
+              <span class="sticker__face sticker__face--a">
+                <span class="sticker__title"><span data-l="zh">听一听</span><span data-l="en">Listen</span></span>
+                <span class="sticker__note"><span data-l="zh">A 面 设计<br>B 面 克隆</span><span data-l="en">Side A designed<br>Side B cloned</span></span>
+                <svg class="sticker__icon sticker__icon--play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+                <svg class="sticker__icon sticker__icon--pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>
+              </span>
+              <span class="sticker__face sticker__face--b">
+                <span class="sticker__title"><span data-l="zh">B 面</span><span data-l="en">Side B</span></span>
+                <span class="sticker__note"><span data-l="zh">拿 A 面克隆的</span><span data-l="en">cloned from side A</span></span>
+                <svg class="sticker__icon sticker__icon--play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+                <svg class="sticker__icon sticker__icon--pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>
+              </span>
+            </span>
+            <svg class="sticker__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle class="track" cx="50" cy="50" r="48" pathLength="100"/><circle class="done" cx="50" cy="50" r="48" pathLength="100"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="flap flap--tuck" id="install" aria-labelledby="install-title">
+      <span class="die-label" aria-hidden="true">插舌 TUCK</span>
+      <h2 id="install-title"><span data-l="zh">装上</span><span data-l="en">Install</span></h2>
+      <div class="route">
+        <p class="route__name"><span data-l="zh">skills 命令行</span><span data-l="en">The skills CLI</span></p>
+        <p class="route__hint"><span data-l="zh">装进当前项目，给读 Agent Skill 的 agent 用</span><span data-l="en">Installs into the current project, for agents that read Agent Skills</span></p>
+        <div class="cmd"><code id="cmd-skills">npx skills add <span class="w">LingXuanYin/voice-pack</span></code><button class="copy" type="button" data-copy="npx skills add LingXuanYin/voice-pack" aria-describedby="cmd-skills"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+      </div>
+      <div class="route">
+        <p class="route__name">Claude Code</p>
+        <p class="route__hint"><span data-l="zh">在 Claude Code 里依次输入这两条</span><span data-l="en">Type these two in Claude Code, in order</span></p>
+        <div class="cmd"><code id="cmd-market"><span class="w">/plugin</span> marketplace add <span class="w">LingXuanYin/voice-pack</span></code><button class="copy" type="button" data-copy="/plugin marketplace add LingXuanYin/voice-pack" aria-describedby="cmd-market"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+        <div class="cmd"><code id="cmd-plugin"><span class="w">/plugin</span> install <span class="w">voice-pack@voice-pack</span></code><button class="copy" type="button" data-copy="/plugin install voice-pack@voice-pack" aria-describedby="cmd-plugin"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+      </div>
+      <p class="after"><a href="#start"><span data-l="zh">装好以后怎么开始</span><span data-l="en">What to do once it's in</span></a></p>
+    </aside>
+
+    <section class="face face--flapped" id="voices" aria-labelledby="voices-title">
+      <h2 id="voices-title"><span data-l="zh">这两段声音是怎么来的</span><span data-l="en">Where these two voices came from</span></h2>
+      <p class="lede"><span data-l="zh">都是合成的，没有用到任何真人的录音。A 面照一段文字描述设计出来，B 面拿 A 面当参考克隆。</span><span data-l="en">Both are synthetic; no real person's recording went into them. Side A was designed from a written description, and side B was cloned from side A.</span></p>
+      <div class="sides">
+        <div class="side">
+          <h3><span data-l="zh">A 面 · 设计</span><span data-l="en">Side A · Designed</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">所需能力</span><span data-l="en">Capability</span></dt><dd><code>voice-design</code></dd></div>
+            <div><dt><span data-l="zh">描述（原文）</span><span data-l="en">Description, as sent</span></dt><dd><blockquote lang="en">Female, young adult, moderate pitch. Clear, clean timbre with a little warmth. Natural, unhurried pace. Friendly and professional tone. Standard Mandarin.</blockquote></dd></div>
+            <div><dt><span data-l="zh">念的是</span><span data-l="en">What it says</span></dt><dd><blockquote lang="zh-CN">你好。我的声音是照一段文字描述设计出来的，没有用到任何真人的录音。把这个 skill 装进你的 agent，它就能设计、克隆、融合声音，给台本配音，还能把一个声音做成音色包，交给别人也能直接用。</blockquote><p class="translation" data-l="en">Hello. My voice was designed from a written description; no real person's recording was used. Put this skill in your agent and it can design, clone and blend voices, dub scripts, and turn a voice into a voice pack that anyone you hand it to can use right away.</p></dd></div>
+          </dl>
+          <button class="play" type="button" data-play="a" aria-pressed="false">
+            <svg class="play__icon play__icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><svg class="play__icon play__icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>
+            <span><span data-l="zh">放 A 面</span><span data-l="en">Play side A</span></span> <span class="len">0:19</span>
+          </button>
+        </div>
+        <div class="side">
+          <h3><span data-l="zh">B 面 · 克隆</span><span data-l="en">Side B · Cloned</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">所需能力</span><span data-l="en">Capability</span></dt><dd><code>voice-cloning</code></dd></div>
+            <div><dt><span data-l="zh">参考</span><span data-l="en">Reference</span></dt><dd><span data-l="zh">A 面这一段，和它的逐字文本</span><span data-l="en">Side A, with its verbatim text</span></dd></div>
+            <div><dt><span data-l="zh">念的是</span><span data-l="en">What it says</span></dt><dd><blockquote lang="en">Hello again. I'm the same voice, cloned from the clip you just heard. The skill writes every step by the capability it needs, so you can plug in whichever model you like.</blockquote><p class="translation" data-l="zh">又见面了。我还是这个声音，从你刚才听到的那段克隆出来。这个 skill 的每一步都按所需能力写，你想接哪个模型都行。</p></dd></div>
+          </dl>
+          <button class="play" type="button" data-play="b" aria-pressed="false">
+            <svg class="play__icon play__icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><svg class="play__icon play__icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>
+            <span><span data-l="zh">放 B 面</span><span data-l="en">Play side B</span></span> <span class="len">0:11</span>
+          </button>
+        </div>
+      </div>
+      <audio id="clip-a" preload="none" src="assets/audio/designed.mp3" data-seconds="19.48"></audio>
+      <audio id="clip-b" preload="none" src="assets/audio/cloned.mp3" data-seconds="11.28"></audio>
+    </section>
+
+    <aside class="flap flap--dust" id="requires" aria-labelledby="requires-title">
+      <div class="flap__body">
+      <h2 id="requires-title"><span data-l="zh">需要</span><span data-l="en">Requires</span></h2>
+      <dl class="facts">
+        <div><dt>Node.js</dt><dd><span data-l="zh">命令行用；在 24.14 上测过</span><span data-l="en">for the command line; tested on 24.14</span></dd></div>
+        <div><dt><span data-l="zh">或者浏览器</span><span data-l="en">Or a browser</span></dt><dd><span data-l="zh">库只用平台自带的 Web Crypto、Compression Streams 和 fetch，当前的浏览器都能跑</span><span data-l="en">the library uses only built-in Web Crypto, Compression Streams and fetch, so current browsers run it</span></dd></div>
+        <div><dt><span data-l="zh">模型</span><span data-l="en">Models</span></dt><dd><span data-l="zh">要用模型的功能，运行环境经适配器提供对应的所需能力</span><span data-l="en">for the features that need one, a runtime that provides the capability through an adapter</span></dd></div>
+        <div><dt>ffmpeg</dt><dd><span data-l="zh">可选：解码 WAV 以外的音频</span><span data-l="en">optional: decodes audio other than WAV</span></dd></div>
+      </dl>
+      </div>
+    </aside>
+
+    <section class="face face--flapped" id="does" aria-labelledby="does-title">
+      <h2 id="does-title"><span data-l="zh">能做什么</span><span data-l="en">What it does</span></h2>
+      <p class="lede"><span data-l="zh">流程都按所需能力写，名字取自能力词表：哪一步要什么能力，一眼看得出来。</span><span data-l="en">Every flow is written by the capability it needs, named from the capability vocabulary, so you can see what each step asks for.</span></p>
+      <div class="groups">
+        <div class="group">
+          <h3><span data-l="zh">造声音</span><span data-l="en">Make a voice</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">克隆</span><span data-l="en">Clone</span><code>voice-cloning</code></dt><dd><span data-l="zh">一段 5–20 秒、不带伴奏的干净参考，加它的逐字文本。</span><span data-l="en">One clean 5–20 s reference with no music under it, plus its verbatim text.</span></dd></div>
+            <div><dt><span data-l="zh">设计</span><span data-l="en">Design</span><code>voice-design</code></dt><dd><span data-l="zh">从设计词表挑属性（性别、年龄、音高、风格、英语口音、中文方言，或者 8 个预设角色之一），写成一段描述，合成试听；满意的锁定成参考。</span><span data-l="en">Pick attributes from the design vocabulary (gender, age, pitch, style, English accent, Chinese dialect, or one of 8 preset characters), write them as a description and audition it; lock the take you like as a reference.</span></dd></div>
+            <div><dt><span data-l="zh">融合</span><span data-l="en">Blend</span><code>voice-cloning</code></dt><dd><span data-l="zh">两段以上参考，各带权重；权重是加起来始终为 1 的份额。</span><span data-l="en">Two or more references, each with a weight; the weights are shares that always add up to 1.</span></dd></div>
+          </dl>
+        </div>
+        <div class="group">
+          <h3><span data-l="zh">让它说话</span><span data-l="en">Make it speak</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">配音</span><span data-l="en">Dub</span><code>dub</code></dt><dd><span data-l="zh">用音色包给台本配音：每句挑语言、情绪、风格最对得上的那段参考，读音词表（W3C PLS）换掉容易读错的词，配音指引一起交给模型。</span><span data-l="en">Dub a script with a voice pack: each line gets the reference that best matches its language, emotion and style, the pronunciation lexicon (W3C PLS) fixes words that get misread, and the dubbing guidance goes along.</span></dd></div>
+            <div><dt><span data-l="zh">有声书和长文</span><span data-l="en">Audiobooks, long text</span></dt><dd><span data-l="zh">台本标记：<code># 标题</code> 分章，<code>[pause 0.6s]</code> 停顿，<code>[slow]</code>、<code>[fast]</code>、<code>[emphasis]</code>、<code>[spell]</code>、<code>[voice:名字]</code>，舞台提示 <code>（耳语）</code>、<code>*笑*</code>；新闻、播客、有声书、本地化配音、短视频等 12 个场景，各有台本润色的规则。</span><span data-l="en">Script markup: <code># Title</code> for chapters, <code>[pause 0.6s]</code>, <code>[slow]</code>, <code>[fast]</code>, <code>[emphasis]</code>, <code>[spell]</code>, <code>[voice:name]</code>, and stage cues such as <code>(whispers)</code> and <code>*laughs*</code>; 12 scenes, from news and podcasts to audiobooks, localization and short video, each with its own script-polishing rules.</span></dd></div>
+            <div><dt><span data-l="zh">批量</span><span data-l="en">Batches</span></dt><dd><span data-l="zh">长文本按单次的字数上限切开、并发生成；失败的句子单独重做（<code>--only</code>），做好的原样沿用，不重复付费。</span><span data-l="en">Long text is split at the per-call limit and generated in parallel; failed lines are redone on their own (<code>--only</code>) while finished ones are kept, so nothing is paid for twice.</span></dd></div>
+            <div><dt><span data-l="zh">变声和唱歌</span><span data-l="en">Convert, sing</span><code>convert</code></dt><dd><span data-l="zh">把一段音频换成音色包的声音；<code>--singing</code> 是唱歌，输入是人声分轨。</span><span data-l="en">Turn a recording into the pack's voice; <code>--singing</code> for singing, from a vocal stem.</span></dd></div>
+          </dl>
+        </div>
+        <div class="group">
+          <h3><span data-l="zh">听</span><span data-l="en">Listen</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">转写</span><span data-l="en">Transcribe</span><code>automatic-speech-recognition</code></dt><dd><span data-l="zh">给克隆和做包补逐字文本。长录音先切段（运行环境有 <code>voice-activity-detection</code> 就按说话区间切，没有就按能量切），再一段一段地转写。</span><span data-l="en">Verbatim text for clones and packs. Long recordings are cut first (by speech regions when the runtime has <code>voice-activity-detection</code>, by energy otherwise), then transcribed one segment at a time.</span></dd></div>
+          </dl>
+        </div>
+        <div class="group">
+          <h3><span data-l="zh">音色包</span><span data-l="en">Voice packs</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">做包</span><span data-l="en">Make</span><code>make-pack</code></dt><dd><span data-l="zh">读切好的片段或整段长录音：打标签，挑参考集和留出录音，响度统一到 −20 LUFS（峰值不超过 −1 dBFS），试合成，量还原度，告诉你还缺什么素材；<code>--previous</code> 发新版本。</span><span data-l="en">From cut clips or whole long recordings: tags them, picks the reference set and the holdout, evens loudness to −20 LUFS (peaks at most −1 dBFS), runs a trial synthesis, measures fidelity and tells you what material is still missing; <code>--previous</code> makes a new version.</span></dd></div>
+            <div><dt><span data-l="zh">检查</span><span data-l="en">Check</span><code>check</code></dt><dd><span data-l="zh">清单对得上文件，签名，基础部分和角色部分互相校验，SKILL.md、音频、外部资源。</span><span data-l="en">Manifest against files, signatures, the base and role parts checked against each other, SKILL.md, audio, external resources.</span></dd></div>
+            <div><dt><span data-l="zh">补全</span><span data-l="en">Complete</span><code>complete</code></dt><dd><span data-l="zh">只有角色部分的包，取回官方的基础部分，验过签再放进包里。</span><span data-l="en">A pack that has only its role part fetches the official base part, verifies the signature and puts it in.</span></dd></div>
+            <div><dt><span data-l="zh">放进环境</span><span data-l="en">Install a pack</span><code>install</code></dt><dd><span data-l="zh">检查通过才放进项目的 <code>.agents/skills/</code> 和 <code>.claude/skills/</code>；已有同名目录就拒绝，不覆盖。</span><span data-l="en">Only after the check passes, into the project's <code>.agents/skills/</code> and <code>.claude/skills/</code>; a directory that already has the name is refused, never overwritten.</span></dd></div>
+            <div><dt><span data-l="zh">分享</span><span data-l="en">Share</span></dt><dd><span data-l="zh">打成一个 <code>.voicepack.zip</code> 分享文件，里面带一张自己就能打开、能试听的预览卡片。</span><span data-l="en">Packs it as one <code>.voicepack.zip</code> share file, with a preview card inside that opens and plays on its own.</span></dd></div>
+            <div><dt><span data-l="zh">净室和查重</span><span data-l="en">Clean room</span><code>clean-room</code></dt><dd><span data-l="zh">照一个已有的包做你自己的：新包的文字交给看不到来源包的新会话写；<code>--source-pack</code> 在花钱之前比对文字和录音，重合太多就停下。</span><span data-l="en">Make your own pack after an existing one: a fresh session that cannot see the source pack writes the new text, and <code>--source-pack</code> compares text and recordings before anything is billed, stopping if too much is reused.</span></dd></div>
+          </dl>
+        </div>
+        <div class="group">
+          <h3><span data-l="zh">量</span><span data-l="en">Measure</span></h3>
+          <dl>
+            <div><dt><span data-l="zh">还原度</span><span data-l="en">Fidelity</span><code>fidelity</code></dt><dd><span data-l="zh">说话人相似度跟真人基线的比值，加盲听；量不了的写明量不了，没听成的可以只补做那几条。</span><span data-l="en">Speaker similarity against a same-person baseline, plus blind listening; what can't be measured is reported as such, and items that weren't heard can be redone on their own.</span></dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <aside class="flap flap--dust" id="spend" aria-labelledby="spend-title">
+      <div class="flap__body">
+      <h2 id="spend-title"><span data-l="zh">花钱之前</span><span data-l="en">Before anything is billed</span></h2>
+      <dl class="facts">
+        <div><dt><span data-l="zh">先说清楚</span><span data-l="en">It tells you first</span></dt><dd><span data-l="zh">要调模型的命令，开始之前说明要调哪几项能力、各几次；费用记在哪里，由你接的适配器说明。</span><span data-l="en">Before a command calls a model, it says which capabilities it will call and how many times; the adapter you plug in says where the cost goes.</span></dd></div>
+        <div><dt><code>--dry-run</code></dt><dd><span data-l="zh">只做不花钱的几步：不接模型，也能先看配音和做包的规划。</span><span data-l="en">does only the free steps, so you can see a dub or a pack plan before any model is connected.</span></dd></div>
+        <div><dt><span data-l="zh">缺能力</span><span data-l="en">Missing pieces</span></dt><dd><span data-l="zh">运行环境缺某项能力，只有用到它的功能报错，并点名缺的是哪一项。</span><span data-l="en">If the runtime lacks a capability, only the features that need it fail, and they name what is missing.</span></dd></div>
+      </dl>
+      </div>
+    </aside>
+
+    <section class="face" id="inside" aria-labelledby="inside-title">
+      <h2 id="inside-title"><span data-l="zh">盒子里有什么</span><span data-l="en">What's in the box</span></h2>
+      <p class="lede"><span data-l="zh">一个标准的 Agent Skill 目录，入口是 SKILL.md。</span><span data-l="en">A standard Agent Skill directory, with SKILL.md as the entry point.</span></p>
+      <ul class="contents">
+        <li><span class="entry">SKILL.md</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">入口：流程按所需能力写，不点名模型</span><span data-l="en">the entry point: flows written by capability, with no model names</span></span></li>
+        <li><span class="entry">protocol/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">协议核心：格式说明（第三方照着就能读写音色包）、官方签名、读写和检查包的程序</span><span data-l="en">the protocol core: the format spec (enough for anyone to read and write packs), the official signature, and the library that reads, writes and checks packs</span></span></li>
+        <li><span class="entry">vocab/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">词表：17 项所需能力，设计词表（6 类属性、8 个预设角色），12 个场景，6 种台本标记，舞台提示</span><span data-l="en">vocabularies: 17 capabilities, the design vocabulary (6 attribute groups, 8 preset characters), 12 scenes, 6 script markers, stage cues</span></span></li>
+        <li><span class="entry">lib/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">流程层：配音、变声、做包、量还原度、查重</span><span data-l="en">the flow layer: dubbing, conversion, pack making, fidelity, duplicate checks</span></span></li>
+        <li><span class="entry">tools/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">官方小工具：台本标记解析、分句、音质检查、按能量切段、音频指纹，只做计算</span><span data-l="en">official tools: markup parser, sentence splitter, audio quality check, energy-based cutting, audio fingerprints; computation only</span></span></li>
+        <li><span class="entry">adapters/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">适配器框架，和通用的 process 适配器</span><span data-l="en">the adapter framework and the generic process adapter</span></span></li>
+        <li><span class="entry">cli.mjs</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">命令行：<code>node cli.mjs help</code> 列出所有命令</span><span data-l="en">the command line: <code>node cli.mjs help</code> lists every command</span></span></li>
+      </ul>
+      <p class="small"><span data-l="zh">库只用平台自带的 API，不依赖任何第三方库，浏览器和 Node 里都能跑。</span><span data-l="en">The library uses only built-in platform APIs and no third-party packages, so it runs in browsers and in Node.</span></p>
+    </section>
+
+    <section class="face" id="models" aria-labelledby="models-title">
+      <h2 id="models-title"><span data-l="zh">接任何模型</span><span data-l="en">Plug in any model</span></h2>
+      <p class="lede"><span data-l="zh">流程只说要什么能力，不点名模型。模型从适配器接进来：一个适配器把所需能力对到一个运行环境里的具体模型。</span><span data-l="en">Flows only say which capability they need, never which model. Models come in through adapters: an adapter maps capabilities to the concrete models of one runtime.</span></p>
+      <div class="chain">
+        <div class="chain__stop"><b><span data-l="zh">所需能力</span><span data-l="en">Capabilities</span></b><span>text-to-speech, voice-cloning, voice-design, automatic-speech-recognition …</span></div>
+        <svg class="chain__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+        <div class="chain__stop chain__stop--adapter"><b><span data-l="zh">适配器</span><span data-l="en">Adapter</span></b><span><span data-l="zh">process，或者你自己写的</span><span data-l="en">process, or one you write</span></span></div>
+        <svg class="chain__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+        <div class="chain__stop"><b><span data-l="zh">你的模型</span><span data-l="en">Your model</span></b><span><span data-l="zh">本机的程序，或者别家的服务</span><span data-l="en">a program on your machine, or someone's service</span></span></div>
+      </div>
+      <div class="ways">
+        <div class="way">
+          <h3><span data-l="zh">已经有一个程序</span><span data-l="en">You already have a program</span></h3>
+          <p><span data-l="zh">process 适配器把每次能力调用变成对你程序的一次请求：经标准输入输出，一行一个 JSON。程序可以是任何语言写的。</span><span data-l="en">The process adapter turns each capability call into a request to your program over stdin and stdout, one JSON object per line. The program can be written in any language.</span></p>
+          <div class="cmd"><code id="cmd-process">node <span class="w">cli.mjs</span> dub <span class="w">my-voice/</span> <span class="w">script.txt</span> <span class="w">--out</span> <span class="w">out/</span> <span class="w">--adapter</span> process <span class="w">--command</span> <span class="w">"python my_tts.py"</span></code><button class="copy" type="button" data-copy='node cli.mjs dub my-voice/ script.txt --out out/ --adapter process --command "python my_tts.py"' aria-describedby="cmd-process"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+        </div>
+        <div class="way">
+          <h3><span data-l="zh">还没有程序：生成一个骨架</span><span data-l="en">No program yet: generate a skeleton</span></h3>
+          <ol class="steps">
+            <li><p><span data-l="zh">生成 adapter.mjs 和 program.py（要本机有 Python 3）：</span><span data-l="en">Write adapter.mjs and program.py (needs Python 3):</span></p><div class="cmd"><code id="cmd-new">node <span class="w">cli.mjs</span> adapter new <span class="w">my-tts</span> <span class="w">--kind</span> process <span class="w">--capabilities</span> <span class="w">text-to-speech,voice-cloning</span></code><button class="copy" type="button" data-copy="node cli.mjs adapter new my-tts --kind process --capabilities text-to-speech,voice-cloning" aria-describedby="cmd-new"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div></li>
+            <li><p><span data-l="zh">把 program.py 里每项能力「还没有实现」的那一行，换成真的调用。每项能力上面的注释写着参数和返回值。</span><span data-l="en">In program.py, replace each capability's "not implemented yet" line with the real call. The comment above each one gives its parameters and return value.</span></p></li>
+            <li><p><span data-l="zh">每项能力真调一次，核对返回（调之前会说明调哪几项）：</span><span data-l="en">Call each capability once for real and check what comes back (it says what it will call first):</span></p><div class="cmd"><code id="cmd-check">node <span class="w">cli.mjs</span> adapter check <span class="w">./my-tts</span> <span class="w">--live</span></code><button class="copy" type="button" data-copy="node cli.mjs adapter check ./my-tts --live" aria-describedby="cmd-check"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div></li>
+            <li><p><span data-l="zh">用 <code>--adapter ./my-tts</code> 交给 dub、convert、make-pack、fidelity。</span><span data-l="en">Hand it to dub, convert, make-pack and fidelity with <code>--adapter ./my-tts</code>.</span></p></li>
+          </ol>
+        </div>
+        <div class="way">
+          <h3><span data-l="zh">写一个模块</span><span data-l="en">Write a module</span></h3>
+          <p><span data-l="zh">一个 ES 模块，默认导出一个工厂，返回 <code>{ capabilities, billing, limits, … }</code>，每一项都可选。约定只写在 skill 的 adapters/README.md 里。</span><span data-l="en">An ES module whose default export is a factory returning <code>{ capabilities, billing, limits, … }</code>, every key optional. The contract lives in one place: the skill's adapters/README.md.</span></p>
+        </div>
+      </div>
+      <p class="trust"><span data-l="zh">适配器在本进程里直接运行，不隔离：只接你信得过的。</span><span data-l="en">Adapters run in-process, without a sandbox: plug in only what you trust.</span></p>
+    </section>
+
+    <section class="face face--flapped" id="start" aria-labelledby="start-title">
+      <h2 id="start-title"><span data-l="zh">开始</span><span data-l="en">Get started</span></h2>
+      <div class="start-cols">
+        <div>
+          <h3><span data-l="zh">对你的 agent 说</span><span data-l="en">Say to your agent</span></h3>
+          <ul class="say">
+            <li><span data-l="zh">看看这个音色包里有什么，检查一下签名。</span><span data-l="en">Check this voice pack and tell me what's in it.</span></li>
+            <li><span data-l="zh">用这个音色包给 script.txt 配音，先给我看规划，别花钱。</span><span data-l="en">Dub script.txt with this pack. Show me the plan first, and don't spend anything.</span></li>
+            <li><span data-l="zh">帮我把本机的 python my_tts.py 接成适配器，跑一遍检查。</span><span data-l="en">Wire up my local python my_tts.py as an adapter and run the check.</span></li>
+            <li><span data-l="zh">照设计词表写一段声音描述：中年男声，低沉，纪录片旁白。</span><span data-l="en">Use the design vocabulary to write a voice description: middle-aged man, low pitch, documentary narrator.</span></li>
+          </ul>
+        </div>
+        <div>
+          <h3><span data-l="zh">或者在 skill 的目录里跑</span><span data-l="en">Or run these in the skill's directory</span></h3>
+          <ul class="runs">
+            <li><div class="cmd"><code id="cmd-help">node <span class="w">cli.mjs</span> help</code><button class="copy" type="button" data-copy="node cli.mjs help" aria-describedby="cmd-help"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div><p><span data-l="zh">列出所有命令；<code>node cli.mjs help &lt;命令&gt;</code> 看用法</span><span data-l="en">lists every command; <code>node cli.mjs help &lt;command&gt;</code> shows its usage</span></p></li>
+            <li><div class="cmd"><code id="cmd-checkpack">node <span class="w">cli.mjs</span> check <span class="w">my-voice.voicepack.zip</span></code><button class="copy" type="button" data-copy="node cli.mjs check my-voice.voicepack.zip" aria-describedby="cmd-checkpack"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div><p><span data-l="zh">检查一个音色包，不用接模型</span><span data-l="en">checks a voice pack; no model needed</span></p></li>
+            <li><div class="cmd"><code id="cmd-dry">node <span class="w">cli.mjs</span> dub <span class="w">my-voice/</span> <span class="w">script.txt</span> <span class="w">--out</span> <span class="w">out/</span> <span class="w">--dry-run</span></code><button class="copy" type="button" data-copy="node cli.mjs dub my-voice/ script.txt --out out/ --dry-run" aria-describedby="cmd-dry"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div><p><span data-l="zh">配音的规划：每句说什么、挑哪段参考、还缺什么能力</span><span data-l="en">the dubbing plan: what each line says, which reference it gets, which capability is still missing</span></p></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <aside class="flap flap--tuck" id="facts" aria-labelledby="facts-title">
+      <span class="die-label die-label--foot" aria-hidden="true">插舌 TUCK</span>
+      <h2 id="facts-title"><span data-l="zh">版本和许可</span><span data-l="en">Version and license</span></h2>
+      <dl class="facts">
+        <div><dt><span data-l="zh">版本</span><span data-l="en">Version</span></dt><dd>2.0.0 · <a href="https://github.com/LingXuanYin/voice-pack/blob/main/skills/voice-pack/CHANGELOG.md"><span data-l="zh">发布说明</span><span data-l="en">release notes</span></a></dd></div>
+        <div><dt><span data-l="zh">许可</span><span data-l="en">License</span></dt><dd>Apache-2.0</dd></div>
+        <div><dt><span data-l="zh">签名</span><span data-l="en">Signatures</span></dt><dd><span data-l="zh">基础部分和协议核心带官方签名（Ed25519）；check、install、complete 默认只认协议核心里列出的公钥。</span><span data-l="en">The base part and the protocol core carry the official signature (Ed25519); by default check, install and complete trust only the keys listed in the protocol core.</span></dd></div>
+        <div><dt><span data-l="zh">源码</span><span data-l="en">Source</span></dt><dd><a href="https://github.com/LingXuanYin/voice-pack">LingXuanYin/voice-pack</a></dd></div>
+      </dl>
+      <p class="after"><a href="2.0/"><span data-l="zh">2.0 发布了：这一版带来什么</span><span data-l="en">2.0 is out: what this release brings</span></a></p>
+    </aside>
+
+  </main>
+
+  <footer class="foot">
+    <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span>voice-pack · Apache-2.0</span>
+    <span><span data-l="zh">页面上的声音都是合成的，没有用到真人的录音。</span><span data-l="en">The voices on this page are synthetic; no real person's recording was used.</span></span>
+    <a href="https://github.com/LingXuanYin/voice-pack">GitHub</a>
+  </footer>
+  <span class="crop crop--bl" aria-hidden="true"></span><span class="crop crop--br" aria-hidden="true"></span>
+</div>
+<p id="announce" class="visually-hidden" aria-live="polite"></p>
+</body>
+</html>

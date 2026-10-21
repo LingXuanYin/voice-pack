@@ -1,0 +1,65 @@
+{
+  "protocol": "2.0",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "protocol": "1.0",
+      "size": 1773681,
+      "sha256": "1f3bca21fe4438e48989df21edf18d9b162d938844f32665f7fa3d33f892f2ab"
+    },
+    {
+      "version": "1.0.1",
+      "protocol": "1.0",
+      "size": 1775678,
+      "sha256": "e93a059c1b09f25b9395d083827952185cb0892dec76573745b7ccf8171efdd6"
+    },
+    {
+      "version": "1.0.2",
+      "protocol": "1.0",
+      "size": 1778932,
+      "sha256": "bf28c57612da79ae119be9b1587c00569979a9eb500b801c5c6a75011cc29ede"
+    },
+    {
+      "version": "1.0.4",
+      "protocol": "1.0",
+      "size": 1881601,
+      "sha256": "82ae871d7d34c926da05a89b156e0da6670b5e45917b893466ffaa84f2b3134d"
+    },
+    {
+      "version": "1.0.5",
+      "protocol": "1.0",
+      "size": 1895432,
+      "sha256": "a2fb0480cc6f61ae3cae41c7a942a28bf882482183f4d5f766f70fbe8c8c68f8"
+    },
+    {
+      "version": "1.0.6",
+      "protocol": "1.0",
+      "size": 1901162,
+      "sha256": "1a8fdda1199e2b51806b88fb51b57af7502378f279d2faae2cae3a5a757748b5"
+    },
+    {
+      "version": "1.0.7",
+      "protocol": "1.0",
+      "size": 1920659,
+      "sha256": "7af447e4bc818879f07be060e6c0deee74fa8609752ffcc1a0019c3ad9102203"
+    },
+    {
+      "version": "1.0.8",
+      "protocol": "1.0",
+      "size": 1928827,
+      "sha256": "0ee8a0ec987a415fc71c2dc9d239e1b3471457c7b69f69b9a99afd06bd942073"
+    },
+    {
+      "version": "1.0.9",
+      "protocol": "1.0",
+      "size": 1945484,
+      "sha256": "1c81a628e5b843b8eebc1cc104454359b1b74a5ab020ee223452534a63dc55ed"
+    },
+    {
+      "version": "2.0.0",
+      "protocol": "2.0",
+      "size": 1840460,
+      "sha256": "25c543ac3d6c82445f22efa7c8663eb227cc46804e0b01cdfcd8e76b0731ad4f"
+    }
+  ]
+}

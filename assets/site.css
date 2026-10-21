@@ -1,0 +1,348 @@
+/* 两个页面共用的样式。页面是这只音色包盒子摊平的样子（刀版）：
+   印着黄色专色的正面、镂切的插舌、折线（虚线）和切线（实线）用刀版的洋红色，唯一凸起来的是那张圆形的试听贴纸。 */
+
+@font-face { font-family: 'Barlow'; src: url('fonts/barlow-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Barlow'; src: url('fonts/barlow-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Barlow Semi Condensed'; src: url('fonts/barlow-semi-condensed-latin-800-normal.woff2') format('woff2'); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Barlow Semi Condensed'; src: url('fonts/barlow-semi-condensed-latin-900-normal.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
+/* 大字里的中文：Noto Sans SC 只含页面大字用到的那些字（fonts/subset-cjk.mjs 生成）；子集里没有的字照旧落到系统字体 */
+@font-face { font-family: 'voice-pack CJK'; src: url('fonts/noto-sans-sc-display-700.woff2') format('woff2'); font-weight: 500 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'voice-pack CJK'; src: url('fonts/noto-sans-sc-display-900.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
+
+/* ---------------------------------------------------------------- 令牌 */
+:root {
+  --cjk: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif;
+  --font-sans: 'Barlow', var(--cjk);
+  --font-display: 'Barlow Semi Condensed', 'Barlow', 'voice-pack CJK', var(--cjk);
+  --font-hook: 'Barlow', 'voice-pack CJK', var(--cjk);
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --table: #E6E7E5;       /* 摊着刀版的桌面 */
+  --board: #F9FAF9;       /* 白卡纸 */
+  --well: #ECEDEB;        /* 印在卡纸上的命令底 */
+  --ink: #141414;
+  --ink-2: #4A4A46;
+  --rule: #CDCEC9;
+  --spot: #FFD100;        /* 专色黄：正面、信笺头、剪下来的那条 */
+  --on-spot: #141414;
+  --on-spot-2: #403600;   /* 黄底上的次要字：从黄色里取，不用灰 */
+  --die: #E5007D;         /* 刀版线 */
+  --die-text: #B0006A;    /* 刀版上的小字 */
+  --key: #141414;
+  --on-key: #F9FAF9;
+  --focus: #141414;
+  --sticker: #141414;
+  --on-sticker: #F9FAF9;
+  --on-sticker-2: #D2D2CE;
+  --ring: #FF4FA3;
+
+  --line: 2px;
+  --r-flap: 34px;
+  --r-key: 8px;
+  --gap: clamp(20px, 3.2vw, 40px);
+  --pad: clamp(22px, 4.4vw, 60px);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --table: #0E0F10; --board: #18191B; --well: #232427; --ink: #F1F1EE; --ink-2: #B9B9B4; --rule: #3B3C3F;
+    --spot: #F5C800; --on-spot: #141414; --on-spot-2: #3A3100;
+    --die: #FF4FA3; --die-text: #FF8AC1; --key: #F1F1EE; --on-key: #141414; --focus: #F1F1EE;
+    --sticker: #0B0B0C; --on-sticker: #F1F1EE; --on-sticker-2: #C9C9C4; --ring: #FF4FA3;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --table: #0E0F10; --board: #18191B; --well: #232427; --ink: #F1F1EE; --ink-2: #B9B9B4; --rule: #3B3C3F;
+  --spot: #F5C800; --on-spot: #141414; --on-spot-2: #3A3100;
+  --die: #FF4FA3; --die-text: #FF8AC1; --key: #F1F1EE; --on-key: #141414; --focus: #F1F1EE;
+  --sticker: #0B0B0C; --on-sticker: #F1F1EE; --on-sticker-2: #C9C9C4; --ring: #FF4FA3;
+  color-scheme: dark;
+}
+
+/* 界面语言：每段字中英文各一份（data-l），只显示当前这一种 */
+html[data-ui="zh"] [data-l="en"], html[data-ui="en"] [data-l="zh"] { display: none !important; }
+
+/* ---------------------------------------------------------------- 基础 */
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--table); color: var(--ink); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scrollbar-color: var(--ink-2) var(--table); scroll-padding: 24px 0; }
+body { margin: 0; font-family: var(--font-sans); font-size: 1.0625rem; line-height: 1.6; font-kerning: normal; }
+html[data-ui="zh"] body { line-height: 1.75; }
+h1, h2, h3, p, ul, ol, dl, dd, figure, blockquote { margin: 0; }
+ul, ol { padding: 0; }
+img, svg { display: block; }
+button { font: inherit; color: inherit; }
+::selection { background: var(--spot); color: var(--on-spot); }
+a { color: inherit; text-decoration-line: underline; text-decoration-thickness: 1.5px; text-underline-offset: 0.22em; text-decoration-color: var(--die); }
+a:hover { text-decoration-thickness: 2.5px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+code, kbd { font-family: var(--font-mono); font-size: 0.88em; }
+/* 行内的命令、能力名一块一块地放：放得下就整块不断开；比一行还长才在里面断（窄屏上不把段落撑出面板） */
+:not(pre) > code { display: inline-block; max-width: 100%; background: var(--well); padding: 0.08em 0.36em; border-radius: 5px; white-space: normal; overflow-wrap: anywhere; }
+.nb { white-space: nowrap; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.skip { position: absolute; left: 12px; top: -60px; z-index: 10; background: var(--key); color: var(--on-key); padding: 10px 16px; border-radius: var(--r-key); font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+/* ---------------------------------------------------------------- 刀版这张大纸 */
+.sheet { position: relative; max-width: 1240px; margin: 0 auto; padding: 28px clamp(10px, 3vw, 40px) 40px; }
+/* 裁切标记：纸角上的细线，不是内容 */
+.crop { position: absolute; width: 22px; height: 22px; border: 0 solid var(--ink); opacity: 0.45; pointer-events: none; }
+.crop--tl { left: max(0px, calc(clamp(10px, 3vw, 40px) - 28px)); top: 4px; border-right-width: 1px; border-bottom-width: 1px; }
+.crop--tr { right: max(0px, calc(clamp(10px, 3vw, 40px) - 28px)); top: 4px; border-left-width: 1px; border-bottom-width: 1px; }
+.crop--bl { left: max(0px, calc(clamp(10px, 3vw, 40px) - 28px)); bottom: 6px; border-right-width: 1px; border-top-width: 1px; }
+.crop--br { right: max(0px, calc(clamp(10px, 3vw, 40px) - 28px)); bottom: 6px; border-left-width: 1px; border-top-width: 1px; }
+.die-label { position: absolute; font: 600 0.6875rem/1 var(--font-sans); letter-spacing: 0.06em; color: var(--die-text); pointer-events: none; }
+
+/* 糊口：最上面那条梯形，放导航 */
+.glue { position: relative; display: flex; align-items: center; gap: clamp(12px, 2vw, 26px); min-height: 56px; margin: 0 clamp(10px, 2vw, 26px); padding: 8px clamp(26px, 3.4vw, 46px); background: var(--board); clip-path: polygon(22px 0, calc(100% - 22px) 0, 100% 100%, 0 100%); }
+.glue::after { content: ''; position: absolute; inset: auto 0 0 0; border-bottom: var(--line) dashed var(--die); }
+/* 「粘贴」这一条的刀版字印在糊口上边线外面的桌面上，对着梯形上边的起点，不压在导航和按钮上 */
+.die-label--glue { top: 9px; left: calc(clamp(10px, 3vw, 40px) + clamp(10px, 2vw, 26px) + 22px); }
+.wordmark { font: 900 1.5rem/1 var(--font-display); letter-spacing: -0.01em; text-decoration: none; white-space: nowrap; }
+.nav { display: none; gap: clamp(14px, 1.7vw, 24px); font-weight: 600; font-size: 0.9375rem; }
+.nav a { text-decoration: none; padding: 6px 0; }
+.nav a:hover { text-decoration: underline; text-decoration-color: var(--die); text-decoration-thickness: 2px; }
+.tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border: 1.5px solid var(--ink); border-radius: 999px; background: transparent; font-weight: 600; font-size: 0.875rem; line-height: 1; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.pill:hover { background: var(--well); }
+.pill svg { width: 16px; height: 16px; }
+.pill--short { display: none; }
+
+/* 盒子：左边一条是各个面，右边是挂在面上的插舌、防尘翼 */
+.box { display: grid; grid-template-columns: minmax(0, 1fr); }
+.face { position: relative; background: var(--board); padding: var(--pad); border: var(--line) solid var(--die); border-top: 0; }
+.face + .face, .flap + .face { border-top: var(--line) dashed var(--die); }
+.face > h2, .flap h2 { font: 800 clamp(1.9rem, 1.2rem + 2.2vw, 2.75rem)/1.04 var(--font-display); letter-spacing: -0.012em; text-wrap: balance; }
+.flap { position: relative; background: var(--board); padding: clamp(22px, 3.6vw, 48px); border: var(--line) solid var(--die); border-top: var(--line) dashed var(--die); }
+.flap h2 { font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.25rem); }
+.flap--tuck { border-radius: 0 0 var(--r-flap) var(--r-flap); }
+.flap > .die-label { top: 12px; right: 26px; }
+.flap > .die-label--foot { top: auto; bottom: 12px; }
+.lede { margin-top: 14px; max-width: 62ch; color: var(--ink-2); }
+.face .fold-label { right: 14px; top: -7px; background: var(--board); padding: 0 6px; }
+
+/* 正面：专色黄铺满，盒子的名字最大 */
+.face--front { --focus: #141414; display: flex; flex-direction: column; background: var(--spot); color: var(--on-spot); border-top: var(--line) dashed var(--die); }
+.face--front a { text-decoration-color: currentColor; }
+.face--front ::selection { background: var(--on-spot); color: var(--spot); }
+.name { font: 900 clamp(3.4rem, 1.2rem + 8.4vw, 8rem)/0.84 var(--font-display); letter-spacing: -0.035em; margin-left: -0.04em; }
+.hook { margin-top: clamp(20px, 3vw, 32px); max-width: 16em; font: 600 clamp(1.35rem, 0.9rem + 1.5vw, 2rem)/1.3 var(--font-hook); text-wrap: balance; }
+.sub { margin-top: 16px; max-width: 34em; color: var(--on-spot-2); font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem); }
+.front-foot { margin-top: auto; padding-top: clamp(26px, 3.4vw, 40px); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px 24px; }
+.print { font-size: 0.8125rem; color: var(--on-spot-2); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; max-width: 34em; }
+.face--front code { background: rgb(0 0 0 / 0.08); }
+
+/* 试听贴纸：唯一凸起来的东西，按下去放 A 面再放 B 面，外圈是进度 */
+.sticker { position: relative; flex: 0 0 auto; width: clamp(146px, 15vw, 188px); aspect-ratio: 1; perspective: 700px; margin-left: auto; }
+.sticker__button { position: relative; display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+/* 贴歪了一点：转的是盘面和外圈，按钮本身不转，焦点环才是一个正圆 */
+.sticker__disc, .sticker__ring { rotate: -9deg; transition: rotate 160ms cubic-bezier(0.16, 1, 0.3, 1), scale 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.sticker__button:hover .sticker__disc, .sticker__button:hover .sticker__ring { rotate: -6deg; scale: 1.02; }
+.sticker__button:active .sticker__disc, .sticker__button:active .sticker__ring { rotate: -9deg; scale: 0.98; }
+.sticker__button:focus-visible { outline-offset: 5px; border-radius: 50%; }
+.sticker__disc { position: absolute; inset: 0; border-radius: 50%; transform-style: preserve-3d; transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), rotate 160ms cubic-bezier(0.16, 1, 0.3, 1), scale 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.sticker[data-side="b"] .sticker__disc { transform: rotateY(180deg); }
+.sticker__face { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 18%; border-radius: 50%; background: var(--sticker); color: var(--on-sticker); text-align: center; backface-visibility: hidden; box-shadow: 0 7px 16px rgb(0 0 0 / 0.30), 0 1px 2px rgb(0 0 0 / 0.25); }
+.sticker__face--b { transform: rotateY(180deg); }
+/* 翻过去的那一面真藏起来（不只是背面不画）：翻到一半（620ms 的一半）才换，翻面的样子不变 */
+.sticker__face { transition: visibility 0s linear 310ms; }
+.sticker[data-side="a"] .sticker__face--b, .sticker[data-side="b"] .sticker__face--a { visibility: hidden; }
+.sticker__title { font: 900 clamp(1.7rem, 1.1rem + 1.4vw, 2.4rem)/1 var(--font-display); letter-spacing: -0.01em; }
+.sticker__note { font-size: 0.75rem; line-height: 1.3; color: var(--on-sticker-2); }
+.sticker__icon { width: 22px; height: 22px; color: var(--spot); }
+.sticker__icon--pause { display: none; }
+.sticker[data-state="playing"] .sticker__icon--play { display: none; }
+.sticker[data-state="playing"] .sticker__icon--pause { display: block; }
+.sticker__ring { position: absolute; inset: 7%; width: 86%; height: 86%; transform: rotate(-90deg); pointer-events: none; overflow: visible; }
+.sticker__ring circle { fill: none; stroke-width: 2.2; }
+.sticker__ring .track { stroke: rgb(255 255 255 / 0.22); }
+.sticker__ring .done { stroke: var(--ring); stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset 240ms linear; }
+.player-status { margin-top: 10px; font-size: 0.875rem; color: var(--on-spot-2); min-height: 1.5em; }
+
+/* 装上：插舌上的命令，复制键是这一屏的主操作 */
+.route { margin-top: clamp(20px, 2.6vw, 30px); }
+.route__name { font-weight: 600; }
+.route__hint { color: var(--ink-2); font-size: 0.9375rem; }
+.cmd { display: flex; align-items: stretch; margin-top: 10px; min-width: 0; }
+.cmd code { flex: 1 1 auto; min-width: 0; padding: 11px 14px; background: var(--well); border-radius: var(--r-key) 0 0 var(--r-key); font-size: 0.9375rem; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+/* 命令只在词和词之间换行，不从 --dry-run、my-voice/ 的连字符、斜杠后面断开；一个词比一整行还长，才在词里面断 */
+.cmd code .w { display: inline-block; max-width: 100%; }
+.copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 76px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 0 var(--r-key) var(--r-key) 0; background: var(--key); color: var(--on-key); font-weight: 600; font-size: 0.9375rem; cursor: pointer; }
+.copy:hover { background: color-mix(in srgb, var(--key) 84%, var(--die)); }
+.copy svg { width: 16px; height: 16px; }
+.copy__done { display: none; }
+.copy[data-state="done"] .copy__idle, .copy[data-state="failed"] .copy__idle { display: none; }
+.copy[data-state="done"] .copy__done { display: inline; }
+.copy__failed { display: none; }
+.copy[data-state="failed"] .copy__failed { display: inline; }
+.after { margin-top: clamp(22px, 3vw, 34px); font-weight: 600; }
+
+
+/* 定义列表：每一项一行，名字在前 */
+.facts { margin-top: 18px; display: grid; gap: 12px; }
+.facts > div { display: grid; gap: 2px; }
+.facts dt { font-weight: 600; }
+.facts dd { color: var(--ink-2); }
+.facts dd code { color: var(--ink); }
+
+/* 这两段声音 */
+.sides { margin-top: clamp(22px, 3vw, 34px); display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(26px, 3.4vw, 40px); }
+.side h3 { font: 800 1.375rem/1.1 var(--font-display); }
+.side dl { margin-top: 12px; display: grid; gap: 10px; }
+.side dt { font-size: 0.875rem; font-weight: 600; color: var(--ink-2); }
+.side blockquote { padding: 10px 14px; background: var(--well); border-radius: 10px; font-size: 1rem; }
+.side .translation { margin-top: 6px; color: var(--ink-2); font-size: 0.9375rem; }
+.side > p { margin-top: 8px; color: var(--ink-2); max-width: 46ch; }
+.play { display: inline-flex; align-items: center; gap: 9px; margin-top: 16px; min-height: 44px; padding: 0 18px 0 14px; border: 1.5px solid var(--ink); border-radius: 999px; background: transparent; font-weight: 600; cursor: pointer; }
+.play:hover { background: var(--well); }
+.play svg { width: 18px; height: 18px; }
+.play .len { color: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* 正在放：键按下去（反色），图标换成暂停；键的名字不变 */
+.play__icon--pause { display: none; }
+.play[aria-pressed="true"] { background: var(--key); border-color: var(--key); color: var(--on-key); }
+.play[aria-pressed="true"] .len { color: var(--on-key); }
+.play[aria-pressed="true"] .play__icon--play { display: none; }
+.play[aria-pressed="true"] .play__icon--pause { display: block; }
+
+/* 能做什么：盒子背面的小字，最密的一段 */
+.groups { margin-top: clamp(24px, 3vw, 36px); display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(26px, 3vw, 34px); }
+.group h3 { font: 800 1.125rem/1.2 var(--font-display); padding-bottom: 8px; border-bottom: 1.5px solid var(--ink); }
+.group dl { display: grid; }
+.group dl > div { display: grid; gap: 4px 18px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+/* 名字后面跟能力名；放不下就换到下一行，比一行还长（automatic-speech-recognition）才在连字符处断 */
+.group dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-weight: 600; }
+.group dt code { min-width: 0; max-width: 100%; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
+.group dd { color: var(--ink-2); max-width: 64ch; }
+.group dd code { color: var(--ink); }
+
+/* 盒子里有什么：带引线的清单 */
+.contents { margin-top: clamp(22px, 3vw, 32px); display: grid; }
+.contents li { list-style: none; display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 0; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.contents .entry { font-family: var(--font-mono); font-size: 0.9375rem; font-weight: 600; padding-right: 10px; }
+.contents .leader { border-bottom: 1.5px dotted var(--die); transform: translateY(-0.3em); min-width: 24px; }
+.contents .what { grid-column: 1 / -1; color: var(--ink-2); max-width: 66ch; }
+.small { margin-top: 18px; font-size: 0.9375rem; color: var(--ink-2); max-width: 66ch; }
+
+/* 接任何模型：能力 → 适配器 → 模型 */
+.chain { margin-top: clamp(22px, 3vw, 32px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: center; }
+.chain__stop { padding: 16px 18px; border: 1.5px solid var(--ink); border-radius: 12px; }
+.chain__stop b { display: block; font: 800 1.125rem/1.2 var(--font-display); }
+.chain__stop span { display: block; margin-top: 4px; color: var(--ink-2); font-size: 0.9375rem; }
+.chain__stop--adapter { background: var(--spot); color: var(--on-spot); border-color: var(--spot); }
+.chain__stop--adapter span { color: var(--on-spot-2); }
+.chain__arrow { width: 26px; height: 26px; justify-self: center; transform: rotate(90deg); color: var(--die); }
+.ways { margin-top: clamp(26px, 3.4vw, 40px); display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(26px, 3.4vw, 36px); }
+.way h3 { font: 800 1.25rem/1.15 var(--font-display); }
+.way p { margin-top: 8px; color: var(--ink-2); max-width: 64ch; }
+.way .cmd { margin-top: 12px; }
+.steps { margin-top: 12px; display: grid; gap: 12px; counter-reset: step; }
+.steps li { list-style: none; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; }
+.steps li::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--ink); font-weight: 600; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.steps p { margin: 0; grid-column: 2; color: var(--ink-2); }
+.steps .cmd { grid-column: 2; margin-top: 6px; }
+.trust { margin-top: clamp(24px, 3vw, 34px); padding-top: 14px; border-top: 1.5px solid var(--ink); font-weight: 600; max-width: 64ch; }
+
+/* 开始 */
+.say { margin-top: 14px; display: grid; gap: 10px; }
+.say li { list-style: none; padding: 12px 16px; background: var(--well); border-radius: 12px 12px 12px 4px; max-width: 46ch; }
+.runs { margin-top: 14px; display: grid; gap: 16px; }
+.runs li { list-style: none; }
+.runs p { margin-top: 4px; color: var(--ink-2); font-size: 0.9375rem; }
+.start-cols { margin-top: clamp(20px, 3vw, 30px); display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(26px, 3vw, 36px); }
+.start-cols h3 { font: 800 1.25rem/1.15 var(--font-display); }
+
+/* 页脚：纸边上的印刷信息 */
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; margin: 26px clamp(10px, 2vw, 26px) 0; font-size: 0.8125rem; color: var(--ink-2); }
+.bars { display: flex; gap: 0; }
+.bars i { display: block; width: 14px; height: 14px; }
+.bars i:nth-child(1) { background: var(--ink); } .bars i:nth-child(2) { background: var(--spot); } .bars i:nth-child(3) { background: var(--die); } .bars i:nth-child(4) { background: var(--board); outline: 1px solid var(--rule); outline-offset: -1px; }
+
+/* ---------------------------------------------------------------- 宣发页：新闻稿这一张纸 */
+.press { position: relative; max-width: 900px; margin: 0 auto; background: var(--board); border: var(--line) solid var(--die); }
+.letterhead { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px var(--pad); background: var(--spot); color: var(--on-spot); }
+.letterhead .wordmark { font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem); }
+.letterhead__kind { font: 800 1rem/1.2 var(--font-display); text-align: right; }
+.press__body { padding: clamp(28px, 4.6vw, 54px) var(--pad) clamp(30px, 5vw, 56px); }
+.headline { font: 900 clamp(2.4rem, 1.4rem + 3.6vw, 4.25rem)/1.02 var(--font-display); letter-spacing: -0.02em; text-wrap: balance; max-width: 13em; }
+.press__lead { margin-top: clamp(18px, 2.4vw, 26px); max-width: 34em; font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem); }
+.press__lead b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.slip { position: relative; margin-top: clamp(26px, 3.4vw, 36px); padding: clamp(20px, 3vw, 28px); background: var(--spot); color: var(--on-spot); border: var(--line) dashed var(--die); border-radius: 6px; --focus: #141414; }
+.slip .die-label { left: 14px; top: -8px; background: var(--board); padding: 0 6px; }
+.slip__row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; }
+.go { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 24px; border-radius: 10px; background: #141414; color: #FFD100; font: 800 1.375rem/1 var(--font-display); text-decoration: none; }
+.go:hover { background: #2A2A2A; }
+.go svg { width: 20px; height: 20px; }
+.slip .cmd { margin-top: 0; flex: 1 1 320px; }
+.slip .cmd code { background: rgb(255 255 255 / 0.62); color: #141414; }
+.slip .copy { background: #141414; color: #F9FAF9; }
+.slip__more { margin-top: 12px; font-size: 0.9375rem; color: var(--on-spot-2); }
+.slip__more a { text-decoration-color: currentColor; }
+.press h2 { margin-top: clamp(34px, 4.4vw, 48px); font: 800 clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem)/1.1 var(--font-display); }
+.news { margin-top: 14px; display: grid; gap: 16px; }
+.news li { list-style: none; max-width: 64ch; }
+.news b { font-weight: 600; }
+.press .sides { margin-top: 18px; }
+.press .listen { margin-top: 18px; display: grid; gap: 22px; align-items: start; }
+.press .sticker { width: 168px; margin-left: 0; }
+.press .player-status { color: var(--ink-2); max-width: 168px; }
+.press .small { margin-top: 16px; }
+.prose { margin-top: 14px; display: grid; gap: 12px; }
+.prose p { max-width: 64ch; }
+.boiler { margin-top: 14px; max-width: 64ch; color: var(--ink-2); }
+.endmark { margin-top: clamp(30px, 4vw, 44px); text-align: center; font: 800 1.25rem/1 var(--font-display); letter-spacing: 0.3em; }
+.contact { margin-top: clamp(26px, 3vw, 34px); padding-top: 16px; border-top: 1.5px solid var(--ink); display: flex; flex-wrap: wrap; gap: 10px 26px; font-weight: 600; }
+
+/* ---------------------------------------------------------------- 宽度 */
+@media (min-width: 560px) {
+  .pill--short { display: inline-flex; }
+}
+@media (min-width: 720px) {
+  .sides { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .start-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .group dl > div { grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr); }
+  .facts > div { grid-template-columns: 7.5em minmax(0, 1fr); gap: 0 14px; }
+  .chain { grid-template-columns: minmax(0, 1fr) 26px minmax(0, 0.8fr) 26px minmax(0, 1fr); }
+  .chain__arrow { transform: none; }
+  .press .listen { grid-template-columns: 168px minmax(0, 1fr); }
+}
+@media (min-width: 900px) {
+  .nav { display: flex; }
+}
+@media (min-width: 1080px) {
+  .box { grid-template-columns: minmax(0, 1fr) minmax(380px, 0.6fr); align-items: start; }
+  .face { grid-column: 1; }
+  .flap { grid-column: 2; align-self: stretch; border-top: var(--line) solid var(--die); border-left: 0; }
+  .face--flapped { border-right-style: dashed; }
+  .flap--tuck { border-radius: 0 var(--r-flap) var(--r-flap) 0; }
+  .face + .face, .flap + .face { border-top: var(--line) dashed var(--die); }
+  .face--front { min-height: 600px; }
+  .face--front .sub { max-width: 30em; }
+  /* 防尘翼：往外收窄的梯形，上下各收 --taper（固定的长度，翼再长斜边也不变陡，不会切到字）。
+     ::before 是翼的底；::after 是它上、右、下三条刀版线：同一个梯形减去往里缩 2px 的那个（evenodd）。边框画不了斜边 */
+  .flap--dust { --taper: 44px; border: 0; background: transparent; padding: calc(var(--taper) + 18px) clamp(40px, 4.4vw, 60px) calc(var(--taper) + 18px) clamp(26px, 3vw, 40px); isolation: isolate; }
+  .flap--dust::before, .flap--dust::after { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .flap--dust::before { background: var(--board); clip-path: polygon(0 0, 100% var(--taper), 100% calc(100% - var(--taper)), 0 100%); }
+  .flap--dust::after { background: var(--die); clip-path: polygon(evenodd, 0 0, 100% var(--taper), 100% calc(100% - var(--taper)), 0 100%, 0 0, 0 2px, calc(100% - 2px) calc(var(--taper) + 2px), calc(100% - 2px) calc(100% - var(--taper) - 2px), 0 calc(100% - 2px), 0 2px); }
+  /* 左边那一面很长（能做什么）时，翼上的几条跟着往下走，不留在顶上 */
+  .flap--dust .flap__body { position: sticky; top: 24px; }
+}
+@media (min-width: 1280px) {
+  .sticker { width: 188px; }
+}
+
+/* 动效：只有贴纸翻面这一下；减少动态时直接换面 */
+@media (prefers-reduced-motion: reduce) {
+  .sticker__disc, .sticker__ring, .sticker__button, .sticker__ring .done, .sticker__face { transition: none; }
+  .sticker__button:hover .sticker__disc, .sticker__button:hover .sticker__ring { rotate: -9deg; scale: 1; }
+}
+
+/* 强制颜色：线和键都用系统色画出来 */
+@media (forced-colors: active) {
+  .face, .flap, .press, .slip { border-color: CanvasText; }
+  .flap--dust { border: var(--line) solid CanvasText; }
+  .copy, .go, .play, .pill { border: 1px solid ButtonText; }
+  .sticker__face { border: 2px solid CanvasText; }
+}
