@@ -1,0 +1,4 @@
+{
+  "summary": "把能力调用转成对你自己的程序的请求（标准输入输出，一行一个 JSON）：本机的模型是 Python 之类的程序时用它",
+  "flags": { "--command": "command" }
+}

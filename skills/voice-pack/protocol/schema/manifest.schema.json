@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "音色包的清单（manifest.json）",
+  "description": "每个部分（角色部分、基础部分、协议核心）的目录里各有一份 manifest.json，列出这个部分的每一个文件和它的 SHA-256。三种清单靠 part 字段区分。这份 schema 只管结构；排序、路径安全、重名、引用对得上这些 schema 表达不了的规则，写在 FORMAT.md 的「清单」一节，由 protocol/lib/manifest.mjs 检查。同一个主版本内次版本只加不删：读到不认识的字段一律忽略，所以这里不写 additionalProperties: false。",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/roleManifest" },
+    { "$ref": "#/$defs/baseManifest" },
+    { "$ref": "#/$defs/protocolManifest" }
+  ],
+  "$defs": {
+    "roleManifest": {
+      "title": "角色部分的清单",
+      "type": "object",
+      "required": ["protocol", "part", "id", "name", "version", "changelog", "madeWith", "requires", "features", "reference", "files"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/protocolVersion" },
+        "part": { "const": "role" },
+        "id": { "$ref": "#/$defs/packId" },
+        "name": { "$ref": "#/$defs/name" },
+        "version": { "$ref": "#/$defs/semver" },
+        "changelog": { "$ref": "#/$defs/longText" },
+        "madeWith": {
+          "description": "做包时用的基础部分版本（相当于「Made with」后面的版本号）。不记这个包是从哪个包来的。",
+          "type": "object",
+          "required": ["baseVersion"],
+          "properties": { "baseVersion": { "$ref": "#/$defs/semver" } }
+        },
+        "requires": {
+          "description": "对基础部分的要求：协议主版本，以及基础部分的最低版本。",
+          "type": "object",
+          "required": ["protocolMajor", "baseMin"],
+          "properties": {
+            "protocolMajor": { "type": "integer", "minimum": 0, "maximum": 9999 },
+            "baseMin": { "$ref": "#/$defs/semver" }
+          }
+        },
+        "features": {
+          "description": "每个功能要的所需能力。键是功能名，值里的 capabilities 取自基础部分的能力词表（vocab/capabilities.json）。环境缺某项能力时，只有用到它的功能报错。",
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/slug" },
+          "additionalProperties": { "$ref": "#/$defs/feature" }
+        },
+        "reference": { "$ref": "#/$defs/referenceSet" },
+        "holdout": {
+          "description": "留出录音：只用来量还原度，从不当参考。",
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/segment" }
+        },
+        "files": { "$ref": "#/$defs/fileList" },
+        "externals": {
+          "description": "外部资源：不在包里、放在 URL 上，用 SHA-256 核对。用路径引用，和包内文件一视同仁。",
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/externalEntry" }
+        },
+        "scripts": {
+          "description": "脚本：登记入口和运行时，不声明权限。入口必须是包内文件。",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["entry", "runtime"],
+            "properties": {
+              "entry": { "$ref": "#/$defs/packPath" },
+              "runtime": { "$ref": "#/$defs/runtimeName" },
+              "feature": { "$ref": "#/$defs/slug" }
+            }
+          }
+        },
+        "enhancers": {
+          "description": "增强件：只对某个模型有效、在那个模型上还原度更高的文件。包不依赖增强件。",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "model", "modelVersion", "capability", "referenceVersion"],
+            "properties": {
+              "id": { "$ref": "#/$defs/slug" },
+              "path": { "$ref": "#/$defs/packPath" },
+              "model": { "$ref": "#/$defs/shortText" },
+              "modelVersion": { "$ref": "#/$defs/shortText" },
+              "capability": { "$ref": "#/$defs/capabilityName" },
+              "referenceVersion": { "$ref": "#/$defs/semver" }
+            }
+          }
+        },
+        "direction": {
+          "description": "配音指引里的结构化部分：一句音色描述、音色标签（取自设计词表）、适合的场景（取自场景词表）。",
+          "type": "object",
+          "properties": {
+            "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "tags": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/label" } },
+            "scenes": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/slug" } }
+          }
+        },
+        "sampleLines": {
+          "description": "示例台词：这个声音会说的几句台词，每条是一句。台词里可以带舞台提示，例如（耳语），格式只存这条字符串、不解析它。每条不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。",
+          "type": "array",
+          "maxItems": 50,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "verification": {
+          "description": "验证记录：在哪个环境、用哪个模型、哪天测的、还原度多少，以及量这个还原度时用的评测模型。",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["environment", "model", "date", "fidelity"],
+            "properties": {
+              "environment": { "$ref": "#/$defs/shortText" },
+              "model": { "$ref": "#/$defs/shortText" },
+              "date": { "$ref": "#/$defs/date" },
+              "fidelity": {
+                "type": "object",
+                "properties": {
+                  "ratio": { "type": "number", "minimum": 0 },
+                  "measuredBy": {
+                    "description": "量这个还原度时用的评测模型：说话人验证和盲听各一个模型名。不知道是哪个模型就不写那一项，两个都不知道就不写 measuredBy。",
+                    "type": "object",
+                    "properties": {
+                      "speakerVerification": { "$ref": "#/$defs/shortText" },
+                      "blindListening": { "$ref": "#/$defs/shortText" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "designSource": {
+          "description": "设计来源：设计出来的音色，记下描述、用的模型和设计时试听用的台词。",
+          "type": "object",
+          "properties": {
+            "description": { "$ref": "#/$defs/longText" },
+            "model": { "$ref": "#/$defs/shortText" },
+            "modelVersion": { "$ref": "#/$defs/shortText" },
+            "date": { "$ref": "#/$defs/date" },
+            "auditionLines": {
+              "description": "试听台词：设计时试听用的原文，每项是一段。每项不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。",
+              "type": "array",
+              "maxItems": 10,
+              "items": { "$ref": "#/$defs/longText" }
+            }
+          }
+        }
+      }
+    },
+
+    "baseManifest": {
+      "title": "基础部分的清单",
+      "type": "object",
+      "required": ["protocol", "part", "version", "files"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/protocolVersion" },
+        "part": { "const": "base" },
+        "version": { "$ref": "#/$defs/semver" },
+        "runtimes": {
+          "description": "登记这个部分的程序要向运行环境要的命令行工具（env.runtimes 里的名字），例如 ffmpeg。和角色部分脚本的 runtime 是同一个概念、同一种写法。optional 为 true：环境没有它，只有用到它的功能报错，其他功能照常；为 false：这个部分整个离不开它。purpose 写用来做什么。",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["runtime", "optional", "purpose"],
+            "properties": {
+              "runtime": { "$ref": "#/$defs/runtimeName" },
+              "optional": { "type": "boolean" },
+              "purpose": { "$ref": "#/$defs/shortText" }
+            }
+          }
+        },
+        "files": { "$ref": "#/$defs/fileList" }
+      }
+    },
+
+    "protocolManifest": {
+      "title": "协议核心的清单",
+      "type": "object",
+      "required": ["protocol", "part", "version", "files"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/protocolVersion" },
+        "part": { "const": "protocol" },
+        "version": { "$ref": "#/$defs/semver" },
+        "files": { "$ref": "#/$defs/fileList" }
+      }
+    },
+
+    "referenceSet": {
+      "description": "参考集：多段原声，每段配逐字文本和标签，defaultSegment 指出哪一段是默认。",
+      "type": "object",
+      "required": ["defaultSegment", "segments"],
+      "properties": {
+        "defaultSegment": { "$ref": "#/$defs/slug" },
+        "segments": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/$defs/segment" } }
+      }
+    },
+
+    "segment": {
+      "description": "一段录音：音频文件、逐字文本、标签。",
+      "type": "object",
+      "required": ["id", "audio", "text", "tags"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "audio": { "$ref": "#/$defs/packPath" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "tags": {
+          "type": "object",
+          "required": ["language"],
+          "properties": {
+            "emotion": { "$ref": "#/$defs/label" },
+            "style": { "$ref": "#/$defs/label" },
+            "language": { "type": "string", "maxLength": 35, "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+            "energy": { "enum": ["low", "medium", "high"] }
+          }
+        }
+      }
+    },
+
+    "feature": {
+      "type": "object",
+      "required": ["capabilities"],
+      "properties": {
+        "capabilities": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/capabilityName" } }
+      }
+    },
+
+    "fileList": {
+      "description": "这个部分目录里除清单和签名以外的每一个文件，按路径的 UTF-8 字节序排列。子目录里另有清单的（基础部分、协议核心），交给那份清单管，这里不列。",
+      "type": "array",
+      "maxItems": 65534,
+      "items": { "$ref": "#/$defs/fileEntry" }
+    },
+
+    "fileEntry": {
+      "type": "object",
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/packPath" },
+        "size": { "$ref": "#/$defs/size" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "externalEntry": {
+      "type": "object",
+      "required": ["path", "url", "size", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/packPath" },
+        "url": { "type": "string", "maxLength": 2048, "pattern": "^https://[^\\s]+$" },
+        "size": { "$ref": "#/$defs/size" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+
+    "packPath": {
+      "description": "相对这个部分目录的路径，用 / 分隔。这里只挡住最明显的写法（空的、以 / 开头、含反斜杠）；跳出目录、空的一段、Windows 保留名这些由 manifest.mjs 按 FORMAT.md 的「路径」一节检查。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^/\\\\][^\\\\]*$"
+    },
+    "sha256": { "description": "文件原始字节的 SHA-256，小写十六进制。不转换换行。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "description": "文件的字节数。", "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "semver": {
+      "description": "语义化版本号（semver.org 2.0.0）。",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "protocolVersion": {
+      "description": "协议版本，「主.次」两段。同一个主版本内兼容，次版本只加不删。",
+      "type": "string",
+      "maxLength": 16,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+    },
+    "packId": {
+      "description": "包 ID：「英文短名-8 位随机的小写字母和数字」。遵守 Agent Skills 对 name 的限制：只用小写字母、数字和连字符，最长 64 个字符，不以连字符开头或结尾，不连用两个连字符。",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]{8}$"
+    },
+    "slug": { "description": "清单里给条目起的名字：小写字母、数字、连字符、下划线。", "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+    "capabilityName": { "description": "所需能力的名字，取自能力词表。", "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "date": { "description": "日期，YYYY-MM-DD。", "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
+    "name": { "description": "显示名。", "type": "string", "minLength": 1, "maxLength": 100 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "runtimeName": {
+      "description": "运行时的名字：运行环境提供的命令行工具，取 env.runtimes 的键，例如 ffmpeg、node。角色部分脚本的 runtime 和基础部分登记的 runtimes[].runtime 都用这一种写法：小写字母开头，后面是小写字母、数字、点、下划线、加号、连字符，最长 32 个字符。",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._+-]{0,31}$"
+    },
+    "shortText": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "longText": { "type": "string", "minLength": 1, "maxLength": 4000 }
+  }
+}
