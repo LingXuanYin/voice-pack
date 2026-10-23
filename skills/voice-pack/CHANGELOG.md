@@ -6,6 +6,13 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.1 — 2026-10
+
+Some mp3 files that failed to decode now decode: the temporary input file is no longer named `.bin`.
+有的 mp3 原来解不开，现在能解：临时输入文件不再叫 `.bin`。
+
+- **ffmpeg no longer guesses the format from `.bin`.** The file handed to ffmpeg is named after the container its bytes really hold (`.wav`, `.mp3`, `.flac`, `.ogg` or `.m4a`); when the container is not recognised it has no extension and ffmpeg reads the content. Before, the `.bin` name made ffmpeg read the file as binary text, and an mp3 with a long zero-padded ID3 tag failed with "Stream map '' matches no streams". The output format is still given by `-f`. / **ffmpeg 不再靠 `.bin` 后缀猜格式**：交给 ffmpeg 的文件按字节实际是什么容器起名（`.wav`、`.mp3`、`.flac`、`.ogg`、`.m4a`），认不出的不带后缀，由 ffmpeg 按内容认。以前 `.bin` 后缀让 ffmpeg 把文件当成二进制文本（bin）来读，ID3 标签后面有大段零填充的 mp3 因此报 `Stream map '' matches no streams`，解不开。输出格式照旧由 `-f` 给。
+
 ## 2.0.0 — 2026-10
 
 The first release that installs anywhere: the base part now has its own name, its own repository and its own address, and no longer depends on any one platform.

@@ -6,12 +6,13 @@
 // ffmpeg 的签名由第一个调用它的模块定，见 tools/audio-decode.mjs 文件头的 `@runtime ffmpeg`：
 //   async (args: string[], input: Uint8Array) => Uint8Array
 //   参数里恰好等于 '{input}' 的一项换成输入文件，'{output}' 的换成输出文件。
-// 这里的实现：输入写进一个新建的临时目录里的文件，输出也读回自这个目录，用完删掉整个目录（只删自己建的那一个）。
+// 这里的实现：输入写进一个新建的临时目录里的文件（名字按内容起，见 inputNameOf），输出也读回自这个目录，用完删掉整个目录（只删自己建的那一个）。
 // 用文件而不是管道，因为 m4a 这类格式要往回读，管道读不了。参数数组直接交给 execFile，不经 shell，所以文件名和参数里的特殊字符不会被当成命令。
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { sniffAudio } from '../protocol/lib/audio.mjs';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const STDERR_CAP = 4 * 1024 * 1024;
@@ -47,10 +48,22 @@ export function findExecutable(name, { pathEnv = process.env.PATH ?? '', pathExt
 
 const tail = (text) => String(text ?? '').trim().slice(-400);
 
+/**
+ * 输入文件的名字。ffmpeg 会参考后缀挑解封装器：后缀是 .bin 时它先试 bin（文本画的解封装器，没有音频流），有的 mp3 因此被当成 bin，
+ * 报 Stream map '' matches no streams。所以后缀只给 sniffAudio 认得出的容器（wav、mp3、flac、ogg、m4a，后缀就是格式名）；
+ * 认不出的不带后缀，让 ffmpeg 只按内容猜。webm 的 EBML 头 sniffAudio 不认（它只认允许的那几种格式），所以 webm 也不带后缀，ffmpeg 按内容认得出。
+ * @param {Uint8Array} input
+ * @returns {string}
+ */
+function inputNameOf(input) {
+  const sniffed = sniffAudio(input);
+  return sniffed === null ? 'input' : `input.${sniffed.format}`;
+}
+
 function runFfmpeg(executable, args, input, timeoutMs) {
   return fs.promises.mkdtemp(path.join(os.tmpdir(), 'vp-ffmpeg-')).then(async (dir) => {
     try {
-      const inputFile = path.join(dir, 'input.bin');
+      const inputFile = path.join(dir, inputNameOf(input));
       const outputFile = path.join(dir, 'output.bin');
       await fs.promises.writeFile(inputFile, input);
       const argv = ['-y', ...args.map((a) => (a === '{input}' ? inputFile : a === '{output}' ? outputFile : a))];
