@@ -60,6 +60,12 @@
       "protocol": "2.0",
       "size": 1840460,
       "sha256": "25c543ac3d6c82445f22efa7c8663eb227cc46804e0b01cdfcd8e76b0731ad4f"
+    },
+    {
+      "version": "2.0.1",
+      "protocol": "2.0",
+      "size": 1842384,
+      "sha256": "06ff497cd4488d338c4506d7cfb1f4a5324d0572965a936eeda09f0a188afa01"
     }
   ]
 }
