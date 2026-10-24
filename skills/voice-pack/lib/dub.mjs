@@ -51,7 +51,8 @@
 // 环境缺东西：规划（planDub）不抛错，只在 capabilities 和 missingRuntimes 里说明缺什么；dubScript 在花钱之前抛：
 //   capability_missing  缺 voice-cloning（details.capability）
 //   runtime_missing     脚本要的运行时环境没有（details: { runtime, entry, feature }）
-// 只有配音用到的才报；缺 text-generation、style-instruction 都不是错误。
+// 只有配音用到的才报；缺 text-generation、style-instruction 都不是错误。text-generation 的回答不能用（没有文字、没有正常结束）也不是错误：
+// 那几句落到默认参考，plan.judge 是 { status: 'unusable', … }，units[i].pick.judgeFailed 为 true，配音接着做（规则在 lib/reference-pick.mjs 的文件头）。
 //
 // 说明（返回值里的 notes：[{ code, message, details }]，规划和正式运行都有；message 是给人看的中文，details 是它说的那些事实，没有要说的数就是空对象）：
 //   guidance_truncated       配音指引超过 2000 个字，截短以后才传给模型。details: { chars, max }：指引原来有多少个字、最多传多少个字

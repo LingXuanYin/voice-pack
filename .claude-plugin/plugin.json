@@ -1,6 +1,6 @@
 {
   "name": "voice-pack",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Voice packs for AI agents: make, check, share and reuse a voice as a signed, portable package. The flows are written by required capability, so any text-to-speech or voice-cloning model plugs in through an adapter.",
   "author": {
     "name": "LingXuanYin"

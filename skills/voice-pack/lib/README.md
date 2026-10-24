@@ -43,12 +43,12 @@
 | `make-pack-plan.mjs` | 规划（不花钱）：筛完以后各项能力最多调几次、有几段素材能用（`plan`，用户在第一次调能力之前确认的就是它） |
 | `make-pack-transcribe.mjs` | 转写没有文本的片段；转写以后定每段的文本从哪来，一个词都没有的淘汰 |
 | `make-pack-tags.mjs` | 打标签：语言（调用方给的、转写报的、从文字认的）、情绪和风格（让听者听着打，暂时出错的段按 `call-attempts.mjs` 的规则再听，每段最多 3 次）、能量（响度跟这一批的中位数比），以及每个标签是谁定的 |
-| `make-pack-pick.mjs` | 挑参考：把条目交给 `pack-material.mjs` 的规则，把结论写回条目；没有一段能用、默认参考段对不上时报错 |
+| `make-pack-pick.mjs` | 挑参考：把条目交给 `pack-material.mjs` 的规则，把结论写回条目；没有一段能用、默认参考段对不上时报错；环境有说话人相似度时，参考之间两两量一次，好让默认段挑最典型的那一段；量的时候出错（不是中止、不是 401）退回按优先级，报告写明原因 |
 | `make-pack-loudness.mjs` | 调响度：写进包里的参考和留出录音统一到目标响度（规则和报告里记什么在文件头，怎么调在 `../tools/loudness-normalize.mjs`），不动的段写明原因 |
 | `make-pack-assemble.mjs` | 装包：试装（花钱之前）、每段在包里的路径和清单里的样子、调 `packRolePart` 做出角色部分 |
 | `make-pack-trial.mjs` | 试合成留出录音、量还原度、写验证记录；试合成用的环境（不带 `text-generation`，外部资源用手上的字节） |
 | `make-pack-report.mjs` | 报告：每一段的去向，`dryRun` 和最后的返回；还缺什么素材（`material-hints.mjs`）也在这里算 |
-| `pack-material.mjs` | 挑素材（纯数据）：哪些当参考、哪些当留出录音（留出录音从不当参考）、默认参考段 |
+| `pack-material.mjs` | 挑素材（纯数据）：哪些当参考、哪些当留出录音（留出录音从不当参考）、默认参考段（按平均相似度挑最典型的，相似度由调用方量） |
 | `segment-tags.mjs` | 让听者（`audio-text-to-text`）给一段录音打情绪、风格标签，收音校验同盲听，只比录音开头的 `OPENING_WORDS` 个词；回答读不懂或被模型的服务商拦下（`provider_blocked`）就作废（不重试）；服务暂时出错按 `call-attempts.mjs` 的规则再问（`options.attempts`），问满了还没成才记成没听成 |
 | `material-hints.mjs` | 「还缺什么素材」（纯数据）：每条规则一个代码，阈值在文件头 |
 | `pack-version.mjs` | 发新版本：读上一版、算版本号、比较两版、这一版生效的描述、什么都没变不发、生成变更说明（中文；调用方要别的写法，给 `makePack` 的 `options.describeChanges`，它的返回值也过这里的 `fitChangelog` 裁到清单允许的长度） |

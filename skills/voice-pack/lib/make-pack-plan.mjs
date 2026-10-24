@@ -22,7 +22,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { hasCapability } from '../protocol/lib/env.mjs';
-import { plannedHoldouts } from './pack-material.mjs';
+import { DEFAULTS, plannedHoldouts } from './pack-material.mjs';
 import { hasWords } from './make-pack-transcribe.mjs';
 import { extraAttempts } from './call-attempts.mjs';
 
@@ -32,7 +32,8 @@ import { extraAttempts } from './call-attempts.mjs';
  *   打标签    情绪或风格没给齐的片段，一段一次；暂时出错的段每段最多再问 2 次，那几次不在 calls 里，在 extraCalls 里（lib/call-attempts.mjs），盲听的不算
  *   合成      每条留出录音一次
  *   盲听      每条留出录音问两遍（lib/fidelity.mjs）
- *   说话人相似度  真录音（参考加留出录音）两两算一次，再加每条留出录音和它合成出来的录音比一次
+ *   说话人相似度  真录音（参考加留出录音）两两算一次，再加每条留出录音和它合成出来的录音比一次；挑最典型的默认段另加参考之间两两算一次
+ *                 （参考最多是能用的段数和 maxReferences 里小的那个；默认段沿用的其实不算，这里按最多算）
  */
 export function buildPlan(env, items, settings, materialOptions) {
   const candidates = items.filter((item) => item.unused === undefined);
@@ -44,6 +45,9 @@ export function buildPlan(env, items, settings, materialOptions) {
   const carriedHoldouts = candidates.filter((item) => item.previous === 'holdout').length;
   const holdouts = Math.max(plannedHoldouts(usable.length, materialOptions), carriedHoldouts);
   const evaluating = settings.evaluate !== false && holdouts > 0;
+  // 挑最典型的默认段：参考之间两两量（参考最多是能用的段数和参考上限里小的那个）
+  const referenceCap = Math.min(usable.length, materialOptions?.maxReferences ?? DEFAULTS.maxReferences);
+  const typicalPairs = can('speaker-verification') ? (referenceCap * (referenceCap - 1)) / 2 : 0;
   const unused = {};
   for (const item of items) if (item.unused !== undefined) unused[item.unused.reason] = (unused[item.unused.reason] ?? 0) + 1;
   return {
@@ -54,7 +58,7 @@ export function buildPlan(env, items, settings, materialOptions) {
       'automatic-speech-recognition': can('automatic-speech-recognition') ? textless.length : 0,
       'audio-text-to-text': can('audio-text-to-text') ? taggable.length + (evaluating ? 2 * holdouts : 0) : 0,
       'voice-cloning': evaluating && can('voice-cloning') ? holdouts : 0,
-      'speaker-verification': evaluating && can('voice-cloning') && can('speaker-verification') ? (usable.length * (usable.length - 1)) / 2 + holdouts : 0,
+      'speaker-verification': (evaluating && can('voice-cloning') && can('speaker-verification') ? (usable.length * (usable.length - 1)) / 2 + holdouts : 0) + typicalPairs,
     },
     extraCalls: {
       'automatic-speech-recognition': can('automatic-speech-recognition') ? extraAttempts(textless.length) : 0,

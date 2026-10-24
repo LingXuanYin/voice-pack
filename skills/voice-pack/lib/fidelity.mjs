@@ -562,8 +562,9 @@ export const NO_SPEECH_LABEL = '量不到';
  * 说话人验证报的是不是「这段录音里没有能嵌的语音」：标准写法（vocab/capability-signatures.md 的 speaker-verification 一节）是
  * capability_input_invalid，details 是 { capability: 'speaker-verification', field: 'audio_a' 或 'audio_b', problem: 'no_speech' }。
  * 库只认这一个写法：别的码（能力自己起的）、没写明是哪一路的，都不是，照常往上抛。
+ * 导出给挑默认参考段用（lib/make-pack-pick.mjs）：同一个写法，同一处判断。
  */
-function isNoSpeechError(error) {
+export function isNoSpeechError(error) {
   return (
     isVoicePackError(error, 'capability_input_invalid') &&
     error.details?.capability === 'speaker-verification' &&

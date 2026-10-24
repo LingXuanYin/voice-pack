@@ -184,6 +184,7 @@ await env.capabilities['text-generation']({
 
 - `text` 是模型的回答原文，库自己解析：按台词挑参考要求回答是一个 JSON 数组，读不出来就不采纳、不猜（`judge.status` 是 `unusable`）。
 - 环境没有这项能力时，按台词挑参考不判断，用默认参考；这不是错误。
+- 回答不能用（没有文字，或者没有正常结束）：抛 `capability_result_invalid`，`details.capability` 写 `text-generation`，`details.problem` 写是哪一种（`text_missing`、`stop_reason`）。库把那几句落到默认参考（`judge.status` 是 `unusable`，它们的 `picks[i].judgeFailed` 为 true），配音接着做。别的错（401、输入不对、服务暂时出错）照旧往上抛。
 
 ## 怎么念
 

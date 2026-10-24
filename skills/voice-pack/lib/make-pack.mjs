@@ -79,7 +79,10 @@
 //
 //   { pack: { id, manifest, files }, report }
 //   pack      packRolePart 的结果（protocol/lib/pack.mjs）：files 是包目录里的全部文件，含清单、SKILL.md、protocol/，给了 base 还有 voice-pack/
-//   report    { segments, counts, plan, steps, trial, fidelity, redo?, verification, hints, notes, version? }
+//   report    { segments, counts, plan, steps, trial, fidelity, redo?, verification, hints, notes, version?, defaultSegment }
+//             defaultSegment { id, rule, typicality?, tied?, unmeasured? }：默认参考段和挑它的规则（'author' | 'previous' | 'typical' | 'priority' | 'only'，规则 5）；
+//             rule 是 'typical' 时 typicality 是每段候选和其余参考的平均相似度，tied 是和最典型的那段差不多的几段（按优先级）；
+//             unmeasured 是量相似度时抛了错、这一次退回按优先级的：{ capability, error: 错误的摘要（summarizeError：code、message、details） }，没有这种情况就没有这个字段
 //             segments 每一段的去向（参考、留出录音、没用上和原因；发新版本时还有 dropped）、标签和标签的来源、调响度的情况（loudness）；counts 数量；plan 各项能力最多调几次；
 //             steps 转写、打标签、调响度、试合成各一步的情况；trial 试合成；fidelity 还原度（读法的正本是 lib/fidelity.mjs 的文件头）；
 //             redo 有「没听成」的盲听时，按 planRedo 说明补做要调几次；verification 写进清单的那一条验证记录（没量出来是 null）；
@@ -109,7 +112,10 @@
 //                                  被服务商拦下（provider_blocked）、回答不是固定格式记作废，不重试；别的错原样往上传。盲听出错不在这里重试（lib/fidelity.mjs 有自己的补做）
 //   @capability voice-cloning      试合成留出录音（走 lib/dub.mjs）；缺了不能试合成，所以不量还原度
 //   @capability style-instruction  可选：环境声明有它，试合成才把配音指引通过 instructions 传给模型（lib/dub.mjs）；没有不是错误。试合成不用 text-generation：lib/make-pack-trial.mjs 的 envForTrial 把它去掉
-//   @capability speaker-verification  说话人相似度、真人基线（lib/fidelity.mjs）；缺了说话人相似度量不了（盲听照做）
+//   @capability speaker-verification  说话人相似度、真人基线（lib/fidelity.mjs）；缺了说话人相似度量不了（盲听照做）。挑默认参考段也用它（lib/make-pack-pick.mjs）：
+//                                  有它，默认段挑和其余参考平均最像的那一段（参考之间两两量，留出录音不量）；没有，就按优先级挑，报告的 defaultSegment.rule 写着是哪条。
+//                                  量的时候抛的错（不是 no_speech）不往上传：这一次的默认段退回按优先级，报告的 defaultSegment.unmeasured 写明错误，做包接着做；
+//                                  调用方中止（AbortError）和凭据被拒（401，或 details.halted）照旧往上传
 //   ffmpeg（运行时，签名在 tools/audio-decode.mjs）  解不了 WAV 以外的音频：那一段不做音质检查、不算能量，也不调响度，按「没量过」处理
 //
 // ---------------------------------------------------------------- 流程，和各步的模块
@@ -180,7 +186,7 @@ export async function makePack(env, input, options = {}) {
   steps.tagging = await tagAll(env, items, { concurrency, maxErrorRate, wait: settings.retryWait });
   assembleTags(items);
 
-  const { chosen, roleOf } = pickMaterial(items, { previous, version, materialOptions });
+  const { chosen, roleOf } = await pickMaterial(env, items, { previous, version, materialOptions });
   // 发新版本：这一版比上一版变了什么（什么都没变就不发；变更说明作者没写就按这个生成）
   const { changes, changelog } = await releaseChanges(previous, { effective, chosen, fresh, changelog: version.changelog, describeChanges: settings.describeChanges });
 

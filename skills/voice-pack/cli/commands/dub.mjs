@@ -128,6 +128,10 @@ function render(report, { packArgument, scriptArgument, out, planOnly }) {
   if (report.judge.status === 'used') lines.push(`情绪判断：台本里没有提示的句子，让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}`);
   else if (report.judge.status === 'unavailable') lines.push('情绪判断：台本里有句子没有任何提示，环境没有 text-generation，用了默认参考');
   else if (report.judge.status === 'planned') lines.push(`情绪判断：正式运行会用 text-generation 判 ${report.judge.lines} 句（台本里没有提示的句子）；试运行不调它（要计费），这几句现在用默认参考`);
+  else if (report.judge.status === 'unusable') {
+    const fell = report.units.filter((unit) => unit.pick.judgeFailed === true).map((unit) => unit.number);
+    lines.push(`情绪判断：text-generation 的回答不能用（${report.judge.error?.message ?? report.judge.reason}），这几句用了默认参考：${fell.join('、')}`);
+  }
   for (const note of report.notes) lines.push(`注意：${note.message}`);
   lines.push('', `共 ${report.units.length} 句：`);
   for (const unit of report.units) {

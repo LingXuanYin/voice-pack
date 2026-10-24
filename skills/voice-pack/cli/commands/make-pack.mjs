@@ -468,6 +468,21 @@ function renderPlan(plan, report, cut, duplicateCheck, language) {
   return lines;
 }
 
+/** 默认参考段是按哪条规则挑的，写给人看（规则见 lib/pack-material.mjs 的规则 5；报告的 defaultSegment.rule）。 */
+const DEFAULT_RULE_NOTE = {
+  author: '作者明说的',
+  previous: '沿用上一版的',
+  typical: '和其余参考平均最像的那一段',
+  priority: '按优先级：这个环境没有说话人相似度，或者量不到',
+  only: '只有一段候选',
+};
+
+/** 默认段的规则写给人看；量相似度出了错、退回按优先级的，连能力和错误的摘要一起写上（报告的 defaultSegment.unmeasured）。 */
+function describeDefaultRule(defaultSegment) {
+  const why = defaultSegment.unmeasured === undefined ? '' : `；说话人相似度没量成：${defaultSegment.unmeasured.error.message}`;
+  return `（${DEFAULT_RULE_NOTE[defaultSegment.rule]}${why}）`;
+}
+
 function render(result, { output, evaluation, share, adapterArguments, cut, duplicateCheck }) {
   const { report, pack } = result;
   const lines = [];
@@ -478,7 +493,7 @@ function render(result, { output, evaluation, share, adapterArguments, cut, dupl
   }
   lines.push(...cut.map(describeCut));
   const { counts } = report;
-  lines.push(`素材：输入 ${counts.input} 段${counts.carried === undefined ? '' : `，上一版带来 ${counts.carried} 段，去掉 ${counts.dropped} 段`}；参考 ${counts.references} 段，留出录音 ${counts.holdouts} 条，没用上 ${counts.unused} 段；默认参考段 ${manifest.reference.defaultSegment}`);
+  lines.push(`素材：输入 ${counts.input} 段${counts.carried === undefined ? '' : `，上一版带来 ${counts.carried} 段，去掉 ${counts.dropped} 段`}；参考 ${counts.references} 段，留出录音 ${counts.holdouts} 条，没用上 ${counts.unused} 段；默认参考段 ${manifest.reference.defaultSegment}${report.defaultSegment === undefined ? '' : describeDefaultRule(report.defaultSegment)}`);
   if (duplicateCheck !== null) lines.push(...describeDuplicateCheck(duplicateCheck));
   for (const note of report.notes) lines.push(`注意：${note.message}`);
   lines.push(...describeSteps(report.steps));

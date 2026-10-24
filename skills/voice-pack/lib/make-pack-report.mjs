@@ -78,6 +78,14 @@ export function resultOf({ made, evaluated, verification, items, fresh, chosen, 
               verification: { status: verification === null ? 'not_remeasured' : 'remeasured', droppedFromPrevious: previous.manifest.verification?.length ?? 0 },
             },
           }),
+      // 默认参考段和挑它的规则（lib/pack-material.mjs 的规则 5）：挑最典型的那一段时，还有每段候选的平均相似度和差不多的几段；
+      // 量相似度出了错、这一次退回按优先级的，还有 unmeasured：能力和错误的摘要（lib/make-pack-pick.mjs）
+      defaultSegment: {
+        id: chosen.defaultSegment,
+        rule: chosen.defaultRule,
+        ...(chosen.typicality === undefined ? {} : { typicality: chosen.typicality, tied: chosen.tied }),
+        ...(chosen.unmeasured === undefined ? {} : { unmeasured: chosen.unmeasured }),
+      },
       plan,
       steps,
       trial: evaluated.trial,

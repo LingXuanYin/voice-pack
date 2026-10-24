@@ -29,7 +29,7 @@
 // 清单里留出录音和参考共用 id 或音频文件，直接报错，不悄悄挑一个。
 //
 // 返回 { picks, judge }：
-//   picks[i]  { index, segmentId, rule, wanted, sources, matched, missed, directions }
+//   picks[i]  { index, segmentId, rule, wanted, sources, matched, missed, directions }；判断失败、落到默认参考的句子多一个 judgeFailed: true（见 judge）
 //     rule      「怎么说」的标签是谁给的：'caller-labels' | 'markup-hints' | 'text-generation' | 'default'（没有人给）
 //     wanted    最终要的标签 { language, script, emotion, style, energy }，没有要求的项是 null；
 //               language 是调用方给的写法；从文字里认的，是这种文字可能的语言里参考集有的那几个（可能是空数组），不列整串（拉丁字母有四十多种语言）；
@@ -40,19 +40,25 @@
 //     directions  台词里读到的舞台提示（选了 'remove' 时，认不出意思的也列着，recognized 为 false；默认的 'keep' 只列整个括号都认得的，和结构规则认出的「副词 + 地」，后者 recognized 为 false）
 //   judge     text-generation 这一步的情况：{ status: 'not_needed' | 'unavailable' | 'used' | 'unusable' | 'planned', ... }。
 //             planned 是选项 judge 给了 false、本来要判断的：{ status: 'planned', capability: 'text-generation', lines: 要判几句 }，一次都没有调；
-//             这几句现在落到默认参考，正式运行（judge 不给，默认 true）时挑的参考可能不一样
+//             这几句现在落到默认参考，正式运行（judge 不给，默认 true）时挑的参考可能不一样。
+//             unusable 是判断了、回答不能用：{ status: 'unusable', capability, reason, lines: 判断的几句, model?, error? }。回答读不出 JSON 数组的没有 error；
+//             能力报的「回答不能用」（见下面「抛出的错误」）的，error 是那个错的摘要 { code, message, details }。
+//             不论哪种，判断的那几句都落到默认参考，它们的 picks[i] 标着 judgeFailed: true，配音接着做
 //
 // 选项 options（第四个参数，都可选）：unrecognized，原样交给 readDirections（见下）；judge，布尔值，默认 true：false 就不调 text-generation。写错（键拼错、值不对）抛 pick_input_invalid
 //
 // 抛出的错误（code 小写下划线，details 里放什么在抛出处写明）：
 //   pick_input_invalid   输入不是约定的形状，或者清单自相矛盾。details.field 是出问题的字段（options 的写法不对时是 options）
-// 环境本身不合格抛 environment_invalid；text-generation 自己抛的错原样往上传（不吞，401 之类要让调用方看见）。
+// 环境本身不合格抛 environment_invalid。text-generation 自己抛的错原样往上传（不吞，401 之类要让调用方看见），唯一的例外是「回答不能用」：
+//   回答不能用   capability_result_invalid，details.capability 是 text-generation（没有文字、没有正常结束；写法在 vocab/capability-signatures.md 的 text-generation 一节）
+//                 → 不抛：judge.status 记成 unusable，判断的几句落到默认参考（judgeFailed），配音接着做
+//   别的错       401（凭据被拒）、输入不对（capability_input_invalid）、服务暂时出错（details.transient）……原样往上传，由调用方决定停下、重来或补做
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
-import { VoicePackError } from '../protocol/lib/errors.mjs';
+import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { canonicalLabel, detectLanguages, primaryLanguage, readDirectionOptions, readDirections } from './line-hints.mjs';
-import { badResult } from './capability-calls.mjs';
+import { badResult, summarizeError } from './capability-calls.mjs';
 
 const ENERGIES = ['low', 'medium', 'high'];
 const LABEL_KEYS = ['language', 'emotion', 'style', 'energy'];
@@ -311,6 +317,12 @@ function parseJudgeReply(text) {
 }
 
 /**
+ * 能力报的「回答不能用」：没有文字、没有正常结束。适配器按约定报 capability_result_invalid，details.capability 是 text-generation
+ * （约定写在 vocab/capability-signatures.md 的 text-generation 一节）。这一类的错不往上传，别的错照旧往上传。
+ */
+const isUnusableAnswer = (error) => isVoicePackError(error, 'capability_result_invalid') && error.details?.capability === 'text-generation';
+
+/**
  * 还没有「怎么说」的标签的台词，一次调用让 text-generation 判断。就地改 plans（判出来的标签、来源、理由），返回 judge 的情况。
  * allowCall 是 false 就一次都不调（那是一次收费的调用）：要判断、环境也有这项能力的，返回 planned 和要判几句。
  * 不采纳的回答（编号对不上、取值不在参考集里……）不猜，如实记在 ignored 里。
@@ -327,11 +339,22 @@ async function runJudge(env, set, input, plans, directionOptions, allowCall) {
   if (!hasCapability(env, 'text-generation')) return { status: 'unavailable', capability: 'text-generation' };
   if (!allowCall) return { status: 'planned', capability: 'text-generation', lines: pending.length };
 
-  const reply = await requireCapability(env, 'text-generation')({ prompt: buildJudgePrompt(choices, pending) });
+  // 回答不能用：这几句落到默认参考（judgeFailed），judge 写明是什么，配音接着做。别的错原样往上传（见文件头）
+  const fallBack = (judge) => {
+    for (const item of pending) plans[item.index].judgeFailed = true;
+    return judge;
+  };
+  let reply;
+  try {
+    reply = await requireCapability(env, 'text-generation')({ prompt: buildJudgePrompt(choices, pending) });
+  } catch (error) {
+    if (!isUnusableAnswer(error)) throw error;
+    return fallBack({ status: 'unusable', reason: `回答不能用，不猜：${error.message}`, capability: 'text-generation', error: summarizeError(error), lines: pending.length });
+  }
   if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('text-generation', 'text_missing', '要 { text: 字符串 }');
   const model = typeof reply.model === 'string' ? reply.model : undefined;
   const entries = parseJudgeReply(reply.text);
-  if (entries === null) return { status: 'unusable', reason: '回答不是一个 JSON 数组，不猜', capability: 'text-generation', ...(model === undefined ? {} : { model }), lines: pending.length };
+  if (entries === null) return fallBack({ status: 'unusable', reason: '回答不是一个 JSON 数组，不猜', capability: 'text-generation', ...(model === undefined ? {} : { model }), lines: pending.length });
 
   const asked = new Set(pending.map((item) => item.index));
   const answered = new Set();
@@ -407,6 +430,7 @@ export async function pickReferences(env, manifest, lines, options) {
       matched,
       missed,
       directions: plan.directions,
+      ...(plan.judgeFailed === true ? { judgeFailed: true } : {}),
     };
   });
   return { picks, judge };
