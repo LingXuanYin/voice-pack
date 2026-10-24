@@ -237,7 +237,7 @@ export function readOptions(options) {
   if (problem !== undefined) throw invalid(problem.field, problem.message);
   if (options.concurrency !== undefined && !(Number.isInteger(options.concurrency) && options.concurrency >= 1 && options.concurrency <= 8)) throw invalid('concurrency', '必须是 1–8 的整数');
   if (options.describeChanges !== undefined && typeof options.describeChanges !== 'function') throw invalid('describeChanges', '必须是函数 (changes, { name }) => 一句变更说明');
-  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写、打标签暂时出错、再试之前等多久');
+  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写、打标签、试合成暂时出错、再试之前等多久');
   // loudness 换成补全的目标、上限和限幅器，或者 null（关掉）；textLanguage 换成 'zh' 或 'en'（没给就是 'zh'）
   return { ...options, loudness: readLoudness(options.loudness), textLanguage: readTextLanguage(options.textLanguage) };
 }

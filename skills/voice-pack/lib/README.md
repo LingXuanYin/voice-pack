@@ -46,7 +46,7 @@
 | `make-pack-pick.mjs` | 挑参考：把条目交给 `pack-material.mjs` 的规则，把结论写回条目；没有一段能用、默认参考段对不上时报错；环境有说话人相似度时，参考之间两两量一次，好让默认段挑最典型的那一段；量的时候出错（不是中止、不是 401）退回按优先级，报告写明原因 |
 | `make-pack-loudness.mjs` | 调响度：写进包里的参考和留出录音统一到目标响度（规则和报告里记什么在文件头，怎么调在 `../tools/loudness-normalize.mjs`），不动的段写明原因 |
 | `make-pack-assemble.mjs` | 装包：试装（花钱之前）、每段在包里的路径和清单里的样子、调 `packRolePart` 做出角色部分 |
-| `make-pack-trial.mjs` | 试合成留出录音、量还原度、写验证记录；试合成用的环境（不带 `text-generation`，外部资源用手上的字节） |
+| `make-pack-trial.mjs` | 试合成留出录音（暂时出错按 `call-attempts.mjs` 的规则每条最多试 3 次，`envForTrial`）；合成出来的每一句量还原度之前先查，静音占比或时长对不上的作废、不进比值（`checkSynthesized`）；量还原度、写验证记录；试合成用的环境（不带 `text-generation`，外部资源用手上的字节） |
 | `make-pack-report.mjs` | 报告：每一段的去向，`dryRun` 和最后的返回；还缺什么素材（`material-hints.mjs`）也在这里算 |
 | `pack-material.mjs` | 挑素材（纯数据）：哪些当参考、哪些当留出录音（留出录音从不当参考）、默认参考段（按平均相似度挑最典型的，相似度由调用方量） |
 | `segment-tags.mjs` | 让听者（`audio-text-to-text`）给一段录音打情绪、风格标签，收音校验同盲听，只比录音开头的 `OPENING_WORDS` 个词；回答读不懂或被模型的服务商拦下（`provider_blocked`）就作废（不重试）；服务暂时出错按 `call-attempts.mjs` 的规则再问（`options.attempts`），问满了还没成才记成没听成 |
@@ -99,4 +99,4 @@
 | `capability-calls.mjs` | 调所需能力时共用的几个小函数：`isServiceError`（能力抛的错是不是「服务暂时出错」，看 `details.transient`）、`summarizeError`（收进报告的错误摘要）、`badResult`（能力的返回不合约定，造 `capability_result_invalid`）、`pool`（一批事分给几个并发的工人，出错就不再开始新的） |
 | `manifest-limits.mjs` | 清单里长短文字字段的长度上限（`LONG_TEXT_MAX`、`SHORT_TEXT_MAX`），读自协议核心的清单 schema，流程层不另抄一份数；语言标签的写法留在 `language-tag.mjs`（不引别的模块），要和 schema 里的写法保持一致 |
 | `event-loop.mjs` | 让事件循环转一圈：`turnEventLoop`（等一个宏任务，用 `MessageChannel`）、`nowMs`（量「连续做了多久」的钟）、`YIELD_AFTER_MS`（50，连续做了这么久就让一圈）。长录音切段编段（`long-recording.mjs`）、做包筛片段（`make-pack-screen.mjs`）都用它：一段同步的活做久了页面就卡，浏览器里 `await crypto.subtle.digest` 不让事件循环转，要自己让 |
-| `call-attempts.mjs` | 一段录音的一次能力调用最多试几次、暂时出错等多久再来，规则只在这里写一份，做包的转写（`make-pack-transcribe.mjs`）和打标签（`make-pack-tags.mjs`、`segment-tags.mjs`）、长录音（`long-recording.mjs`）和 app 听试听都用它：`callWithRetries`（每段最多 `MAX_ATTEMPTS` 次，暂时出错才再来，两次之前各等 `RETRY_DELAYS_MS`：5 秒、15 秒）、`extraAttempts`（多听的上限，写进「确认费用」里用户同意的次数）、`spent`（把一个已经用完次数的失败原样交回去）。文件头还写着为什么是这几个数、失败的转写收不收费是怎么量的 |
+| `call-attempts.mjs` | 一段录音的一次能力调用最多试几次、暂时出错等多久再来，规则只在这里写一份，做包的转写（`make-pack-transcribe.mjs`）、打标签（`make-pack-tags.mjs`、`segment-tags.mjs`）和试合成（`make-pack-trial.mjs` 的 `envForTrial`）、长录音（`long-recording.mjs`）和 app 听试听都用它：`callWithRetries`（每段最多 `MAX_ATTEMPTS` 次，暂时出错才再来，两次之前各等 `RETRY_DELAYS_MS`：5 秒、15 秒）、`extraAttempts`（多听的上限，写进「确认费用」里用户同意的次数）、`spent`（把一个已经用完次数的失败原样交回去）。文件头还写着为什么是这几个数、失败的转写收不收费是怎么量的 |

@@ -6,6 +6,14 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.3 — 2026-10
+
+Trial synthesis now tries a temporary service error again, as transcription and tagging do: up to 3 tries for each held-out recording, waiting 5 s and then 15 s before the next try, with the extra tries counted in the confirm-cost line. Before fidelity is measured, each synthesized clip is checked: a clip that is almost all silence, or whose length is more than twice, or less than half, that of its held-out recording of the same sentence, is voided. A voided clip is left out of the ratio and reported with its reason and the measured numbers.
+试合成碰到服务暂时出错，现在会像转写、打标签一样再试：每条留出录音最多试 3 次，第 2 次之前等 5 秒，第 3 次之前等 15 秒；多出来的次数也写进确认费用。量还原度之前先检查合成出来的每一句：几乎全是静音，或者时长超过同一句的留出录音的两倍、不到它的一半，就作废。作废的不进比值，报告里写明是哪一句、为什么，以及量到的静音占比和时长。
+
+- **Trial synthesis tries a temporary service error again.** Up to 3 tries for each held-out recording (`lib/call-attempts.mjs`); the extra tries are in `plan.extraCalls` and in the confirm-cost line. A recording that still fails after 3 tries stays in `trial.failed`, out of the evaluation. / **试合成暂时出错，会再试。** 每条留出录音最多 3 次（`lib/call-attempts.mjs`）；多出来的次数在 `plan.extraCalls` 里，确认费用那一行也写。试满 3 次还是出错的，仍记在 `trial.failed` 里，不进评测。
+- **A synthesized clip is checked before its fidelity is measured.** Silence above 60% of the clip, or a length more than twice or less than half that of the same sentence's held-out recording, voids it (`checkSynthesized` in `lib/make-pack-trial.mjs`). Voided clips are not in the ratio and are reported one by one; when all are voided the fidelity is not measured, with the reason `generated_voided`. A clip the environment cannot decode is not checked and is measured as before. / **量还原度之前先检查合成出来的每一句。** 静音占比超过六成，或者时长超过同一句的留出录音的两倍、不到它的一半，就作废（`lib/make-pack-trial.mjs` 的 `checkSynthesized`）。作废的不进比值，逐条报告；全部作废时还原度没量，原因是 `generated_voided`。环境解不开的不查，照旧量。
+
 ## 2.0.2 — 2026-10
 
 A dub no longer stops when the judge's answer cannot be used: those lines fall back to the default reference and the report says which. And when the environment can measure speaker similarity, the default reference segment (the one lines without a stage direction are spoken with) is now the segment most like the person's other references; before, it was the first by quality, length and order, whatever it sounded like.

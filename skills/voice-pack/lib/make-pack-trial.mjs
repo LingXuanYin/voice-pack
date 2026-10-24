@@ -11,12 +11,16 @@
 //   evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals })
 //        made 是 packRolePart 做出来的包，byId 是 Map<段名, 条目>，externals 是外部资源 [{ path, url, data }]（读外部资源时不联网，用手上的字节）。
 //        返回 { trial, fidelity, evaluation, redo }：
-//          trial       steps.trial：{ status: 'done', capability, synthesized, failed, models, items } 或 { status: 'skipped', reason, ... }。
+//          trial       steps.trial：{ status: 'done', capability, synthesized, failed, retried, models, items } 或 { status: 'skipped', reason, ... }。
+//                      synthesized 是合成出来的条数（作废的也算在内）；retried 是暂时出错多合成了几次；
+//                      items 每条留出录音一项：{ id, status: 'ok' | 'failed', pick, model?, error?, check? }。check 是合成出来的那一句的检查（checkSynthesized）：
+//                      checked（量了，正常）、voided（作废，codes 写明为什么，带量到的静音占比和时长）、unchecked（没查到，reason 写明为什么，照旧量）
 //                      reason：evaluate_false（options.evaluate 是 false）、no_holdout、capability_missing（点名 capability）、runtime_missing（点名 runtime）
-//          fidelity    还原度报告（lib/fidelity.mjs 的 measureFidelity），或 { status: 'skipped', reason }（没试合成、或者一条都没合成出来：no_generated）
+//          fidelity    还原度报告（lib/fidelity.mjs 的 measureFidelity），或 { status: 'skipped', reason }（一条都没合成出来：no_generated；合成出来的都作废了：generated_voided）
 //          evaluation  量还原度用的那批数据（参考、留出录音、合成出来的录音），补做「没听成」的盲听时要用；没量就是 null
 //          redo        有「没听成」时，补做要调几次（lib/fidelity.mjs 的 planRedo）；没有是 null
-//        合成暂时出错的那几条记在 trial.failed 里，不进评测。
+//        合成暂时出错的，每条留出录音最多试 3 次（lib/call-attempts.mjs，envForTrial）；试满了还是出错的记在 trial.failed 里，不进评测。
+//        作废的（check.status 是 voided）也不进评测；没查到的照旧量。
 //   verificationOf(fidelity, { environment, models, now })
 //        写进清单的那一条验证记录（协议的写法，protocol/FORMAT.md「角色部分的清单」）：在哪个环境、用哪个模型、哪天测的、还原度比值、量还原度的两种办法各用的哪个模型。
 //        两种评测一项都没量出来，就没有东西可记，给 null。
@@ -28,11 +32,14 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
-import { hasCapability } from '../protocol/lib/env.mjs';
+import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { measureFidelity, planRedo } from './fidelity.mjs';
 import { openVoicePack, MIME_OF_FORMAT } from './voice-pack.mjs';
 import { dubScript } from './dub.mjs';
 import { SHORT_TEXT_MAX } from './manifest-limits.mjs';
+import { callWithRetries, spent } from './call-attempts.mjs';
+import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
+import { measureAudio } from '../tools/audio-quality.mjs';
 
 const clipOf = (item) => ({ bytes: item.audio.bytes, mimeType: MIME_OF_FORMAT[item.format] });
 const skipped = (reason, extra = {}) => ({ trial: { status: 'skipped', reason, ...extra }, fidelity: { status: 'skipped', reason: extra.capability === undefined && extra.runtime === undefined ? reason : 'no_trial' }, evaluation: null, redo: null });
@@ -53,21 +60,84 @@ function envWithExternals(env, externals) {
 }
 
 /**
+ * 合成出来的一句进还原度之前的检查线。依据是这台机器上量出来的数，量法和解码和检查用的是同一条路（measureAudio、decodeAudio）：
+ *   用来对照的录音：84 条非残片（配音、走查、试合成、Neta 的克隆、语音设计、有声书；不全是音色克隆的合成，最长 26.98 秒）；
+ *                   2 条残片（Neta 的 gorrath ref2；走查里的 i-openai-speech.mp3，它和同名的另一份字节相同，模型没查证），同为 40.68 秒。
+ *                   这些录音没有随基础部分一起放出，没法重新量；要复现，就用 decodeAudio 解码，再用 measureAudio 量同一个文件。
+ *   silenceRatio   静音占比超过它，就是「几乎全是静音」。84 条里最大 0.393；两条残片是 0.846 和 0.917。0.6 落在中间，离两边都远。
+ *                  它和参考音频的 reject 线（tools/audio-quality.mjs）是同一个数，但判的是「这一句合成的话几乎没有说话」，不是参考的要求。
+ *   durationRatio  时长和同一句的留出录音（做包时量过的）的比值超过它，或者不到它的倒数，就作废。8 对（一条合成的 mp3，和同一句人录的留出录音）比值 0.707 到 1.002。
+ *                  残片对测试里配的 5.5 秒留出录音是 7.4 倍。2 落在两者之间，离两边都远。短的一头没有见过残片，取它的倒数对称，这是选的，不是量出来的。
+ *   解不开的（环境没有 ffmpeg，又不是 WAV）：没查到，不作废，照旧量（见 checkSynthesized）。
+ */
+const SYNTHESIZED_LIMITS = Object.freeze({ silenceRatio: 0.6, durationRatio: 2 });
+
+/** 同一句的留出录音的时长（做包时 screen 量过的，lib/make-pack-screen.mjs）；没量过（或者量不出来）就是 undefined，时长那一条不比。 */
+const holdoutSecondsOf = (byId, id) => {
+  const quality = byId.get(id)?.quality;
+  return quality?.status === 'checked' && Number.isFinite(quality.metrics?.durationSec) ? quality.metrics.durationSec : undefined;
+};
+
+/**
+ * 合成出来的一句进还原度之前的检查。量法用 tools/audio-quality.mjs 的 measureAudio（只有这一份量法），解码用 tools/audio-decode.mjs 的 decodeAudio。
+ * 判的是这一句自己的：不套参考音频的阈值（5–20 秒是对参考的要求，不是对一句合成的要求）。看两样：
+ *   几乎全是静音：静音占比超过 SYNTHESIZED_LIMITS.silenceRatio；量不出来（一个完整的窗口都没有）也算；
+ *   时长和同一句的留出录音差得离谱：超过它的 durationRatio 倍，或者不到它的倒数；留出录音没量过时长的，这一条不比。
+ * 解不开（环境没有 ffmpeg 又不是 WAV，或者字节本身不是音频）：没查到（unchecked），照旧量，报告写明原因。没查到不等于有问题，所以不作废。
+ * 返回 { status: 'checked' | 'voided' | 'unchecked', ... }：checked 和 voided 带 durationSec、silenceRatio（有留出录音时长的还带 holdoutSec）；
+ * voided 带 codes（synthesized_mostly_silent、synthesized_too_long、synthesized_too_short）；unchecked 带 reason（runtime_missing 时带 runtime）。
+ */
+async function checkSynthesized(env, clip, holdoutSec) {
+  let metrics;
+  try {
+    metrics = measureAudio(await decodeAudio(env, clip.bytes));
+  } catch (error) {
+    const kind = decodeFailureKind(error);
+    if (kind === 'runtime_missing') return { status: 'unchecked', reason: 'runtime_missing', runtime: error.details.runtime };
+    if (kind === 'undecodable') return { status: 'unchecked', reason: 'undecodable' };
+    throw error;
+  }
+  const { durationSec, silenceRatio } = metrics;
+  const codes = [];
+  if (silenceRatio === null || silenceRatio > SYNTHESIZED_LIMITS.silenceRatio) codes.push('synthesized_mostly_silent');
+  if (holdoutSec !== undefined) {
+    const ratio = durationSec / holdoutSec;
+    if (ratio > SYNTHESIZED_LIMITS.durationRatio) codes.push('synthesized_too_long');
+    else if (ratio < 1 / SYNTHESIZED_LIMITS.durationRatio) codes.push('synthesized_too_short');
+  }
+  const measured = { durationSec, silenceRatio, ...(holdoutSec === undefined ? {} : { holdoutSec }) };
+  return codes.length === 0 ? { status: 'checked', ...measured } : { status: 'voided', codes, ...measured };
+}
+
+/**
  * 试合成配音时用的环境：去掉 text-generation。挑参考的那个函数（lib/reference-pick.mjs）遇到没有「怎么说」标签、参考集又各不相同的台词，环境有 text-generation 就会拿去让模型判断，
  * 那是一次收费的调用，plan.calls 里没有它，用户确认费用时看不到；app 挑参考时本来就不给，试合成量的是 app 里会得到的，所以也不给：
  * 没标签的留出录音落到默认参考。
+ *
+ * 合成的调用包一层：暂时出错的就按 lib/call-attempts.mjs 的规则再来，每条留出录音最多 3 次。dub 每条只调一次合成，
+ * 所以 tries 里每一项是一条留出录音用了几次；试满了还是暂时出错的那一条，错误带上次数原样交回去（spent），dub 把它记成 failed。
  */
-function envForTrial(env) {
+function envForTrial(env, { wait, tries }) {
   const { 'text-generation': _judge, ...capabilities } = env.capabilities;
+  const clone = requireCapability(env, 'voice-cloning');
+  capabilities['voice-cloning'] = async (call) => {
+    const outcome = await callWithRetries(() => clone(call), { wait });
+    tries.push(outcome.attempts);
+    if ('error' in outcome) throw spent(outcome.error, outcome.attempts);
+    return outcome.result;
+  };
   return { ...env, capabilities };
 }
 
 /**
  * 试合成加量还原度。用做出来的包，把每条留出录音的文本合成一遍（走配音的流程：按这条留出录音的标签挑参考，配音指引、读音词表照常用），
  * 再用 lib/fidelity.mjs 量。缺 voice-cloning 就不能试合成，评测也跳过；评测里缺的那一项（说话人验证、盲听）由 measureFidelity 报「量不了」。
- * 合成暂时出错的那几条记在 trial.failed 里，不进评测；别的错误原样抛出。
+ * 合成暂时出错的，每条留出录音照 lib/call-attempts.mjs 的规则最多试 3 次（envForTrial）；试满了还是出错的记在 trial.failed 里，不进评测；别的错误原样抛出。
+ * 合成出来的每一句，量还原度之前先检查（checkSynthesized）：几乎全是静音、时长和同一句的留出录音差得离谱的作废，不进评测，报告里逐条写明；
+ * 解不开的没查到，照旧量。全部作废，还原度跳过，原因 generated_voided（量不出来是因为这些录音都作废了，不写验证记录）。
+ * 评测的 evaluation.holdouts 只有没作废的那几条。
  */
-export async function evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals }) {
+export async function evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals, wait }) {
   if (enabled === false) return skipped('evaluate_false');
   const { manifest, files } = made;
   const holdouts = manifest.holdout ?? [];
@@ -75,9 +145,10 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   if (!hasCapability(env, 'voice-cloning')) return skipped('capability_missing', { capability: 'voice-cloning' });
 
   const pack = await openVoicePack(files, { env: envWithExternals(env, externals) });
+  const tries = [];
   let dubbed;
   try {
-    dubbed = await dubScript(envForTrial(env), pack, holdouts.map((entry) => ({ text: entry.text, labels: entry.tags })), { concurrency });
+    dubbed = await dubScript(envForTrial(env, { wait, tries }), pack, holdouts.map((entry) => ({ text: entry.text, labels: entry.tags })), { concurrency });
   } catch (error) {
     if (isVoicePackError(error, 'runtime_missing')) return skipped('runtime_missing', { runtime: error.details.runtime });
     throw error;
@@ -85,12 +156,18 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   if (dubbed.units.length !== holdouts.length) {
     throw new VoicePackError('make_pack_trial_mismatch', `试合成的结果和留出录音对不上：${holdouts.length} 条留出录音，配音规划出了 ${dubbed.units.length} 段`, { details: { holdouts: holdouts.length, units: dubbed.units.length } });
   }
+  // 合成出来的每一句，量还原度之前先检查：几乎全是静音、时长和同一句的留出录音差得离谱的，作废，不进比值
+  const checks = [];
+  for (const [index, unit] of dubbed.units.entries()) {
+    checks.push(unit.status === 'ok' ? await checkSynthesized(env, unit.audio, holdoutSecondsOf(byId, holdouts[index].id)) : undefined);
+  }
   const items = dubbed.units.map((unit, index) => ({
     id: holdouts[index].id,
     status: unit.status,
     pick: { segmentId: unit.pick.segmentId, rule: unit.pick.rule, matched: unit.pick.matched, missed: unit.pick.missed },
     ...(unit.model === undefined ? {} : { model: unit.model }),
     ...(unit.status === 'failed' ? { error: unit.error } : {}),
+    ...(checks[index] === undefined ? {} : { check: checks[index] }),
   }));
   const models = [...new Set(dubbed.units.filter((unit) => unit.status === 'ok').map((unit) => unit.model).filter((model) => typeof model === 'string'))];
   const trial = {
@@ -98,14 +175,21 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
     capability: 'voice-cloning',
     synthesized: items.filter((item) => item.status === 'ok').length,
     failed: items.filter((item) => item.status === 'failed').map((item) => ({ id: item.id, error: item.error })),
+    retried: tries.reduce((total, count) => total + count - 1, 0), // 为暂时出错多合成了几次（每条留出录音的次数减 1）
     models,
     items,
   };
+  // 进比值的：合成出来、又没有作废的（没查到的照旧进）
+  const measuredAt = (index) => dubbed.units[index].status === 'ok' && checks[index].status !== 'voided';
   const evaluation = {
     references: manifest.reference.segments.map((entry) => ({ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags })),
-    holdouts: holdouts.flatMap((entry, index) => (dubbed.units[index].status === 'ok' ? [{ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, generated: dubbed.units[index].audio }] : [])),
+    holdouts: holdouts.flatMap((entry, index) => (measuredAt(index) ? [{ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, generated: dubbed.units[index].audio }] : [])),
   };
-  if (evaluation.holdouts.length === 0) return { trial, fidelity: { status: 'skipped', reason: 'no_generated' }, evaluation: null, redo: null };
+  if (evaluation.holdouts.length === 0) {
+    // 合成出来的都作废了（每一条都被拦下）和一条都没合成出来，原因不一样：前者写「合成出来的录音都作废了」
+    const reason = items.some((item) => item.check?.status === 'voided') ? 'generated_voided' : 'no_generated';
+    return { trial, fidelity: { status: 'skipped', reason }, evaluation: null, redo: null };
+  }
   const fidelity = await measureFidelity(env, evaluation, { ...(random === undefined ? {} : { random }), maxErrorRate });
   return { trial, fidelity, evaluation, redo: fidelity.notHeard.length > 0 ? planRedo(fidelity) : null };
 }

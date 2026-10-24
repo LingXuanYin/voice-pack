@@ -66,7 +66,7 @@
 //                   选项本身不是函数，在入口就抛同一个错；返回值要等挑完素材、算出变化以后才看得到，所以返回值写错是在转写、打标签之后才报。
 //                   作者写了变更说明、第一个版本、什么都没变（不发新版本）时不调它；报告里 changelogSource 仍是 'generated'
 //   maxErrorRate    收音校验的上限，省略用 lib/fidelity.mjs 的 DEFAULT_MAX_ERROR_RATE
-//   retryWait       (毫秒) => Promise：转写、打标签暂时出错、再试之前等多久（每段最多问 3 次，等 5 秒、15 秒，规则的正本是 lib/call-attempts.mjs）；不给就真的等。
+//   retryWait       (毫秒) => Promise：转写、打标签、试合成暂时出错、再试之前等多久（每段最多试 3 次，等 5 秒、15 秒，规则的正本是 lib/call-attempts.mjs）；不给就真的等。
 //                   app 传一个按「取消」就停的，测试传一个马上返回的。不是函数，在入口就抛 make_pack_input_invalid（field 是 retryWait）
 //   textLanguage    包里 SKILL.md 骨架（各节的标题和说明）用的语言：'zh'（省略就是它）或 'en'，调用方按作者的语言给（app 里是作者做包时的界面语言，命令行是 --text-language）；
 //                   试装和正式装、第一个版本和发新版本都用这一次给的，发新版本不看上一版是什么语言。别的值抛 make_pack_input_invalid（field 是 textLanguage），在花钱之前。
@@ -198,7 +198,7 @@ export async function makePack(env, input, options = {}) {
   const assemble = assembler({ context, changelog, material, idRandom: settings.idRandom });
 
   let made = await assemble();
-  const evaluated = await evaluatePack(env, made, byId, { enabled: settings.evaluate, concurrency, maxErrorRate, random: settings.random, externals: material.externals });
+  const evaluated = await evaluatePack(env, made, byId, { enabled: settings.evaluate, concurrency, maxErrorRate, random: settings.random, externals: material.externals, wait: settings.retryWait });
   steps.trial = evaluated.trial;
   const verification = verificationOf(evaluated.fidelity, { environment: input.environment ?? settings.environment ?? 'unspecified', models: evaluated.trial.models ?? [], now: settings.now ?? (() => new Date()) });
   if (verification !== null) made = await assemble({ id: made.id, verification: [verification] });

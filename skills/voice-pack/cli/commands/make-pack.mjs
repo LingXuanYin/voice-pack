@@ -59,8 +59,8 @@
 //   --adapter, --adapter-option, 官方适配器声明的简写和参数
 //                       同 dub、fidelity：模型从适配器接进来（统一的入口和合并规则只在 cli/adapters.mjs 写，适配器的约定见 adapters/README.md）。
 //                       环境没有 automatic-speech-recognition 或 speaker-verification 时，转写、说话人相似度量不了，要用的话再接一个有它的适配器。
-//                       适配器给了费用说明（billing）时，每次花钱的几步开始之前，在标准错误里说明各项能力最多调几次（--json 时不说）。转写、打标签暂时出错会自己再试
-//                       （每段最多问 3 次，规则只在 lib/call-attempts.mjs 写一份），多出来的上限各另起一行写明：这一次最多再加几次，实际调用不超过两项之和（盲听出错不重试，不在里面）。
+//                       适配器给了费用说明（billing）时，每次花钱的几步开始之前，在标准错误里说明各项能力最多调几次（--json 时不说）。转写、打标签、试合成暂时出错会自己再试
+//                       （每段最多问 3 次，规则只在 lib/call-attempts.mjs 写一份），多出来的上限各另起一行写明：这一次最多再加几次，实际调用不超过各项合起来的数（盲听出错不重试，不在里面）。
 //   --environment       验证记录里「在哪个环境测的」。不给：用了适配器就是适配器的名字（几个用 + 连起来，名字的取法见 cli/adapters.mjs 的 environmentName），没用适配器不记名字（unspecified）。
 //   --dry-run           只做不花钱的几步（认格式、查重、音质检查），说明各项能力最多调几次，不做包，不调任何所需能力，不写文件。
 //   --no-evaluate       不试合成、不量还原度。
@@ -89,7 +89,7 @@
 // 输出：给人看的报告（素材去向、转写、打标签、试合成、还原度、验证记录、还缺什么素材、每一段的标签和来源）。还原度照 lib/fidelity.mjs 文件头「怎么读这份报告」显示：
 //   量不了的一项报「量不了」并点名缺的能力，没听成的单独报并写明可以补做，都不是错误。
 //
-// 退出码：0 做完（有「量不了」「没听成」、试合成暂时出错的几条，包照样做出来了，报告里写明）；1 出错停下来（错误码在标准错误）；2 用法错误。
+// 退出码：0 做完（有「量不了」「没听成」、试合成暂时出错或作废的几条，包照样做出来了，报告里写明）；1 出错停下来（错误码在标准错误）；2 用法错误。
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   make_pack_input_unreadable   素材读不了：目录或 JSON 不存在、音频或 .json 或 .txt 读不了。details.file
@@ -340,24 +340,25 @@ function languageNote({ plan, segments, language }) {
 }
 
 /**
- * 有重试规则的两项能力（规则在 lib/call-attempts.mjs，数目在 plan.extraCalls），各自的说法：做的是什么（work）、再来叫什么（again）、
+ * 有重试规则的三项能力（转写、打标签、试合成；规则在 lib/call-attempts.mjs，数目在 plan.extraCalls），各自的说法：做的是什么（work）、再来叫什么（again）、
  * 上限怎么说（limit）。打标签那一项的总数是「打标签和盲听」（和各项最多调几次那一行同一个口径），盲听出错不重试，所以不在多出来的次数里，写明。
  */
 const RETRY_NOTE = {
   'automatic-speech-recognition': { work: '转写', again: '转写', limit: (extra, total) => `这一次最多再加 ${extra} 次，实际调用不超过 ${total} 次` },
   'audio-text-to-text': { work: '打标签', again: '听', limit: (extra, total) => `这一次最多再加 ${extra} 次（盲听出错不重试），打标签和盲听实际调用不超过 ${total} 次` },
+  'voice-cloning': { work: '试合成', again: '合成', each: '每条留出录音', limit: (extra, total) => `这一次最多再加 ${extra} 次，实际调用不超过 ${total} 次` },
 };
 
 /**
- * 暂时出错会再来的上限：转写、打标签各另起一行写明，写进费用说明和规划里。
- * 没有要转写、要打标签的片段，或者环境没有那项能力，那一项就没有这一行；两项都没有就是空数组。
+ * 暂时出错会再来的上限：转写、打标签、试合成各另起一行写明，写进费用说明和规划里。
+ * 没有要转写、要打标签、要试合成的，或者环境没有那项能力，那一项就没有这一行。
  */
 function retryNotes(plan) {
   const waits = RETRY_DELAYS_MS.map((ms) => `${ms / 1000} 秒`).join('、');
   return Object.entries(RETRY_NOTE).flatMap(([capability, note]) => {
     const extra = plan.extraCalls?.[capability] ?? 0;
     if (extra === 0) return [];
-    return [`${note.work}碰到服务暂时出错，每段最多再${note.again} ${MAX_ATTEMPTS - 1} 次（两次之前各等 ${waits}），${note.limit(extra, plan.calls[capability] + extra)}`];
+    return [`${note.work}碰到服务暂时出错，${note.each ?? '每段'}最多再${note.again} ${MAX_ATTEMPTS - 1} 次（两次之前各等 ${waits}），${note.limit(extra, plan.calls[capability] + extra)}`];
   });
 }
 
@@ -369,7 +370,7 @@ function costNote({ billing, plan, saveEvaluation, language }) {
   }
   for (const retry of retryNotes(plan)) lines.push(`  ${retry}`);
   if (language !== null) lines.push(`  语言：${language}`);
-  lines.push(`  转写和打标签以外，碰到服务出错的那一项会记成「没听成」，不自动重试${saveEvaluation ? '' : '；之后想补做，这次要加 --save-evaluation <新目录> 存下评测集'}`);
+  lines.push(`  转写、打标签和试合成以外，碰到服务出错的那一项会记成「没听成」，不自动重试${saveEvaluation ? '' : '；之后想补做，这次要加 --save-evaluation <新目录> 存下评测集'}`);
   return `${lines.join('\n')}\n`;
 }
 
@@ -389,6 +390,27 @@ function unusedNote(segment) {
   const codes = segment.details?.codes?.length > 0 ? `：${segment.details.codes.join('、')}` : '';
   const same = segment.details?.sameAs === undefined ? '' : `：同 ${segment.details.sameAs}`;
   return `${base}（${segment.reason}${codes}${same}）`;
+}
+
+/** 试合成的一句被作废的原因，给人看（lib/make-pack-trial.mjs 的 checkSynthesized 给的 codes）。 */
+const VOIDED_WHY = {
+  synthesized_mostly_silent: '几乎全是静音',
+  synthesized_too_long: '合成的时长比同一句的留出录音长得多',
+  synthesized_too_short: '合成的时长比同一句的留出录音短得多',
+};
+
+/** 试合成的一句没查到的原因，给人看（checkSynthesized 给的 reason）：没查到照旧量，报告写明原因。 */
+const UNCHECKED_WHY = {
+  runtime_missing: (check) => `环境缺运行时 ${check.runtime}，解不开合成出来的录音`,
+  undecodable: () => '合成出来的录音不是能认的音频格式，解不开',
+};
+
+/** 作废的一句：为什么（几条原因都写上），量到的静音占比和时长，同一句的留出录音时长（有的话）。 */
+function describeVoided(check) {
+  const why = check.codes.map((code) => VOIDED_WHY[code]).join('；');
+  const silence = check.silenceRatio === null ? '不足一个窗口，量不出静音占比' : `静音占比 ${check.silenceRatio}`;
+  const holdout = check.holdoutSec === undefined ? '' : `，同一句的留出录音 ${check.holdoutSec} 秒`;
+  return `${why}（${silence}，时长 ${check.durationSec} 秒${holdout}）`;
 }
 
 function describeSteps(steps) {
@@ -424,7 +446,23 @@ function describeSteps(steps) {
     lines.push(`调响度：${changed} 段调到了 ${loudness.targetLufs} LUFS（采样峰值不超过 ${loudness.peakCeilingDbfs} dBFS）${rest.length > 0 ? `；${rest.join('；')}` : ''}`);
   }
   const trial = steps.trial;
-  if (trial?.status === 'done') lines.push(`试合成：用 ${trial.items.length} 条留出录音试了一遍，合成出来 ${trial.synthesized} 条${trial.failed.length > 0 ? `；${trial.failed.length} 条服务暂时出错没合成出来（${trial.failed.map((entry) => entry.id).join('、')}），不进评测` : ''}`);
+  if (trial?.status === 'done') {
+    // retried 是为暂时出错多合成了几次，failed 是试满次数还没合成出来的（lib/make-pack-trial.mjs）；这两句和转写那一行同样的写法
+    const retried = trial.retried > 0 ? `（暂时出错，自动多合成了 ${trial.retried} 次）` : '';
+    const failed = trial.failed.length > 0 ? `；${trial.failed.length} 条服务暂时出错，试满 ${MAX_ATTEMPTS} 次也没合成出来（${trial.failed.map((entry) => entry.id).join('、')}），不进评测` : '';
+    // 合成出来的每一句量还原度之前先检查：作废的不进比值，逐条写明哪条、为什么、量到的数；没查到的照旧量，写明原因
+    const voided = trial.items.filter((item) => item.check?.status === 'voided');
+    const unchecked = trial.items.filter((item) => item.check?.status === 'unchecked');
+    const voidedText = voided.length > 0 ? `（其中 ${voided.length} 条作废）` : '';
+    lines.push(`试合成：用 ${trial.items.length} 条留出录音试了一遍，合成出来 ${trial.synthesized} 条${voidedText}${retried}${failed}`);
+    for (const item of voided) lines.push(`  作废：${item.id}，${describeVoided(item.check)}，不进比值`);
+    const byWhy = new Map();
+    for (const item of unchecked) {
+      const why = UNCHECKED_WHY[item.check.reason](item.check);
+      byWhy.set(why, [...(byWhy.get(why) ?? []), item.id]);
+    }
+    for (const [why, ids] of byWhy) lines.push(`  没查到：${ids.join('、')}，${why}，照旧量，进比值`);
+  }
   else if (trial?.status === 'skipped') {
     const why = { evaluate_false: '这次没让试（--no-evaluate）', no_holdout: '没有留出录音', capability_missing: `缺 ${trial.capability}`, runtime_missing: `缺运行时 ${trial.runtime}` }[trial.reason] ?? trial.reason;
     lines.push(`试合成：没做，${why}`);
@@ -501,7 +539,7 @@ function render(result, { output, evaluation, share, adapterArguments, cut, dupl
   const fidelity = report.fidelity;
   lines.push('');
   if (fidelity.status === 'skipped') {
-    const why = { no_trial: '试合成没做', no_generated: '一条合成都没出来', no_holdout: '没有留出录音', evaluate_false: '这次没让量（--no-evaluate）' }[fidelity.reason] ?? fidelity.reason;
+    const why = { no_trial: '试合成没做', no_generated: '一条合成都没出来', generated_voided: '合成出来的录音都作废了（见「试合成」）',no_holdout: '没有留出录音', evaluate_false: '这次没让量（--no-evaluate）' }[fidelity.reason] ?? fidelity.reason;
     lines.push(`还原度：没量（${why}）`);
   } else {
     const redoHint = evaluation === null

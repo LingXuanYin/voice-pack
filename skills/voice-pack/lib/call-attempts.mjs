@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写和打标签、长录音的转写、命令行和用这个库的 app（含 app 听设计试听）都用它
+// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写、打标签和试合成、长录音的转写、命令行和用这个库的 app（含 app 听设计试听）都用它
 // （它先是给转写写的，后来打标签也用它，所以名字不再只说转写）。规则一处写，调用方 import，不各抄一份（同 capability-calls.mjs 的 isServiceError）。
 //
 // 规则：
 //   - 每段最多试 MAX_ATTEMPTS（3）次。暂时出错（details.transient，lib/capability-calls.mjs 的 isServiceError）和 app 听设计试听时
 //     「转写里整句找不到」（在 app 里判断）都从这 3 次里出，不是各 3 次。
 //   - 暂时出错就再来：第 2 次之前等 RETRY_DELAYS_MS[0]（5 秒），第 3 次之前等 RETRY_DELAYS_MS[1]（15 秒）；最后一次失败以后不再等。
-//     3 次都暂时出错：转写的这一段没转成，做包把它记成 transcription_failed，用不上，页面照实说「稍后再做一次」；打标签的这一段没听成，记成 not_heard，不打标签，照实说。
+//     3 次都暂时出错：转写的这一段没转成，做包把它记成 transcription_failed，用不上，页面照实说「稍后再做一次」；打标签的这一段没听成，记成 not_heard，不打标签，照实说；
+//     试合成的这一条合成不出来，记在 trial.failed 里，不进评测，照实说。
 //   - 别的错（401、被服务商拦下 provider_blocked、参数错、认不了的语言、返回的形状不对）不重试，原样往上抛：重来也没用。
 //     回答不是固定格式（tag_answer_invalid）不是错误，是能力返回了一个读不懂的回答：打标签记成作废，同一段录音再问还是一样，不重试。
 //   - 多听的上限写进「确认费用」：N 段要调，最多 N 次，另外最多再加 extraAttempts(N)（2N）次，用户同意的是这个总数，实际调用不超过它
@@ -16,6 +17,7 @@
 // 谁用它（用法都是：调用方自己调能力，把「调一次」包成 ask 交给 callWithRetries）：
 //   转写（automatic-speech-recognition）   lib/make-pack-transcribe.mjs、lib/long-recording.mjs、app 听试听
 //   打标签（audio-text-to-text）           lib/segment-tags.mjs 的 tagSegment（options.attempts），lib/make-pack-tags.mjs 的 tagAll 给它 MAX_ATTEMPTS
+//   试合成（voice-cloning）                lib/make-pack-trial.mjs 的 envForTrial：每条留出录音的合成调用包一层
 //   不用它的：盲听（lib/fidelity.mjs，也调 audio-text-to-text）。盲听暂时出错记成「没听成」，事后由调用方补做（fidelity --redo），不在这条规则里
 //
 // 为什么是 3 次、5 秒和 15 秒：
