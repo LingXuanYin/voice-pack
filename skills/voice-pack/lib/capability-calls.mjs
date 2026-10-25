@@ -7,6 +7,8 @@
 //                                                  details.transient 为 true。谁来标是能力实现的事（适配器照自己的重试规则标），约定写在
 //                                                  adapters/README.md「出错的约定」，每项能力的签名在 vocab/capability-signatures.md「通用约定」。
 //                                                  没标的错（缺能力、参数错、401、返回的形状不对、普通的 Error……）都不是：照常往上抛，库不猜
+//   isTextRejected(error)                          能力抛的错是不是「只和这一次的文字有关」的拒绝：是 VoicePackError，details.textRejected 为 true
+//                                                  （谁来标是能力实现的事，约定同上，写在 vocab/capability-signatures.md「通用约定」）。配音据此把这一段记成失败、别的段照常做；没标的照常往上抛
 //   summarizeError(error)                          收进报告的错误摘要 { code, message, details }：details 没有就是 {}，不带 cause 和栈
 //   badResult(capability, problem, message?, extra?)  所需能力的返回不合约定：造一个 capability_result_invalid，调用方自己 throw。
 //                                                  problem 是问题的代码（text_missing……）或一句话，message 是说明（省略就用 problem），
@@ -20,6 +22,9 @@
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 
 export const isServiceError = (error) => isVoicePackError(error) && error.details?.transient === true;
+
+/** 只和这一次的文字有关的拒绝（details.textRejected 为 true，约定见 vocab/capability-signatures.md「通用约定」）。 */
+export const isTextRejected = (error) => isVoicePackError(error) && error.details?.textRejected === true;
 
 export const summarizeError = (error) => ({ code: error.code, message: error.message, details: error.details ?? {} });
 

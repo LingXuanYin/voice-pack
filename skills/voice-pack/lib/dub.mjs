@@ -52,11 +52,17 @@
 // 停顿有两个来源：台本标记 [pause …] 和舞台提示（（停顿 3 秒），一行里只有它时挂到前一句的后面，规则见 lib/line-hints.mjs）。同一处两样相加，
 // 加起来不超过 PAUSE_MAX_MS（tools/markup.mjs，[pause …] 的上限）；前一句的后面加后一句的前面（同一个缝）也不超过它，超过的从后一句的前面扣。
 //
-// 一段失败了怎么办：能力抛的错如果标了 details.transient（服务暂时出错，约定见 vocab/capability-signatures.md），这一段记成 failed
-// （unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；调用方可以事后用 only 重做。比下限短、并不了的那一段（第 5b 步）
-// 也记成 failed，但重做没有用，要改台本。别的错（401、参数错、
+// 一段失败了怎么办：能力抛的错如果标了 details.transient（服务暂时出错，约定见 vocab/capability-signatures.md），或者标了 details.textRejected
+// （只和这一次的文字有关，换一句就成，同一约定），这一段记成 failed（unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；
+// 调用方可以事后用 only 重做。比下限短、并不了的那一段（第 5b 步）也记成 failed，但重做没有用，要改台本。别的错（401、参数错、参考的问题、
 // 返回的形状不对……）一律停下来：不再开始新的段，等已经在做的段做完，错误原样往上抛。每一段做完（成功或失败）立刻交给 onUnit，
 // 所以停下来的时候，已经做完的不会丢。
+// 还有一道保护：还没有一句成功、已经有 TEXT_REJECTED_LIMIT（3）句被服务商拒了，也停下来：同样不再开始新的段、等在做的做完，然后抛 dub_text_rejected
+// （details.rejected 写明被拒的段和句子）。只数服务商拒的：能力调用了服务商，服务商拒了这句的文字（details.textRejected 为 true，code 不是 capability_input_invalid）。
+// 调用之前就查出来的（适配器自己的检查：空白、太长、有处理不了的字，code 是 capability_input_invalid，约定见 vocab/capability-signatures.md）不数：那是这句文字本身的问题，
+// 换一句就成，只记这一句失败，别的照常做。为什么这样分：服务商拒的，原因可能是参考或别的输入（服务商的话没说拦的是哪个输入）。要是内容审核拦的是参考，
+// 每一句都会这样被拒（这是推断，没有核过），所以要数，数到 3 句还没有一句成功，就停，不再白花钱。有过一句成功，参考就是能用的，之后再怎么被拒都不停：
+// 台本中间一段敏感的话，不该让整份停下。中间夹着暂时出错的段，不算进这个数。
 //
 // 环境缺东西：规划（planDub）不抛错，只在 capabilities 和 missingRuntimes 里说明缺什么；dubScript 在花钱之前抛：
 //   capability_missing  缺 voice-cloning（details.capability）
@@ -73,6 +79,8 @@
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 concurrency 不对。details.field
 //   dub_nothing_to_say       台本里没有可说的话（只有标记和提示）
+//   dub_text_rejected        还没有一句成功、已经有 3 句被服务商拒了（见上面「一段失败了怎么办」）：停下。details: { limit, rejected: [{ unit, line }] }，
+//                            被服务商拒的段（unit，同 only 的编号）和它的句子（line，同 lines[i].index），都从 0 起
 //   voice_unknown            台本里的 [voice:名字] 不是这个包。details: { voices（台本里不认识的名字）, pack: { id, name } }
 //   capability_result_invalid  voice-cloning 的返回不合约定（不是 { bytes, mimeType }、enhancers_used 报了没递给它的增强件）。details: { capability, problem }
 //   另外 pick_input_invalid（标签不对）、lexicon_invalid、script_*、file_missing（清单里列了、包里没有）等来自各自的模块。
@@ -88,7 +96,7 @@ import { pickReferences } from './reference-pick.mjs';
 import { lexiconRules, applyLexicon } from './pronunciation-lexicon.mjs';
 import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, runScript, audioForScript, HOOKS } from './pack-script.mjs';
 import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
-import { isServiceError, summarizeError, pool } from './capability-calls.mjs';
+import { isServiceError, isTextRejected, summarizeError, pool } from './capability-calls.mjs';
 
 export const FEATURE = 'dub';
 /** unit.error.code：比合成能力的下限短、并不了的那一段（第 5b 步）。make-pack 的试合成也认这个码，把它记成「没合成」，不是「暂时出错」。 */
@@ -96,6 +104,11 @@ export const TEXT_TOO_SHORT = 'text_too_short';
 const GUIDANCE_MAX = 2000;
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
+/**
+ * 还没有一句成功、已经有这么多句被服务商拒了（details.textRejected，调用之前查出来的不算），就停下（文件头「一段失败了怎么办」）。依据：要是参考真被拦了，每一句都会被拒，
+ * 这时最多白调这么多次；并发时，停的那一刻还在做的几句照常做完，所以实际还会多出并发数减一次。
+ */
+const TEXT_REJECTED_LIMIT = 3;
 // 配音的台本是明确拿来配音的：30 个字以内的括号一律是提示，词表里认不出的（（画外音））、有词表里的词可是还有别的字的（（笑话比赛））也拿掉、不念
 // （规则的正本是 lib/line-hints.mjs 的文件头；其他地方读到的括号，要整个都是词表里的提示才拿掉，其余当正文念）
 const REMOVE_UNRECOGNIZED = Object.freeze({ unrecognized: 'remove' });
@@ -292,6 +305,17 @@ const tooShortError = (spoken, min) => ({
   details: { chars: count(spoken), min },
 });
 
+/** 还没有一句成功、已经有 TEXT_REJECTED_LIMIT 句被服务商拒了（文件头「一段失败了怎么办」）：停下。rejected 是被服务商拒的段，按被拒的次序。 */
+const textRejectedStop = (rejected) =>
+  new VoicePackError('dub_text_rejected', `已经有 ${rejected.length} 句被服务商拒了，而且还没有一句成功：这可能不是这些句子的文字的问题，是参考或别的输入被拦了（那样每一句都会被拒）。已经停下，不再开始新的句子；已经做完的段照常交给 onUnit，被拒的段和句子见 details.rejected`, {
+    details: { limit: TEXT_REJECTED_LIMIT, rejected: rejected.map((unit) => ({ unit: unit.index, line: unit.line })) },
+  });
+/**
+ * 调用之前就查出来的文字错（适配器自己的检查：空白、太长、有处理不了的字；code 是 capability_input_invalid，约定见 vocab/capability-signatures.md）：
+ * 那是这句文字本身的问题，不是服务商拒的，所以不计数（文件头「一段失败了怎么办」）。
+ */
+const checkedBeforeCall = (error) => error.code === 'capability_input_invalid';
+
 // ---------------------------------------------------------------- 传给模型的说明
 
 /** 配音指引截到上限以内。尽量在段落边界截；返回 { text, truncated }。 */
@@ -461,7 +485,12 @@ export async function dubScript(env, pack, script, options = {}) {
     language: unit.pick.wanted.language, emotion: unit.pick.wanted.emotion, style: unit.pick.wanted.style, segment: unit.pick.segmentId,
   });
 
+  // 连着被拒的保护（TEXT_REJECTED_LIMIT，见文件头）：rejected 记服务商拒的段（调用之前查出来的不记）；还没有一句成功、被拒够了，就 stopped，之后开始的段都不做
+  const rejected = [];
+  let succeeded = false;
+  let stopped = false;
   async function runUnit(unit) {
+    if (stopped) return;
     let spoken = unit.spoken;
     for (const entry of scripts) {
       const output = await runScript(env, pack, entry, { feature: FEATURE, hook: 'text', unit: hookUnit(unit, spoken) });
@@ -484,10 +513,14 @@ export async function dubScript(env, pack, script, options = {}) {
     try {
       result = await clone(call);
     } catch (error) {
-      if (isServiceError(error)) {
+      if (isServiceError(error) || isTextRejected(error)) {
         unit.status = 'failed';
         unit.spoken = spoken;
         unit.error = summarizeError(error);
+        if (isTextRejected(error) && !checkedBeforeCall(error)) { // 服务商拒的这一句才数；调用之前查出来的只记这一句失败（见 checkedBeforeCall）
+          rejected.push(unit);
+          if (!succeeded && rejected.length >= TEXT_REJECTED_LIMIT) stopped = true; // 在 await onUnit 之前记下，这之后开始的段都不做
+        }
         await settings.onUnit?.(unit);
         return;
       }
@@ -500,6 +533,7 @@ export async function dubScript(env, pack, script, options = {}) {
       if (output.audio !== undefined) audio = { bytes: fromBase64(output.audio), mimeType: output.mimeType ?? audio.mimeType };
     }
     unit.status = 'ok';
+    succeeded = true;
     unit.spoken = spoken;
     unit.audio = audio;
     if (typeof result.model === 'string') unit.model = result.model;
@@ -508,6 +542,7 @@ export async function dubScript(env, pack, script, options = {}) {
   }
 
   await pool(todo, settings.concurrency, runUnit);
+  if (stopped) throw textRejectedStop(rejected); // 在做的几段都做完了（pool 等它们），再抛
 
   return { ok: plan.units.every((unit) => unit.status !== 'failed'), ...plan, enhancers: summarizeUse(offers, plan.units.filter((unit) => unit.status === 'ok'), plan.verification) };
 }

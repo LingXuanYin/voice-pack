@@ -15,7 +15,7 @@
 //          trial       steps.trial：{ status: 'done', capability, synthesized, failed, retried, models, items } 或 { status: 'skipped', reason, ... }。
 //                      synthesized 是合成出来的条数（作废的也算在内）；retried 是暂时出错多合成了几次；
 //                      items 每条留出录音一项：{ id, status: 'ok' | 'failed' | 'skipped', pick, model?, error?, check? }。
-//                      status 是 'failed' 的只有暂时出错、试满次数还没合成出来的（trial.failed 也是它们）；'skipped' 的是文字比字数下限短的：
+//                      status 是 'failed' 的是没合成出来的：暂时出错、试满次数还没合成出来的，和文字被拒的（details.textRejected，例如内容审核拒了这一句，lib/dub.mjs；不重试），都在 trial.failed 里（服务商拒了 3 句、还没有一句成功的例外，dub 停下，见下面「抛出的错误」）；'skipped' 的是文字比字数下限短的：
 //                      reason 是 'too_short'，chars 是它的字数，min 是下限，没有合成，不进比值，不算费用（和暂时出错、作废分开报）。
 //                      这一条的 pick 照常有（挑它的参考的理由，report 里还用它）。check 是合成出来的那一句的检查（checkSynthesized）：
 //                      checked（量了，正常）、voided（作废，codes 写明为什么，带量到的静音占比和时长）、unchecked（没查到，reason 写明为什么，照旧量）
@@ -32,7 +32,8 @@
 // 抛出的错误：
 //   make_pack_trial_mismatch  试合成规划出的段数和留出录音的条数不一样（配音把某条留出录音的文本切成了几段，或者合并了），没法把合成的音频和留出录音一条对一条地比：
 //                             做包停下来，不拿对不上的东西去量还原度。details: { holdouts, units }
-//   配音、还原度的错误（lib/dub.mjs、lib/fidelity.mjs 的文件头）原样往上抛；暂时出错的记在 trial.failed 和还原度报告里，不抛
+//   配音、还原度的错误（lib/dub.mjs、lib/fidelity.mjs 的文件头）原样往上抛；暂时出错、文字被拒的那一条记在 trial.failed 里，不抛。
+//   还没有一句成功、已经有 3 句被服务商拒了（dub_text_rejected，lib/dub.mjs「一段失败了怎么办」）也原样往上抛，做包停下来（可能是参考或别的输入被拦了，那一句的文字不一定有问题）
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';

@@ -77,6 +77,7 @@ export default async function createAdapter({ cwd, dir, env, options, use, Voice
 4. **不替会计费的调用重试**：库不重试能力调用（建任务、补全这类重试可能重复计费），只有两处例外：做包时每段录音最多转写 3 次、最多让听者（`audio-text-to-text`）打 3 次标签，暂时出错（`details.transient`）才再来（`lib/call-attempts.mjs`，盲听出错不在这里，它有自己的补做）。所以暂时出错要标对：标了 `transient` 的错，库会为同一段录音再调一次，没标的不会。多调的次数照最多的次数写进「确认费用」，用户同意的是上限；某个环境上量到的计费事实（失败的调用收不收费），写在那个环境的适配器里。适配器自己只重试不花钱、可以重复做的几步（例如只读的轮询），并且写明哪些重试、重试几次。
 5. **凭据的值不进任何地方**：报错的 `message`、`details`、日志、`cause` 里都不能有令牌、密钥的值。适配器读到的凭据只用来发请求。
 6. **服务商拦下了回答，要报成被拦下，不要当成回答交出去**：听音频的能力（`audio-text-to-text`）拿到的回答，如果是服务商用内容过滤拦下时的那句说明，抛 `provider_blocked`，不带 `transient`（同一段录音再问还是被拦）。认的是服务商的原话，所以只写在适配器里，通用层只认这个 code。写法和库怎么对待它，只在 `vocab/capability-signatures.md` 的 `audio-text-to-text` 一节。
+7. **只和这一次的文字有关的拒绝要标 `details.textRejected`**：能力因为这一次要说的文字被拒（字数太短或太长、有处理不了的字、服务商对这句话的说法），抛 `VoicePackError` 并在 `details.textRejected` 里写 `true`，不标 `transient`。约定和库（配音）怎么对待它，只写在 `vocab/capability-signatures.md` 的「通用约定」。适配器只标它认得出的：自己在碰服务之前的检查（字数、字符、空白，码用 `capability_input_invalid`，库据此不计数），或者服务商的原话（写进那个适配器的代码，并注明出处，码不用 `capability_input_invalid`，库据此计数）；认不出的不标。参考、凭据、参数、声音的描述这类对每一句都一样的错不标，它们照常停下。
 
 加载适配器时的错（`cli/adapters.mjs`）：`adapter_invalid`（`details.reason`：`load` 模块加载不了、`not_function` 没有默认导出的函数、`factory_failed` 工厂抛了错、`shape` 返回的形状不对、`manifest` 官方适配器的 `adapter.json` 写坏了）和 `adapter_not_found`（给的是名字，`adapters/` 里没有这个官方适配器，错误说明会教人自己的适配器要给路径；适配器里 `use(名字)` 的名字不对也是它）。工厂自己抛的 `VoicePackError` 原样往上，不包。
 

@@ -14,7 +14,7 @@
 | 文件 | 干什么 |
 |---|---|
 | `voice-pack.mjs` | `openVoicePack(source, { env, verify? })`：打开一个角色部分来用：读清单，按需取参考音频、读音词表、配音指引、增强件和脚本；外部资源取回来都核对，包内文件的大小和 SHA-256 在进入环境时查过，这里默认不再算（`verify: true` 才核对，发新版本读上一版用它）。`MIME_OF_FORMAT` 是音频格式到 MIME 类型的对应表，流程层只写这一处 |
-| `dub.mjs` | `planDub` 只规划（每句挑哪段参考、读音词表换了什么、停顿和语速的记录；不花钱），`dubScript` 规划再逐句合成：一段服务暂时出错记成 failed，别的段照做，别的错停下来 |
+| `dub.mjs` | `planDub` 只规划（每句挑哪段参考、读音词表换了什么、停顿和语速的记录；不花钱），`dubScript` 规划再逐句合成：一段服务暂时出错、或者文字被拒（`details.textRejected`）记成 failed，别的段照做；调用之前查出来的文字错（`capability_input_invalid`）不计数；服务商拒的连着 3 句、还没有一句成功的停下来（`dub_text_rejected`）；别的错停下来 |
 | `convert.mjs` | `convertAudio(env, pack, audio, options)`：变声和唱歌（`voice-conversion`、`singing-voice-conversion`）：把一段音频换成包的声音，内容、节奏、旋律不变 |
 | `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；没有任何标签的句子，环境有 `text-generation` 就让它判（一次收费的调用，只规划的调用方传 `judge: false` 不调） |
 | `line-hints.mjs` | 从一句台词读出提示（纯计算）：`readDirections` 读舞台提示（（耳语）、*笑*……）和停顿，`detectLanguages` 按文字系统认语种，`canonicalLabel`、`primaryLanguage`、`normalizeLanguage` 整理情绪、风格和语言标签。词表是 `../vocab/cues.json` |
