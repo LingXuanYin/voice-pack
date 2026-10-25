@@ -21,11 +21,13 @@
 //                                                 not_callable  值不是函数
 //                                                 not_provided  点名了，环境没有
 //                                               options.notWired 换掉 NOT_WIRED（测试用：真的签名表里现在没有「表里有、这里没接」的能力）
-//   checkAdapterLive(env, options)              每项能力用一段很短的输入真调一次，核对返回。options.capabilities 只调点名的，options.text 换掉说的话（默认 'Hello.'；
-//                                               只有 text-to-speech、voice-cloning 和两项变声用它，别的能力的输入是固定的，voice-design 的也是，见下），options.notWired 同上。
+//   checkAdapterLive(env, options)              每项能力用一段很短的输入真调一次，核对返回。options.capabilities 只调点名的，options.text 换掉说的话（默认 DEFAULT_TEXT；
+//                                               只有 text-to-speech 和 voice-cloning 用它，别的能力的输入是固定的，voice-design 的也是，见下），options.notWired 同上。
+//                                               options.voice：要音频输入的能力用的一段人声 { bytes, mimeType, text }，text 是它念的逐字文本（voice-cloning 的 ref_text 用它）。
+//                                               点名的里有要音频的、又没给 voice，抛 TypeError。
 //                                               一项抛了错就记下来，别的接着查。→ { ok, issues, results: [{ capability, status: 'passed' | 'failed' | 'skipped', reason?, calls, model, elapsedMs, issues, summary? }] }
 //   checkCapabilityResult(capability, result, options)   核对一项能力的一次返回（真调用用的就是它）。options.env：解码非 WAV 的音频要向它要 ffmpeg；
-//                                               options.durationSeconds：调用时给的音频有多长（VAD 的区间不能超出它）。→ Promise<{ issues, model, summary }>
+//                                               options.durationSeconds：调用时给的音频有多长（VAD 的区间不能超出它；不给就不查上界）。→ Promise<{ issues, model, summary }>
 //
 // 一个问题是 { level: 'error' | 'warning', code, message, details }。error 让 ok 变 false，warning 只提醒。code 是这一层的，谁报谁在这里写明：
 //   adapter_not_object        适配器的返回值不是对象
@@ -63,6 +65,10 @@
 // 所以不能借 options.text 的默认值；两句都只有基本平面的英文字符（有的服务处理不了增补平面的字），也远在见过的上限（试听文本 200、描述 500 个字符）以内。核对的是「返回的是音频」，
 // 和别的合成能力一样（mimeType 对得上字节、解得开、长度大于 0、model 有没有）。这一项会真的花钱（一次设计请求），所以也算进调用之前的费用说明（planLiveCalls 的 calls）。
 //
+// 要音频输入的能力（voice-cloning、两项变声、转写、音频问答、说话人比对、分离、说话区间检测）用 options.voice：调用方给的一段人声。命令行上给的是基础部分附带的那段
+// （lib/adapter-check-voice.wav，5–8 秒，一个人念一句话，逐字文本在旁边的 .json 里），这里不读文件（纯函数，app 的测试也直接调）。时长取自解码后的长度，VAD 的区间不能超出它。
+// 旧的 1 秒正弦音已经不用：有的模型的克隆参考至少要 3 秒，正弦音又不是人声（历史见 CHANGELOG 2.0.5）。
+//
 // @capability text-to-speech
 // @capability voice-cloning
 // @capability voice-design
@@ -83,7 +89,6 @@ import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { DECLARED_CAPABILITIES, hasCapability } from '../protocol/lib/env.mjs';
 import { isVoicePackError } from '../protocol/lib/errors.mjs';
 import { decodeAudio } from '../tools/audio-decode.mjs';
-import { encodeWav } from '../tools/wav.mjs';
 import { isServiceError } from './capability-calls.mjs';
 
 /** 适配器的返回值里认的键。 */
@@ -103,9 +108,8 @@ export const SKIP_REASONS = Object.freeze(['declaration', 'no_signature', 'not_w
  */
 export const NOT_WIRED = Object.freeze([]);
 
-const SAMPLE_RATE = 16000;
-const SAMPLE_SECONDS = 1;
-const DEFAULT_TEXT = 'Hello.';
+/** 真调用默认说的话。有的模型一次至少要 15 个字符，Hello. 这样的短句会被 HTTP 400 拒掉，所以不用它；options.text 可以换掉。 */
+export const DEFAULT_TEXT = 'Hello, this is a check.';
 /** voice-design 的固定输入（见文件头）：试听文本至少 15 个字符（见过的服务里最严的下限），描述短。 */
 const DESIGN_TEXT = 'This is a short audition of a designed voice.';
 const DESIGN_PROMPT = 'A calm adult woman with a warm, clear voice.';
@@ -254,12 +258,13 @@ export function checkAdapterStructure(adapter, { vocabulary = defaultVocabulary,
 
 // ---------------------------------------------------------------- 返回值的规则（真调用用）
 
-/** 一段很短的合成音频：1 秒、16 kHz、单声道、16 位的 WAV，一个 220 Hz 的音（不是静音：有的模型不收静音）。 */
-function sampleClip() {
-  const frames = SAMPLE_RATE * SAMPLE_SECONDS;
-  const samples = new Float32Array(frames);
-  for (let i = 0; i < frames; i++) samples[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / SAMPLE_RATE);
-  return { bytes: encodeWav({ sampleRate: SAMPLE_RATE, samples: [samples] }), mimeType: 'audio/wav' };
+/** 调用方给的人声：字节、MIME 类型、逐字文本（非空）都要有。 */
+const isVoice = (voice) => isPlainObject(voice) && voice.bytes instanceof Uint8Array && typeof voice.mimeType === 'string' && typeof voice.text === 'string' && voice.text.trim() !== '';
+
+/** 人声的时长（秒）：解码以后的长度。WAV 自己解，别的格式要环境的 ffmpeg；解不开就抛，让调用方去改给的人声。 */
+async function voiceSeconds(env, bytes) {
+  const decoded = await decodeAudio(env, bytes);
+  return decoded.frames / decoded.sampleRate;
 }
 
 /** 核对一段返回的音频：片段的形状、mimeType 和字节对得上、能解码、长度大于 0。 */
@@ -352,7 +357,7 @@ async function speechResult(capability, result, { durationSeconds }) {
     if (!isPlainObject(region) || !Number.isFinite(region.start_sec) || !Number.isFinite(region.end_sec)) return bad('speech_invalid', `speech[${index}] 必须是 { start_sec, end_sec }，两个都是数（秒）`);
     if (region.start_sec < 0 || !(region.end_sec > region.start_sec)) return bad('speech_invalid', `speech[${index}] 要满足 0 <= start_sec < end_sec，收到 ${region.start_sec}–${region.end_sec}`);
     if (region.start_sec < previousEnd) return bad('speech_invalid', `speech[${index}] 和前一个区间重叠，或者没有按先后排`);
-    if (region.end_sec > durationSeconds + SPEECH_TOLERANCE_SECONDS) return bad('speech_invalid', `speech[${index}] 的 end_sec（${region.end_sec}）超出了录音的时长（${durationSeconds} 秒）`);
+    if (durationSeconds !== undefined && region.end_sec > durationSeconds + SPEECH_TOLERANCE_SECONDS) return bad('speech_invalid', `speech[${index}] 的 end_sec（${region.end_sec}）超出了录音的时长（${durationSeconds} 秒）`);
     previousEnd = region.end_sec;
   }
   return { issues: [], summary: { kind: 'speech', regions: result.speech.length } };
@@ -362,19 +367,20 @@ async function speechResult(capability, result, { durationSeconds }) {
  * 每项有调用写法的能力：怎么用很短的输入调它（input），怎么核对返回（check）。参数名照 vocab/capability-signatures.md。
  * 签名表里没有写法的能力（text-to-audio、audio-watermarking、speech-to-speech、text-to-image、pronunciation-lexicon）不在这里，真调用跳过（no_signature）。
  * voice-design 的输入是固定的（文件头）：试听文本不能是 Hello. 这样的短句（有的服务要至少 15 个字符），所以不用 options.text。
+ * audio: true 的要音频输入，用 options.voice 的人声（checkAdapterLive 把它交给 input 的 clip，逐字文本交给 refText）。
  */
 const RULES = {
   'text-to-speech': { input: ({ text }) => ({ text }), check: (result, context) => synthesisResult('text-to-speech', result, context) },
-  'voice-cloning': { input: ({ text, clip }) => ({ text, ref_audio: clip, ref_text: text }), check: (result, context) => synthesisResult('voice-cloning', result, context) },
+  'voice-cloning': { audio: true, input: ({ text, clip, refText }) => ({ text, ref_audio: clip, ref_text: refText }), check: (result, context) => synthesisResult('voice-cloning', result, context) },
   'voice-design': { input: () => ({ text: DESIGN_TEXT, voice_prompt: DESIGN_PROMPT }), check: (result, context) => synthesisResult('voice-design', result, context) },
-  'voice-conversion': { input: ({ text, clip }) => ({ audio: clip, ref_audio: clip, ref_text: text }), check: (result, context) => synthesisResult('voice-conversion', result, context) },
-  'singing-voice-conversion': { input: ({ text, clip }) => ({ audio: clip, ref_audio: clip, ref_text: text }), check: (result, context) => synthesisResult('singing-voice-conversion', result, context) },
-  'audio-text-to-text': { input: ({ clip }) => ({ parts: [{ text: 'What do you hear? Answer in one short sentence.' }, { audio: clip }] }), check: textResult('audio-text-to-text') },
-  'automatic-speech-recognition': { input: ({ clip }) => ({ audio: clip }), check: (result, context) => transcriptionResult('automatic-speech-recognition', result, context) },
+  'voice-conversion': { audio: true, input: ({ clip, refText }) => ({ audio: clip, ref_audio: clip, ref_text: refText }), check: (result, context) => synthesisResult('voice-conversion', result, context) },
+  'singing-voice-conversion': { audio: true, input: ({ clip, refText }) => ({ audio: clip, ref_audio: clip, ref_text: refText }), check: (result, context) => synthesisResult('singing-voice-conversion', result, context) },
+  'audio-text-to-text': { audio: true, input: ({ clip }) => ({ parts: [{ text: 'What do you hear? Answer in one short sentence.' }, { audio: clip }] }), check: textResult('audio-text-to-text') },
+  'automatic-speech-recognition': { audio: true, input: ({ clip }) => ({ audio: clip }), check: (result, context) => transcriptionResult('automatic-speech-recognition', result, context) },
   'text-generation': { input: () => ({ prompt: 'Say hello in one short sentence.' }), check: textResult('text-generation') },
-  'speaker-verification': { input: ({ clip }) => ({ audio_a: clip, audio_b: clip }), check: (result, context) => similarityResult('speaker-verification', result, context) },
-  'audio-source-separation': { input: ({ clip }) => ({ audio: clip }), check: (result, context) => separationResult('audio-source-separation', result, context) },
-  'voice-activity-detection': { input: ({ clip }) => ({ audio: clip }), check: (result, context) => speechResult('voice-activity-detection', result, context) },
+  'speaker-verification': { audio: true, input: ({ clip }) => ({ audio_a: clip, audio_b: clip }), check: (result, context) => similarityResult('speaker-verification', result, context) },
+  'audio-source-separation': { audio: true, input: ({ clip }) => ({ audio: clip }), check: (result, context) => separationResult('audio-source-separation', result, context) },
+  'voice-activity-detection': { audio: true, input: ({ clip }) => ({ audio: clip }), check: (result, context) => speechResult('voice-activity-detection', result, context) },
 };
 
 /** 有调用写法的能力名（真调用会调的那些）。 */
@@ -387,7 +393,7 @@ export const LIVE_CAPABILITIES = Object.freeze(Object.keys(RULES));
  * @param {{ env?: object, durationSeconds?: number }} [options] env：解码非 WAV 的音频要向它要 ffmpeg（没有就当环境没有）；durationSeconds：调用时给的音频有多长
  * @returns {Promise<{ issues: object[], model: string | null, summary: object | null }>}
  */
-export async function checkCapabilityResult(capability, result, { env = { capabilities: {}, runtimes: {} }, durationSeconds = SAMPLE_SECONDS } = {}) {
+export async function checkCapabilityResult(capability, result, { env = { capabilities: {}, runtimes: {} }, durationSeconds } = {}) {
   if (!Object.hasOwn(RULES, capability)) throw new TypeError(`没有 ${capability} 的返回值规则：签名表（vocab/capability-signatures.md）里没有这一项的写法，或者有、但这个检查还没接上（NOT_WIRED）`);
   const { issues, summary } = await RULES[capability].check(result, { env, durationSeconds });
   let model = null;
@@ -437,15 +443,20 @@ export function planLiveCalls(env, { capabilities, vocabulary, notWired } = {}) 
 /**
  * 每项能力用一段很短的输入真调一次，核对返回。可能花钱：调用之前由调用方说明（planLiveCalls 给出调哪几项）。
  * @param {object} env 适配器或运行环境（有 capabilities；runtimes 里的 ffmpeg 用来解码非 WAV 的返回）
- * @param {{ capabilities?: string[], text?: string, vocabulary?: { capabilities: object }, notWired?: string[] }} [options]
+ * @param {{ capabilities?: string[], text?: string, voice?: { bytes: Uint8Array, mimeType: string, text: string }, vocabulary?: { capabilities: object }, notWired?: string[] }} [options]
+ *   voice：要音频输入的能力用的人声（文件头）；点名的里有要音频的又没给，抛 TypeError
  * @returns {Promise<{ ok: boolean, issues: object[], results: object[] }>}
  */
-export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT, vocabulary, notWired } = {}) {
+export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT, voice, vocabulary, notWired } = {}) {
   const shape = shapeIssues(env);
   if (hasErrors(shape)) return { ok: false, issues: shape, results: [] };
-  const clip = sampleClip();
+  const entries = liveEntries(env, capabilities, vocabulary, notWired);
+  const audio = entries.filter((entry) => entry.call !== undefined && RULES[entry.capability].audio === true).map((entry) => entry.capability);
+  if (audio.length > 0 && !isVoice(voice)) throw new TypeError(`要音频输入的能力（${audio.join('、')}）需要 options.voice：一段人声 { bytes, mimeType, text }，text 是它念的逐字文本（命令行上由 cli/commands/adapter.mjs 给）`);
+  const clip = audio.length > 0 ? { bytes: voice.bytes, mimeType: voice.mimeType } : undefined;
+  const durationSeconds = audio.length > 0 ? await voiceSeconds(env, voice.bytes) : undefined;
   const results = [];
-  for (const entry of liveEntries(env, capabilities, vocabulary, notWired)) {
+  for (const entry of entries) {
     const { capability } = entry;
     if (entry.skip !== undefined) {
       results.push({ capability, status: 'skipped', reason: entry.skip, calls: 0, model: null, elapsedMs: 0, issues: [] });
@@ -454,7 +465,7 @@ export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT,
     const started = Date.now();
     let result;
     try {
-      result = await entry.call(RULES[capability].input({ text, clip }));
+      result = await entry.call(RULES[capability].input({ text, clip, refText: voice?.text }));
     } catch (error) {
       const status = isVoicePackError(error) && Number.isInteger(error.details?.status) ? error.details.status : undefined;
       results.push({
@@ -465,7 +476,7 @@ export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT,
       });
       continue;
     }
-    const checked = await checkCapabilityResult(capability, result, { env, durationSeconds: SAMPLE_SECONDS });
+    const checked = await checkCapabilityResult(capability, result, { env, durationSeconds });
     results.push({ capability, status: hasErrors(checked.issues) ? 'failed' : 'passed', calls: 1, model: checked.model, elapsedMs: Date.now() - started, issues: checked.issues, ...(checked.summary === null ? {} : { summary: checked.summary }) });
   }
   return { ok: results.every((result) => result.status !== 'failed'), issues: [], results };

@@ -47,7 +47,8 @@
 //      和包的验证记录（verification），让人知道当前环境下效果会差多少。
 //
 // 语速和停顿：合成能力不收语速，停顿也不是合成出来的。unit.speed（0.85 放慢、1.15 加快、null 没要求）、unit.pauseBeforeMs、unit.pauseAfterMs、
-// unit.join 如实记着，拼接的人（命令行的使用者、ffmpeg）按它们处理；有语速要求时 notes 里有一条 speed_not_applied。
+// unit.join 如实记着，由拼接的人按它们处理；有语速要求时 notes 里有一条 speed_not_applied。拼接的人是拿到这些 unit、交出成品音频的那一方：命令行的使用者（自己用 ffmpeg 之类拼），
+// 或者适配器（它自己把音频拼好、直接返回成品的，就是拼接的人，unit.speed 归它处理，例如变速、保持音高，不能原样丢掉）。dub 本身不把 speed 传给合成能力。
 // 停顿有两个来源：台本标记 [pause …] 和舞台提示（（停顿 3 秒），一行里只有它时挂到前一句的后面，规则见 lib/line-hints.mjs）。同一处两样相加，
 // 加起来不超过 PAUSE_MAX_MS（tools/markup.mjs，[pause …] 的上限）；前一句的后面加后一句的前面（同一个缝）也不超过它，超过的从后一句的前面扣。
 //

@@ -195,6 +195,7 @@ await env.capabilities['text-generation']({
 
 - 库用 `hasCapability(env, 'style-instruction')` 问：有，配音就把配音指引（和这一句的舞台提示）通过 `instructions` 传给合成能力；没有，**整个不传 `instructions`** 这个键，照常合成，并在返回值里说明没传和原因（`unit.instructions.reason` 是 `style_instruction_missing`）。
 - 为什么用声明而不是看合成能力「收不收」`instructions`：合成能力的签名里 `instructions` 一直是可选的，没有 `style-instruction` 的环境会忽略它；这样「传了没效果」和「没传」分得开。
+- 不声明的理由写成「模型或服务做不到」，不要写成「我们的请求里没有 `instructions` 字段」：后者是适配器自己的构造，读的人会当成环境的结论（分工见 `../adapters/README.md`「只是声明的能力」）。
 
 ## 变声和唱歌
 

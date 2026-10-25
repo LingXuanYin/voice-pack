@@ -88,6 +88,7 @@
 | 文件 | 干什么 |
 |---|---|
 | `adapter-check.mjs` | 纯函数，浏览器、Node、Bun 都能跑，收的是一个适配器工厂返回的对象（或一个运行环境）：`checkAdapterShape`（容器和类型，命令行加载适配器时用）、`checkAdapterStructure`（结构检查，不调用任何能力）、`planLiveCalls` 和 `checkAdapterLive`（每项能力用一段很短的输入真调一次，核对返回）、`checkCapabilityResult`（核对一项能力的一次返回）。app 的测试可以直接调它，去验 app 自己组装的环境。问题的 code、真调用跳过一项能力的原因（`SKIP_REASONS`，其中 `no_signature` 和 `not_wired` 分别是签名表里没有、签名表里有而检查没接上）和每项能力的返回规则在文件头 |
+| `adapter-check-voice.wav`、`adapter-check-voice.json` | 真调用检查用的人声（数据，不是程序）：一个人念一句话，16 kHz 单声道 16 位 WAV，5–8 秒。旁边的 json 写着逐字文本（`text`，voice-cloning 的 `ref_text` 用它）、念的时候用的描述、来源和日期。`cli/commands/adapter.mjs` 读它，经 `checkAdapterLive` 的 `voice` 给进去；库不读文件 |
 | `adapter-skeleton.mjs` | 纯函数：`adapter new` 生成的骨架。`parseSignatureDoc` 从 `../vocab/capability-signatures.md` 读出每项能力的说明、调用写法和参数名（注释和函数的参数都从这里生成，不抄一份），`generateModuleSkeleton` 生成 module 骨架；别的种类由官方适配器自己的 `skeleton.mjs` 生成，拿到的上下文和返回的形状在文件头 |
 
 ## 几个模块共用的小东西

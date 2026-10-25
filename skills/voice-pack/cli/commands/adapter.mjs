@@ -12,9 +12,10 @@
 //     检查一个适配器。默认只看结构，不调用任何能力：能加载，返回的形状对，能力名都在能力词表里，能力是函数、只是声明的能力（style-instruction）是 true。
 //     --live：再把每项能力用一段很短的输入真调一次，核对返回（音频能解码、长度大于 0、mimeType 和字节对得上、有没有 model）。会真的调用模型，可能花钱、占算力：
 //             调之前在标准错误里说明调哪几项、各几次（适配器给了费用说明时也写上；--json 时不说，免得弄脏机器读的输出，计划在输出的 live.plan 里）。
-//             输入：一句 Hello.（或 --text 给的），要音频的给一秒的合成音频；声音设计（voice-design）是固定的、够长的试听文本加一句短描述（它不收 Hello. 这样的短句），
-//             不跟 --text 走（lib/adapter-check.mjs 文件头）。会花钱的项都算进这份说明。
-//     --capability 只查点名的（结构检查里点名的能力必须有；--live 只调点名的）；--text 换掉真调用时说的话（默认 Hello.）。不调用的能力写明原因：
+//             输入：一句 Hello, this is a check.（或 --text 给的；有的模型一次至少 15 个字符，所以不用 Hello.），要音频的给基础部分附带的一段人声
+//             （lib/adapter-check-voice.wav，5–8 秒，逐字文本在旁边的 .json 里，voice-cloning 的 ref_text 用它）；声音设计（voice-design）是固定的、够长的试听文本加一句短描述
+//             （它不收 Hello. 这样的短句），不跟 --text 走（lib/adapter-check.mjs 文件头）。会花钱的项都算进这份说明。
+//     --capability 只查点名的（结构检查里点名的能力必须有；--live 只调点名的）；--text 换掉真调用时说的话（默认 Hello, this is a check.）。不调用的能力写明原因：
 //             只是声明、签名表里还没有它的调用写法（no_signature）、签名表里有但检查还没接上（not_wired）、不在词表里、不是函数、适配器没提供。
 //     适配器要什么参数用 --adapter-option 给，官方适配器声明的专有参数也认（写法见 adapters/README.md「命令行上怎么给」）。适配器要放在第一个位置，一次只查一个。
 //     适配器加载不了（找不到、写坏了、起程序失败……）也是一次不通过的检查，不是命令出错：错误写在结果里。
@@ -28,13 +29,16 @@ import { fileURLToPath } from 'node:url';
 import vocabulary from '../../vocab/capabilities.json' with { type: 'json' };
 import { isVoicePackError } from '../../protocol/lib/errors.mjs';
 import { writeDirectory } from '../../protocol/cli/disk.mjs';
-import { checkAdapterLive, checkAdapterStructure, planLiveCalls } from '../../lib/adapter-check.mjs';
+import voiceInfo from '../../lib/adapter-check-voice.json' with { type: 'json' };
+import { checkAdapterLive, checkAdapterStructure, DEFAULT_TEXT, planLiveCalls } from '../../lib/adapter-check.mjs';
 import { NOT_IMPLEMENTED, parseSignatureDoc, skeletonContext } from '../../lib/adapter-skeleton.mjs';
 import { billingSentence, buildSkeleton, describeRequests, loadAdapter, quoteArgument, skeletonKinds, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, usageProblem } from '../input.mjs';
 
 const CLI_FILE = fileURLToPath(new URL('../../cli.mjs', import.meta.url));
 const SIGNATURES_FILE = fileURLToPath(new URL('../../vocab/capability-signatures.md', import.meta.url));
+/** 真调用检查用的人声（基础部分附带的，逐字文本在旁边的 adapter-check-voice.json 里）。 */
+const VOICE_FILE = fileURLToPath(new URL('../../lib/adapter-check-voice.wav', import.meta.url));
 const KINDS = skeletonKinds();
 const NEW_USAGE = `adapter new <目录> --capabilities <能力,…> [--kind ${KINDS.join('|')}] [--json]`;
 const CHECK_USAGE = 'adapter check <名字|模块文件|目录> [--live] [--capability <能力,…>] [--text <文字>] [--adapter-option <键=值>]... [--json]';
@@ -202,8 +206,9 @@ async function runCheck(args, ctx) {
     const env = { capabilities: adapter.capabilities ?? {}, runtimes: { ...ctx.env.runtimes, ...adapter.runtimes } }; // 返回的音频不是 WAV 时，解码要用命令自己的 ffmpeg
     const plan = planLiveCalls(env, { capabilities: wanted });
     if (plan.calls.length > 0 && !ctx.json) ctx.stderr(announcement(label, plan, adapter));
-    const outcome = await checkAdapterLive(env, { capabilities: wanted, ...(text === undefined ? {} : { text }) });
-    result.live = { ok: outcome.ok, text: text ?? 'Hello.', plan, results: outcome.results };
+    const voice = { bytes: new Uint8Array(fs.readFileSync(VOICE_FILE)), mimeType: 'audio/wav', text: voiceInfo.text };
+    const outcome = await checkAdapterLive(env, { capabilities: wanted, voice, ...(text === undefined ? {} : { text }) });
+    result.live = { ok: outcome.ok, text: text ?? DEFAULT_TEXT, plan, results: outcome.results };
     result.ok = result.ok && outcome.ok;
     lines.push(...liveLines(result.live));
   }
