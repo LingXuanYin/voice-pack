@@ -78,6 +78,12 @@
       "protocol": "2.0",
       "size": 1878660,
       "sha256": "669c2af7630d9855cec20e4026cf43d105308ed7a1d3aa484d4ddec1b0ad0c26"
+    },
+    {
+      "version": "2.0.4",
+      "protocol": "2.0",
+      "size": 1895693,
+      "sha256": "3aa552b9a48ab7c052e78126c1f33a448ae0b309617d9506bb8bc0cb0537ffdd"
     }
   ]
 }
