@@ -8,12 +8,16 @@
 //   @capability audio-text-to-text    盲听（lib/fidelity.mjs）；缺了盲听量不了
 // 试合成不用 text-generation：envForTrial 把它去掉，理由和核对见它的说明。
 //
-//   evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals })
+//   evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals, minChars })
 //        made 是 packRolePart 做出来的包，byId 是 Map<段名, 条目>，externals 是外部资源 [{ path, url, data }]（读外部资源时不联网，用手上的字节）。
+//        minChars 是合成能力一次至少要的字数（环境声明的，没有就不给）：留出录音的文字不够它的，不合成、不调用能力（见下 items）。
 //        返回 { trial, fidelity, evaluation, redo }：
 //          trial       steps.trial：{ status: 'done', capability, synthesized, failed, retried, models, items } 或 { status: 'skipped', reason, ... }。
 //                      synthesized 是合成出来的条数（作废的也算在内）；retried 是暂时出错多合成了几次；
-//                      items 每条留出录音一项：{ id, status: 'ok' | 'failed', pick, model?, error?, check? }。check 是合成出来的那一句的检查（checkSynthesized）：
+//                      items 每条留出录音一项：{ id, status: 'ok' | 'failed' | 'skipped', pick, model?, error?, check? }。
+//                      status 是 'failed' 的只有暂时出错、试满次数还没合成出来的（trial.failed 也是它们）；'skipped' 的是文字比字数下限短的：
+//                      reason 是 'too_short'，chars 是它的字数，min 是下限，没有合成，不进比值，不算费用（和暂时出错、作废分开报）。
+//                      这一条的 pick 照常有（挑它的参考的理由，report 里还用它）。check 是合成出来的那一句的检查（checkSynthesized）：
 //                      checked（量了，正常）、voided（作废，codes 写明为什么，带量到的静音占比和时长）、unchecked（没查到，reason 写明为什么，照旧量）
 //                      reason：evaluate_false（options.evaluate 是 false）、no_holdout、capability_missing（点名 capability）、runtime_missing（点名 runtime）
 //          fidelity    还原度报告（lib/fidelity.mjs 的 measureFidelity），或 { status: 'skipped', reason }（一条都没合成出来：no_generated；合成出来的都作废了：generated_voided）
@@ -35,7 +39,7 @@ import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { measureFidelity, planRedo } from './fidelity.mjs';
 import { openVoicePack, MIME_OF_FORMAT } from './voice-pack.mjs';
-import { dubScript } from './dub.mjs';
+import { dubScript, TEXT_TOO_SHORT } from './dub.mjs';
 import { SHORT_TEXT_MAX } from './manifest-limits.mjs';
 import { callWithRetries, spent } from './call-attempts.mjs';
 import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
@@ -137,7 +141,7 @@ function envForTrial(env, { wait, tries }) {
  * 解不开的没查到，照旧量。全部作废，还原度跳过，原因 generated_voided（量不出来是因为这些录音都作废了，不写验证记录）。
  * 评测的 evaluation.holdouts 只有没作废的那几条。
  */
-export async function evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals, wait }) {
+export async function evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals, wait, minChars }) {
   if (enabled === false) return skipped('evaluate_false');
   const { manifest, files } = made;
   const holdouts = manifest.holdout ?? [];
@@ -148,7 +152,8 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   const tries = [];
   let dubbed;
   try {
-    dubbed = await dubScript(envForTrial(env, { wait, tries }), pack, holdouts.map((entry) => ({ text: entry.text, labels: entry.tags })), { concurrency });
+    // joinShort: false，每条留出录音一段：短的不并进邻居（并了就对不上留出录音），不够下限的记成 text_too_short，不合成
+    dubbed = await dubScript(envForTrial(env, { wait, tries }), pack, holdouts.map((entry) => ({ text: entry.text, labels: entry.tags })), { concurrency, minChars, joinShort: false });
   } catch (error) {
     if (isVoicePackError(error, 'runtime_missing')) return skipped('runtime_missing', { runtime: error.details.runtime });
     throw error;
@@ -161,14 +166,19 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   for (const [index, unit] of dubbed.units.entries()) {
     checks.push(unit.status === 'ok' ? await checkSynthesized(env, unit.audio, holdoutSecondsOf(byId, holdouts[index].id)) : undefined);
   }
-  const items = dubbed.units.map((unit, index) => ({
-    id: holdouts[index].id,
-    status: unit.status,
-    pick: { segmentId: unit.pick.segmentId, rule: unit.pick.rule, matched: unit.pick.matched, missed: unit.pick.missed },
-    ...(unit.model === undefined ? {} : { model: unit.model }),
-    ...(unit.status === 'failed' ? { error: unit.error } : {}),
-    ...(checks[index] === undefined ? {} : { check: checks[index] }),
-  }));
+  const items = dubbed.units.map((unit, index) => {
+    const pick = { segmentId: unit.pick.segmentId, rule: unit.pick.rule, matched: unit.pick.matched, missed: unit.pick.missed };
+    // 文字不够字数下限：没合成，不是暂时出错（那是 failed），原因和字数写明
+    if (unit.status === 'failed' && unit.error?.code === TEXT_TOO_SHORT) return { id: holdouts[index].id, status: 'skipped', reason: 'too_short', chars: unit.error.details.chars, min: unit.error.details.min, pick };
+    return {
+      id: holdouts[index].id,
+      status: unit.status,
+      pick,
+      ...(unit.model === undefined ? {} : { model: unit.model }),
+      ...(unit.status === 'failed' ? { error: unit.error } : {}),
+      ...(checks[index] === undefined ? {} : { check: checks[index] }),
+    };
+  });
   const models = [...new Set(dubbed.units.filter((unit) => unit.status === 'ok').map((unit) => unit.model).filter((model) => typeof model === 'string'))];
   const trial = {
     status: 'done',

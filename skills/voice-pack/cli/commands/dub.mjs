@@ -39,8 +39,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { VoicePackError } from '../../protocol/lib/errors.mjs';
-import { planDub, dubScript } from '../../lib/dub.mjs';
-import { ADAPTER_USAGE, applyAdapters, billingSentence, maxCharsOf, takeAdapterArguments } from '../adapters.mjs';
+import { planDub, dubScript, TEXT_TOO_SHORT } from '../../lib/dub.mjs';
+import { ADAPTER_USAGE, applyAdapters, billingSentence, maxCharsOf, minCharsOf, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 import { openPackDirectory } from '../pack-directory.mjs';
 import { createScriptRuntimes } from '../script-runtimes.mjs';
@@ -135,7 +135,7 @@ function render(report, { packArgument, scriptArgument, out, planOnly }) {
   for (const note of report.notes) lines.push(`注意：${note.message}`);
   lines.push('', `共 ${report.units.length} 句：`);
   for (const unit of report.units) {
-    const where = unit.file !== undefined ? ` → ${path.join(out, unit.file)}` : unit.status === 'failed' ? `（失败：${unit.error.code}）` : unit.status === 'skipped' ? '（这次没做）' : '';
+    const where = unit.file !== undefined ? ` → ${path.join(out, unit.file)}` : unit.status === 'failed' ? (unit.error.code === TEXT_TOO_SHORT ? '（没合成：比合成能力的下限短）' : `（失败：${unit.error.code}）`) : unit.status === 'skipped' ? '（这次没做）' : '';
     lines.push(`  ${unit.number}. ${pickLabel(unit)}${where}`);
     lines.push(`     ${unit.spoken}`);
     // 停顿和语速：和 --json 里这一句的 pauseBeforeMs、pauseAfterMs、speed 说的是一回事（前面的停顿挂在后一句上，以前文字输出里看不到）
@@ -146,9 +146,15 @@ function render(report, { packArgument, scriptArgument, out, planOnly }) {
     ];
     if (timing.length > 0) lines.push(`     （${timing.join('，')}）`);
   }
-  const failed = report.units.filter((unit) => unit.status === 'failed');
+  // 服务暂时出错的，稍后用 --only 重做；比合成能力的下限短的重做没有用（台本要改），单独说
+  const failed = report.units.filter((unit) => unit.status === 'failed' && unit.error?.code !== TEXT_TOO_SHORT);
   if (failed.length > 0) {
     lines.push('', `失败 ${failed.length} 句（服务暂时出错，稍后重做）：node cli.mjs dub ${packArgument} ${scriptArgument} --out ${out} --only ${failed.map((unit) => unit.number).join(',')}`);
+  }
+  const tooShort = report.units.filter((unit) => unit.status === 'failed' && unit.error?.code === TEXT_TOO_SHORT);
+  if (tooShort.length > 0) {
+    const min = tooShort[0].error.details.min;
+    lines.push('', `没合成 ${tooShort.length} 句：比合成能力的下限（${min} 个字）短，和相邻的句子也并不成够长的一段：${tooShort.map((unit) => `第 ${unit.number} 句（${unit.error.details.chars} 个字）`).join('、')}。要改台本，让它们够长；重做没有用。`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -185,12 +191,14 @@ export async function run(args, ctx) {
   const script = readScript(ctx, scriptArgument);
   const labels = Object.fromEntries(LABEL_FLAGS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]]));
   const adapterMaxChars = maxCharsOf(adapters);
+  const adapterMinChars = minCharsOf(adapters); // 合成能力一次至少多少个字（环境声明的）：短句并段，并不了的记成没做（lib/dub.mjs 第 5b 步）
   const dubOptions = {
     ...(Object.keys(labels).length > 0 ? { labels } : {}),
     ...(options.instructions === undefined ? {} : { guidance: options.instructions }),
     ...(only === undefined ? {} : { only }),
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(options['max-chars'] !== undefined ? { maxChars: options['max-chars'] } : adapterMaxChars !== undefined ? { maxChars: adapterMaxChars } : {}),
+    ...(adapterMinChars !== undefined ? { minChars: adapterMinChars } : {}),
   };
   const render_ = (report, planOnly) => render(report, { packArgument, scriptArgument, out: options.out === undefined ? '' : path.resolve(ctx.cwd, options.out), planOnly });
 
@@ -220,7 +228,8 @@ export async function run(args, ctx) {
     onPlan: (plan) => {
       decorate(plan.units);
       if (billing !== null && !ctx.json) {
-        const count = only === undefined ? plan.units.length : only.length;
+        // 要调用的：规划里还是 planned 的（比下限短、并不了的没有调用，不算），只合成点名的几段（--only）时只算它们
+        const count = plan.units.filter((unit) => unit.status === 'planned' && (only === undefined || only.includes(unit.index))).length;
         ctx.stderr(costNote({ billing, plan, count }));
       }
     },

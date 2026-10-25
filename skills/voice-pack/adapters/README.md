@@ -42,7 +42,7 @@ export default async function createAdapter({ cwd, dir, env, options, use, Voice
 | `runtimes` | `{ 工具名: 函数 }`，命令行工具的实现，例如 `ffmpeg`；签名写在第一个调用它的模块的文件头（`@runtime`） | 并进 `runtimes` | 用命令已有的 |
 | `fetch` | 函数，形同标准 `fetch(input, init)` | 成为命令的网络读取（所有网络读取都走它） | 用命令已有的 |
 | `billing` | 非空字符串：一句话说明调用这个适配器的能力，**费用记在哪里**。写成能接在「要」后面的短语，例如「在某个账户上调用，费用记在使用者自己的账户上」 | 每次花钱的几步开始之前，命令把它写到标准错误里，开头是「要」，后面接各项能力调几次；`--json` 时不说，免得弄脏机器读的输出（`dub`、`convert`、`make-pack`、`fidelity` 都这样） | 命令不说费用：这个适配器不花钱，或者费用不归这里管 |
-| `limits` | `{ maxChars }`：**一次合成最多多少个字**，整数，不小于 10（同 `dub` 的 `--max-chars`） | `dub` 默认按它把长句子按句子切开；命令行上给的 `--max-chars` 盖过它 | 不限制：`dub` 不切（同没给 `--max-chars`） |
+| `limits` | `{ maxChars?, minChars? }`：`maxChars` 是**一次合成最多多少个字**，整数，不小于 10（同 `dub` 的 `--max-chars`）；`minChars` 是**合成能力一次至少要多少个字**，整数，不小于 1（码位，同 `minChars` 选项，见 `lib/dub.mjs`），例如 15 | `maxChars`：`dub` 默认按它把长句子按句子切开；命令行上给的 `--max-chars` 盖过它。`minChars`：`dub`、`make-pack` 的试合成按它并段，并不了的那一段记成失败、不调用能力（规则见 `lib/dub.mjs` 的文件头） | 不限制：`dub` 不切，也不并段（同没给 `--max-chars`） |
 | `previewCard` | `{ productName?, links?: { open?, make? } }`：这个适配器背后的**产品**，在分享文件的预览卡片（`index.html`）上写什么。`productName` 是「在 X 里打开」里的 X；`links.open` 是打开入口，`links.make` 是「做一个你自己的」入口，都是完整的 `http`、`https` 地址，里面的 `{id}` 换成包 ID。形状同核心层 `pack` 命令的 `--product-name`、`--open-link`、`--make-link` | `make-pack` 的 `--share-file` 打分享文件时把它交给卡片生成程序（`protocol/lib/preview-card.mjs` 不写任何产品的名字和地址，只收调用方给的值） | 卡片上没有产品名，也没有这两个入口（只用别的适配器，或者不用适配器，都是这样） |
 
 几个适配器一起给时怎么合并（同名的能力谁盖过谁、`billing` 怎么连起来、`limits` 和 `previewCard` 取谁的），**只在 `cli/adapters.mjs` 的文件头写一处**，这里不重述。

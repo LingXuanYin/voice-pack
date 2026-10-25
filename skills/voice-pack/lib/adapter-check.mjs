@@ -33,7 +33,7 @@
 //   container_not_object      capabilities 或 runtimes 不是对象。details.key
 //   fetch_not_function        fetch 不是函数
 //   billing_invalid           billing 不是非空字符串
-//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数。details.key
+//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数。details.key
 //   preview_card_invalid      previewCard 不是对象、里面有不认识的键、productName 或 links 里的链接不是非空字符串。details.key
 //   capability_unknown        能力名不在能力词表里（多半拼错了）。details.capability
 //   capability_not_function   能力的值不是函数。details.capability
@@ -88,8 +88,8 @@ import { isServiceError } from './capability-calls.mjs';
 
 /** 适配器的返回值里认的键。 */
 export const ADAPTER_KEYS = Object.freeze(['capabilities', 'runtimes', 'fetch', 'billing', 'limits', 'previewCard']);
-/** limits 里认的键。 */
-export const LIMIT_KEYS = Object.freeze(['maxChars']);
+/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）。 */
+export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars']);
 /** previewCard 里认的键，和 links 里认的键（形状同核心层 buildShareFile 的 card 选项）。 */
 export const PREVIEW_CARD_KEYS = Object.freeze(['productName', 'links']);
 export const PREVIEW_LINK_KEYS = Object.freeze(['open', 'make']);
@@ -110,6 +110,7 @@ const DEFAULT_TEXT = 'Hello.';
 const DESIGN_TEXT = 'This is a short audition of a designed voice.';
 const DESIGN_PROMPT = 'A calm adult woman with a warm, clear voice.';
 const MIN_MAX_CHARS = 10; // 同 lib/dub.mjs 的 maxChars
+const MIN_MIN_CHARS = 1; // 同 lib/dub.mjs 的 minChars：一个字也算下限
 /** VAD 给的区间末尾可以比录音长这么多秒（同 lib/long-recording.mjs）。 */
 const SPEECH_TOLERANCE_SECONDS = 0.05;
 /** mimeType（去掉参数、小写）对应 sniffAudio 认的格式。不在表里的，没法核对字节。 */
@@ -159,9 +160,12 @@ function shapeIssues(adapter) {
       for (const key of Object.keys(adapter.limits)) {
         if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits 里有不认识的键 ${JSON.stringify(key)}（只认 ${LIMIT_KEYS.join('、')}）`, { key }));
       }
-      const { maxChars } = adapter.limits;
+      const { maxChars, minChars } = adapter.limits;
       if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxChars 要是不小于 ${MIN_MAX_CHARS} 的整数（一次合成最多多少个字），收到 ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
+      }
+      if (minChars !== undefined && (!Number.isInteger(minChars) || minChars < MIN_MIN_CHARS)) {
+        issues.push(issue('error', 'limits_invalid', `limits.minChars 要是不小于 ${MIN_MIN_CHARS} 的整数（合成能力一次至少要多少个字），收到 ${JSON.stringify(minChars)}`, { key: 'minChars' }));
       }
     }
   }

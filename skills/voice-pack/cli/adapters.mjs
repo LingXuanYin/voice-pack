@@ -21,7 +21,8 @@
 //   applyAdapters(ctx, env, requests)     按先后接进环境 → { env, adapters: [{ label, spec, file, billing?, limits?, previewCard? }] }
 //   billingSentence(adapters)             费用说明的开头一句（给了 billing 的适配器各一句，「要……，也要……」，不带句末的标点），没有就是 null
 //   maxCharsOf(adapters)                  一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的，没有就是 undefined
-//   previewCardOf(adapters)               分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
+//   minCharsOf(adapters)                  合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的，没有就是 undefined（dub、make-pack 的 minChars 选项）
+//   previewCardOf(adapters)              分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
 //   environmentName(adapters)             验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来，没有就是 null
 //   describeRequests(requests)            把适配器的参数写回命令行的样子（补做提示用）
 //   quoteArgument(text)                   把一个参数写回命令行的样子：里面有空白或引号就加双引号（给人看的提示用）
@@ -333,6 +334,11 @@ export function billingSentence(adapters) {
 /** 一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
 export function maxCharsOf(adapters) {
   return adapters.findLast((adapter) => adapter.limits?.maxChars !== undefined)?.limits.maxChars;
+}
+
+/** 合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function minCharsOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.minChars !== undefined)?.limits.minChars;
 }
 
 /** 验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来；没有适配器是 null。 */

@@ -14,7 +14,8 @@
 //   { text, labels?, instructions? }   text 是带标记的台本；labels 是调用方给这一项的标签 { language, emotion, style, energy }；
 //                                      instructions 是调用方给这一项的说明（agent 读了配音指引以后想补的话）。
 // options：labels（给所有项的默认标签，项自己的盖过它）、concurrency（并发数，默认 2，1–8）、maxChars（一次合成最多多少个字，
-//   超过的按句子切开；默认不切）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped；失败后重做用）、
+//   超过的按句子切开；默认不切）、minChars（合成能力一次至少多少个字，环境声明的；默认没有下限，见第 5b 步）、joinShort（默认 true；
+//   false 就不并短句，只按下限认：试合成用，每条留出录音一段）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped；失败后重做用）、
 //   guidance（配音指引的正文；不给就用包里的，给 null 就不用）、onUnit（每一段做完，立刻交给它；见下）、
 //   onPlan（规划好、该核对的都核对过、还没开始合成的时候交给它；命令行用它说明费用，抛错就不合成。交出去的 plan 就是最后返回的那份，
 //   后面每一段的结果会写在它的 units 上）。
@@ -27,6 +28,13 @@
 //   3 每一段挑参考（lib/reference-pick.mjs）：调用方的标签、台本里的提示、text-generation 的判断、默认参考。理由放在 units[i].pick 里。
 //   4 读音词表（包里的 lexicon.pls，lib/pronunciation-lexicon.mjs）：换掉要说的话里的词，只换标记之间的文字。做不到的（音素）如实报在 lexicon.unapplied。
 //   5 超过 maxChars 的按句子切成几段，同一句的几段共用同一段参考。
+//   5b 有下限（minChars，环境声明的；没有就跳过这一步）：一段的字数不到下限，就和后面的一段并成一段（joinShort 为 true 时），直到够下限或者没有可并的。
+//     并段的规则和 app 的 fitMinLength 一样：同一个声音（台本里的声音都是这个包，voice_unknown 保证），
+//     中间没有停顿（前一段没有停顿要求，后一段前面也没有），语速一样；这里还多两条，因为配音的句子各有各的说明：参考段一样（同一个声音说这句的参考，见第 3 步），
+//     说明一样（第 7 步传给模型的那段话一样，不然并起来会丢掉其中一句的舞台提示）；前一段是被行内标签切开的（unit.join），不并，拼接的人要按它处理；
+//     并起来的字数不超过 maxChars（给了的话）。并起来的那一段记成 joined（{ line, part } 的列表，写明并了哪几句）。
+//     并完还不到下限的那一段，记成 failed（unit.error 是 { code: 'text_too_short', message: '比合成能力的下限短…', details: { chars, min } }），不调用能力，
+//     不是暂时出错，所以不标 transient：别的段照常做。下限是 1 或者没有，这一步什么都不做。
 //   6 脚本（lib/pack-script.mjs）：登记在 dub 功能名下的脚本，合成之前跑 text 钩子（可以改要说的话），合成之后跑 audio 钩子（可以换音频）。
 //     清单里没写 feature 的脚本不属于任何功能，不运行；规划和正式运行的 notes 里都有一条 scripts_without_feature 点名它们（字段见下面「说明」），
 //     说明这次没有运行和原因。
@@ -44,7 +52,8 @@
 // 加起来不超过 PAUSE_MAX_MS（tools/markup.mjs，[pause …] 的上限）；前一句的后面加后一句的前面（同一个缝）也不超过它，超过的从后一句的前面扣。
 //
 // 一段失败了怎么办：能力抛的错如果标了 details.transient（服务暂时出错，约定见 vocab/capability-signatures.md），这一段记成 failed
-// （unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；调用方可以事后用 only 重做。别的错（401、参数错、
+// （unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；调用方可以事后用 only 重做。比下限短、并不了的那一段（第 5b 步）
+// 也记成 failed，但重做没有用，要改台本。别的错（401、参数错、
 // 返回的形状不对……）一律停下来：不再开始新的段，等已经在做的段做完，错误原样往上抛。每一段做完（成功或失败）立刻交给 onUnit，
 // 所以停下来的时候，已经做完的不会丢。
 //
@@ -58,6 +67,7 @@
 //   guidance_truncated       配音指引超过 2000 个字，截短以后才传给模型。details: { chars, max }：指引原来有多少个字、最多传多少个字
 //   speed_not_applied        台本有语速要求，合成能力不收语速，要拼接的人按 unit.speed 处理。details: {}
 //   scripts_without_feature  包里有没登记功能的脚本，这次没有运行。details: { scripts }，scripts 是 [{ entry, runtime }]；note.scripts 是同一份，是原来的写法，留着给已有的读者
+//   short_lines_joined       有几段比合成能力的下限短，并进了相邻的句子（第 5b 步）。details: { min, units }：下限是多少个字，并成的段有几段
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 concurrency 不对。details.field
@@ -80,6 +90,8 @@ import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
 import { isServiceError, summarizeError, pool } from './capability-calls.mjs';
 
 export const FEATURE = 'dub';
+/** unit.error.code：比合成能力的下限短、并不了的那一段（第 5b 步）。make-pack 的试合成也认这个码，把它记成「没合成」，不是「暂时出错」。 */
+export const TEXT_TOO_SHORT = 'text_too_short';
 const GUIDANCE_MAX = 2000;
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
@@ -117,7 +129,10 @@ function readOptions(options) {
   if (options.onUnit !== undefined && typeof options.onUnit !== 'function') throw invalid('onUnit', 'onUnit 必须是函数');
   if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', 'onPlan 必须是函数');
   if (options.guidance !== undefined && options.guidance !== null && typeof options.guidance !== 'string') throw invalid('guidance', 'guidance 必须是字符串或 null');
-  return { concurrency, maxChars, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only };
+  const minChars = options.minChars ?? null;
+  if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars 必须是不小于 1 的整数（合成能力一次至少多少个字），或者不给');
+  if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort 必须是 true 或 false');
+  return { concurrency, maxChars, minChars, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only };
 }
 
 // ---------------------------------------------------------------- 台本 -> 一句一句
@@ -184,6 +199,8 @@ function buildLines(sources, defaults) {
 
 const CJK_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}。！？，、；：]$/u;
 const count = (text) => [...text].length;
+/** 两段要念的话接起来：前一段是中文、日文、韩文收尾或者中文标点收尾的，中间不加空格，别的加一个空格（分段和并段用同一个规则）。 */
+const joinSpoken = (before, after) => `${before}${CJK_END.test(before) ? '' : ' '}${after}`;
 
 /** 把超长的一句按逗号一类的停顿处再切；还超就硬切。 */
 function breakLong(sentence, max) {
@@ -214,7 +231,7 @@ function partsOf(text, max) {
   const parts = [];
   let current = '';
   for (const sentence of sentences) {
-    const joined = current === '' ? sentence : `${current}${CJK_END.test(current) ? '' : ' '}${sentence}`;
+    const joined = current === '' ? sentence : joinSpoken(current, sentence);
     if (current !== '' && count(joined) > max) {
       parts.push(current);
       current = sentence;
@@ -225,6 +242,54 @@ function partsOf(text, max) {
   if (current !== '') parts.push(current);
   return parts;
 }
+
+// ---------------------------------------------------------------- 短句并段（第 5b 步）
+
+/** 能不能把 before 和后面的 after 并成一段（规则见文件头第 5b 步）。 */
+function canJoin(before, beforeText, after, afterText, max) {
+  if (before.join !== undefined || before.pauseAfterMs !== 0 || after.pauseBeforeMs !== 0) return false;
+  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || beforeText !== afterText) return false;
+  return max === null || count(joinSpoken(before.spoken, after.spoken)) <= max;
+}
+
+/** 两段并成一段：要念的话接起来；停顿和 join 跟着两头的位置走；记下并了哪几句（joined）。原文 text 同一句的几段（分段的）不重复。 */
+function joinedUnit(before, after) {
+  const members = before.joined ?? [{ line: before.line, part: before.part }];
+  return {
+    ...before,
+    spoken: joinSpoken(before.spoken, after.spoken),
+    text: before.line === after.line ? before.text : joinSpoken(before.text, after.text),
+    pauseAfterMs: after.pauseAfterMs,
+    joined: [...members, { line: after.line, part: after.part }],
+    ...(after.join === undefined ? {} : { join: after.join }),
+  };
+}
+
+/**
+ * 短句并段：前一段不到下限，就并进后面的一段，直到够下限或者没有可并的（和 app 的 fitMinLength 一样的走法）。texts 是每一段的说明全文（instructionTexts），跟着段走。
+ * @returns {{ units: object[], texts: (string|null)[] }} 段的编号按并完以后的次序重排（index）
+ */
+function joinShortUnits(units, texts, { min, max }) {
+  const out = [];
+  const outTexts = [];
+  units.forEach((unit, at) => {
+    const last = out.length - 1;
+    if (last >= 0 && count(out[last].spoken) < min && canJoin(out[last], outTexts[last], unit, texts[at], max)) {
+      out[last] = joinedUnit(out[last], unit);
+      return;
+    }
+    out.push({ ...unit });
+    outTexts.push(texts[at]);
+  });
+  return { units: out.map((unit, index) => ({ ...unit, index })), texts: outTexts };
+}
+
+/** 比下限短、并不了的那一段的错。不是暂时出错：不标 transient，不重做（见文件头第 5b 步）。 */
+const tooShortError = (spoken, min) => ({
+  code: TEXT_TOO_SHORT,
+  message: `这一段比合成能力的下限短：只有 ${count(spoken)} 个字，下限是 ${min} 个字，没有合成`,
+  details: { chars: count(spoken), min },
+});
 
 // ---------------------------------------------------------------- 传给模型的说明
 
@@ -278,8 +343,8 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
   const offers = pack.enhancers('voice-cloning');
   const scripts = pack.scripts(FEATURE);
 
-  const units = [];
-  const instructionTexts = [];
+  let units = [];
+  let instructionTexts = [];
   for (const line of lines) {
     const replaced = applyLexicon(line.text, rules);
     for (const replacement of replaced.replacements) {
@@ -314,6 +379,15 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
         enhancers: { offered: offers.map((offer) => offer.id), used: [] },
       });
     });
+  }
+  // 5b：有下限的，短句并段，并不了的那一段记成 failed（不调用能力，见文件头）。没有下限就什么都不做
+  if (settings.minChars !== null) {
+    const grouped = settings.joinShort ? joinShortUnits(units, instructionTexts, { min: settings.minChars, max: settings.maxChars }) : { units, texts: instructionTexts };
+    units = grouped.units;
+    instructionTexts = grouped.texts;
+    for (const unit of units) if (count(unit.spoken) < settings.minChars) { unit.status = 'failed'; unit.error = tooShortError(unit.spoken, settings.minChars); }
+    const joined = units.filter((unit) => unit.joined !== undefined).length;
+    if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个说明、同一个语速，中间没有停顿）`, details: { min: settings.minChars, units: joined } });
   }
   if (units.some((unit) => unit.speed !== null)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着台本要求的语速（0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
   const unregistered = scriptsWithoutFeature(pack.scripts());
@@ -371,11 +445,13 @@ export async function dubScript(env, pack, script, options = {}) {
   // 花钱之前把该有的都核对好：能力、脚本的运行时、会用到的参考音频
   const clone = requireCapability(env, 'voice-cloning');
   assertScriptRuntimes(env, pack.scripts(FEATURE), FEATURE);
-  const todo = plan.units.filter((unit) => only === null || only.has(unit.index));
-  for (const unit of plan.units) if (!todo.includes(unit)) unit.status = 'skipped';
+  // 规划里已经记成 failed 的（比下限短、并不了的）不调用能力：不进要做的，也不标成 skipped
+  const todo = plan.units.filter((unit) => unit.status === 'planned' && (only === null || only.has(unit.index)));
+  for (const unit of plan.units) if (unit.status === 'planned' && !todo.includes(unit)) unit.status = 'skipped';
   const references = new Map();
   for (const segmentId of new Set(todo.map((unit) => unit.pick.segmentId))) references.set(segmentId, await pack.referenceClip(segmentId));
   await settings.onPlan?.(plan); // 花钱之前：该核对的都核对过了，一次合成都还没发生；调用方在这里说明费用、检查输出位置，抛错就停
+  for (const unit of plan.units) if (unit.status === 'failed') await settings.onUnit?.(unit); // 规划时就做完的（比下限短）：交出去，和别的段一样
 
   const offers = pack.enhancers('voice-cloning');
   const scripts = pack.scripts(FEATURE);
@@ -389,6 +465,14 @@ export async function dubScript(env, pack, script, options = {}) {
     for (const entry of scripts) {
       const output = await runScript(env, pack, entry, { feature: FEATURE, hook: 'text', unit: hookUnit(unit, spoken) });
       if (output.text !== undefined) spoken = output.text;
+    }
+    // 脚本的 text 钩子可能把要说的话改短了：比下限短的，不调用能力（和规划时一样，记成 failed）
+    if (settings.minChars !== null && count(spoken) < settings.minChars) {
+      unit.status = 'failed';
+      unit.spoken = spoken;
+      unit.error = tooShortError(spoken, settings.minChars);
+      await settings.onUnit?.(unit);
+      return;
     }
     const { segment, clip } = references.get(unit.pick.segmentId);
     const call = { text: spoken, ref_audio: clip, ref_text: segment.text };

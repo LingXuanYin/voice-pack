@@ -121,7 +121,7 @@ import { checkDuplicates, materialOfInput, materialOfPack } from '../../lib/dupl
 import { assertFresh, isPlainObject, parseArgs, readBytes, readText, usageProblem } from '../input.mjs';
 import { readAudioFile, isAudioFileName } from '../audio-files.mjs';
 import { describeDuplicateCheck, readSourcePack } from '../source-pack.mjs';
-import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, environmentName, previewCardOf, takeAdapterArguments } from '../adapters.mjs';
+import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, environmentName, minCharsOf, previewCardOf, takeAdapterArguments } from '../adapters.mjs';
 import { EVALUATION_FILE, FIDELITY_REPORT_FILE, evaluationSetFiles } from '../evaluation-set.mjs';
 import { fixed2, renderFidelityReport } from '../fidelity-report.mjs';
 
@@ -454,7 +454,11 @@ function describeSteps(steps) {
     const voided = trial.items.filter((item) => item.check?.status === 'voided');
     const unchecked = trial.items.filter((item) => item.check?.status === 'unchecked');
     const voidedText = voided.length > 0 ? `（其中 ${voided.length} 条作废）` : '';
-    lines.push(`试合成：用 ${trial.items.length} 条留出录音试了一遍，合成出来 ${trial.synthesized} 条${voidedText}${retried}${failed}`);
+    // 文字不够合成能力的下限的（status 是 skipped）：没合成，不算试了一遍，逐条写明字数和下限（lib/make-pack-trial.mjs）
+    const tooShort = trial.items.filter((item) => item.status === 'skipped');
+    const tooShortText = tooShort.length > 0 ? `（另 ${tooShort.length} 条比合成能力的下限短，没有合成）` : '';
+    lines.push(`试合成：用 ${trial.items.length - tooShort.length} 条留出录音试了一遍，合成出来 ${trial.synthesized} 条${voidedText}${tooShortText}${retried}${failed}`);
+    for (const item of tooShort) lines.push(`  没合成：${item.id}，比合成能力的下限短（${item.chars} 个字，下限 ${item.min} 个字），不进比值，不算费用`);
     for (const item of voided) lines.push(`  作废：${item.id}，${describeVoided(item.check)}，不进比值`);
     const byWhy = new Map();
     for (const item of unchecked) {
@@ -637,6 +641,7 @@ export async function run(args, ctx) {
   const { env, adapters } = await applyAdapters(ctx, ctx.env, taken.requests);
   const billing = billingSentence(adapters);
   const environment = options.environment ?? environmentName(adapters);
+  const minChars = minCharsOf(adapters); // 合成能力一次至少多少个字（环境声明的）：影响配音和试合成，见 lib/make-pack.mjs 的 minChars
 
   // 查重（给了 --source-pack）：新包的文字和录音都定下了，花钱的几步还没开始，查出来就不用白花。来源包只在这里读，查完不留它的任何标识
   let duplicateCheck = null;
@@ -676,6 +681,7 @@ export async function run(args, ctx) {
     ...(options['text-language'] === undefined ? {} : { textLanguage: options['text-language'] }),
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(environment === null ? {} : { environment }),
+    ...(minChars === undefined ? {} : { minChars }),
     onPlan: (plan) => {
       if (ctx.json) return;
       const language = languageNote({ plan, segments, language: options.language });

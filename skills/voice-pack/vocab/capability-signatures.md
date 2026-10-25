@@ -48,6 +48,7 @@ await env.capabilities['voice-cloning']({
 - `ref_text` 是参考音频的逐字文本。用不上的环境可以忽略它。
 - `instructions`：环境有 `style-instruction` 才能按说明念；没有就**忽略**（别把它当成别的意思）。配音指引要不要传 `instructions`，先看环境有没有 `style-instruction`，见下面「怎么念」和 `lib/dub.mjs`。
 - `enhancers`：可选，包里服务这项能力的增强件，用法见下面「增强件」。返回值里可以多一项 `enhancers_used`。
+- **字数下限**：环境可以声明这项能力一次至少要多少个字（适配器的 `limits.minChars`，见 `../adapters/README.md`）。库据此在合成之前并段（`lib/dub.mjs` 文件头第 5b 步），并不了的那一段记成失败，不调用能力；适配器自己不拦短文字，库不把它送进来。
 
 ### `voice-design`
 

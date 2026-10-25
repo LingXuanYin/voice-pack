@@ -57,6 +57,8 @@
 //   now             () => Date，验证记录的日期
 //   environment     验证记录里的环境名，例如适配器的名字（命令行上是 cli/adapters.mjs 的 environmentName）
 //   holdoutRatio, maxHoldout, maxReferences, minHoldoutTokens, maxSynthesisChars   挑素材的参数，默认值和规则见 lib/pack-material.mjs
+//   minChars        合成能力一次至少要多少个字（环境声明的：命令行上是适配器的 limits.minChars，app 是 contract 的 minTextChars）。给了，规划和试合成都按它算：
+//                   留出录音里文字不够的不合成、不算费用，报告的 trial.items 里写明「比合成能力的下限短」（lib/dub.mjs、lib/make-pack-trial.mjs）；不给就没有下限
 //   thresholds      音质检查的阈值（tools/audio-quality.mjs 的 judgeReference 的写法），省略用默认
 //   loudness        调响度（规则在 lib/make-pack-loudness.mjs 的文件头）：省略或 true 用默认目标，false 不调，{ targetLufs?, peakCeilingDbfs?, limiter? } 改目标、上限和限幅器（limiter: false 关掉限幅器，回到只加增益；{ maxDb } 改最多压多少 dB）。写错抛 make_pack_input_invalid（field 是 loudness）
 //   concurrency     调能力的并发数，1–8，默认 2
@@ -198,7 +200,7 @@ export async function makePack(env, input, options = {}) {
   const assemble = assembler({ context, changelog, material, idRandom: settings.idRandom });
 
   let made = await assemble();
-  const evaluated = await evaluatePack(env, made, byId, { enabled: settings.evaluate, concurrency, maxErrorRate, random: settings.random, externals: material.externals, wait: settings.retryWait });
+  const evaluated = await evaluatePack(env, made, byId, { enabled: settings.evaluate, concurrency, maxErrorRate, random: settings.random, externals: material.externals, wait: settings.retryWait, minChars: settings.minChars });
   steps.trial = evaluated.trial;
   const verification = verificationOf(evaluated.fidelity, { environment: input.environment ?? settings.environment ?? 'unspecified', models: evaluated.trial.models ?? [], now: settings.now ?? (() => new Date()) });
   if (verification !== null) made = await assemble({ id: made.id, verification: [verification] });

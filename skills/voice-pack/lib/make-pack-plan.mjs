@@ -13,8 +13,10 @@
 //       extraCalls }      除了 calls 以外，有重试规则的能力最多还会多调几次：转写、打标签和试合成，每段（每条留出录音）最多再试 2 次（lib/call-attempts.mjs），
 //                         所以是 2 × 要转写的段数、2 × 要打标签的段数、2 × 留出录音的条数（盲听那几次不在里面：盲听出错不重试）；别的能力出错不自动重试，这里没有它们。
 //                         用户在第一次花钱之前同意的是 calls 加 extraCalls，实际调用不超过这个总数
-//   是上界：转写补不出文本的、标签定下来的、挑不出这么多留出录音的，实际会少。settings 是 readOptions 的结果（用到 evaluate），
+//   是上界：转写补不出文本的、标签定下来的、挑不出这么多留出录音的，实际会少。settings 是 readOptions 的结果（用到 evaluate、minChars），
 //   materialOptions 是挑素材的选项（lib/make-pack-input.mjs 的 materialOptionsOf）。
+//   有字数下限（settings.minChars，环境声明的）时，留出录音里文字不够下限的不合成、不算费用（lib/make-pack-trial.mjs）：合成、评测、盲听的次数只算
+//   能合成的那几条（synthesizable）。挑留出录音的时候还不知道是哪几条，所以按能用的段里文字够下限的数（没有文字、要转写的算作够）：还是上界。
 //
 // 读条目的：unused、text、previous、labels；不写条目。
 //
@@ -30,7 +32,7 @@ import { extraAttempts } from './call-attempts.mjs';
  * 不花钱的几步做完以后，各项能力最多要调几次。是上界：转写补不出文本的、标签定下来的、挑不出这么多留出录音的，实际会少。
  *   转写      没有文本的片段，一段一次；暂时出错的段每段最多再转写 2 次，那几次不在 calls 里，在 extraCalls 里（lib/call-attempts.mjs）
  *   打标签    情绪或风格没给齐的片段，一段一次；暂时出错的段每段最多再问 2 次，那几次不在 calls 里，在 extraCalls 里（lib/call-attempts.mjs），盲听的不算
- *   合成      每条留出录音一次；暂时出错的那条每条留出录音最多再合成 2 次，那几次在 extraCalls 里（lib/call-attempts.mjs）
+ *   合成      每条能合成的留出录音（文字够字数下限的，没有下限就是全部）一次；暂时出错的那条每条留出录音最多再合成 2 次，那几次在 extraCalls 里（lib/call-attempts.mjs）
  *   盲听      每条留出录音问两遍（lib/fidelity.mjs）
  *   说话人相似度  真录音（参考加留出录音）两两算一次，再加每条留出录音和它合成出来的录音比一次；挑最典型的默认段另加参考之间两两算一次
  *                 （参考最多是能用的段数和 maxReferences 里小的那个；默认段沿用的其实不算，这里按最多算）
@@ -45,6 +47,9 @@ export function buildPlan(env, items, settings, materialOptions) {
   const carriedHoldouts = candidates.filter((item) => item.previous === 'holdout').length;
   const holdouts = Math.max(plannedHoldouts(usable.length, materialOptions), carriedHoldouts);
   const evaluating = settings.evaluate !== false && holdouts > 0;
+  // 留出录音里能合成的（文字够字数下限的，见文件头；没有下限就是全部）：合成、盲听、相似度只对这几条做
+  const minChars = settings.minChars ?? null;
+  const synthesizable = minChars === null ? holdouts : Math.min(holdouts, usable.filter((item) => !hasWords(item.text) || [...item.text].length >= minChars).length);
   // 挑最典型的默认段：参考之间两两量（参考最多是能用的段数和参考上限里小的那个）
   const referenceCap = Math.min(usable.length, materialOptions?.maxReferences ?? DEFAULTS.maxReferences);
   const typicalPairs = can('speaker-verification') ? (referenceCap * (referenceCap - 1)) / 2 : 0;
@@ -56,14 +61,14 @@ export function buildPlan(env, items, settings, materialOptions) {
     capabilities: Object.fromEntries(['automatic-speech-recognition', 'audio-text-to-text', 'voice-cloning', 'speaker-verification'].map((name) => [name, can(name)])),
     calls: {
       'automatic-speech-recognition': can('automatic-speech-recognition') ? textless.length : 0,
-      'audio-text-to-text': can('audio-text-to-text') ? taggable.length + (evaluating ? 2 * holdouts : 0) : 0,
-      'voice-cloning': evaluating && can('voice-cloning') ? holdouts : 0,
-      'speaker-verification': (evaluating && can('voice-cloning') && can('speaker-verification') ? (usable.length * (usable.length - 1)) / 2 + holdouts : 0) + typicalPairs,
+      'audio-text-to-text': can('audio-text-to-text') ? taggable.length + (evaluating ? 2 * synthesizable : 0) : 0,
+      'voice-cloning': evaluating && can('voice-cloning') ? synthesizable : 0,
+      'speaker-verification': (evaluating && can('voice-cloning') && can('speaker-verification') ? (usable.length * (usable.length - 1)) / 2 + synthesizable : 0) + typicalPairs,
     },
     extraCalls: {
       'automatic-speech-recognition': can('automatic-speech-recognition') ? extraAttempts(textless.length) : 0,
       'audio-text-to-text': can('audio-text-to-text') ? extraAttempts(taggable.length) : 0,
-      'voice-cloning': evaluating && can('voice-cloning') ? extraAttempts(holdouts) : 0,
+      'voice-cloning': evaluating && can('voice-cloning') ? extraAttempts(synthesizable) : 0,
     },
   };
 }
