@@ -28,7 +28,7 @@ import { VoicePackError } from './errors.mjs';
  * 用 hasCapability 问有没有，不用 requireCapability 去取（没有函数可取）。适配器的检查（lib/adapter-check.mjs）、骨架生成（lib/adapter-skeleton.mjs）
  * 和适配器本身（约定见 adapters/README.md「只是声明的能力」）都按这一份名单认，名单只在这里写。
  */
-export const DECLARED_CAPABILITIES = Object.freeze(['style-instruction']);
+export const DECLARED_CAPABILITIES = Object.freeze(['style-instruction', 'style-cues']);
 
 const hasOwn = (obj, name) => Object.prototype.hasOwnProperty.call(obj, name);
 const isContainer = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);

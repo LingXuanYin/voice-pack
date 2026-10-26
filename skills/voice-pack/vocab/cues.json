@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "$comment": "舞台提示词表：台本里括号中的语气说明（例如（耳语）、(angry)、*笑*、【叹气】）认成哪种情绪、风格或动作。同一份词表也用来认参考段标签里的近义词（参考段的 emotion 写 angry、愤怒、生气，是同一个情绪 angry），所以按台词挑参考时，台词里的（生气）能挑中标成 angry 的参考。每一项：键是规范的名字（会出现在挑参考的结果里），值是认作它的词。词里的拉丁字母按整词匹配（不分大小写），汉字和假名按子串匹配；同一处有几个词重叠时，取最长的。emotion 是情绪，style 是说话的方式，actions 不是标签而是对节奏的要求（停顿、放慢、加快），不参与挑参考。只写意图，不用某个模型的指令语法。读它的程序是 lib/line-hints.mjs；词表里有些整句式的写法（叹了口气、in a whisper……）是干什么的、加整句式的写法要守什么，见那个文件的文件头。",
+  "$comment": "舞台提示词表：台本里括号中的语气说明（例如（耳语）、(angry)、*笑*、【叹气】）认成哪种情绪、风格或动作。同一份词表也用来认参考段标签里的近义词（参考段的 emotion 写 angry、愤怒、生气，是同一个情绪 angry），所以按台词挑参考时，台词里的（生气）能挑中标成 angry 的参考。每一项：键是规范的名字（会出现在挑参考的结果里），值是认作它的词。词里的拉丁字母按整词匹配（不分大小写），汉字和假名按子串匹配；同一处有几个词重叠时，取最长的。emotion 是情绪，style 是说话的方式，actions 不是标签而是对节奏的要求（停顿、放慢、加快），不参与挑参考，也不进 cues：语速和停顿走 unit 的字段（见 vocab/capability-signatures.md「怎么念」）。只写意图，不用某个模型的指令语法。读它的程序是 lib/line-hints.mjs；词表里有些整句式的写法（叹了口气、in a whisper……）是干什么的、加整句式的写法要守什么，见那个文件的文件头。oneShot 标的是一下子的声音（风格里的笑、叹气）：一句分段的时候，它只在第一段带，续接的段不带；情绪和风格的其余名字每段都带。读它的程序是 lib/dub.mjs。",
   "emotion": {
     "calm": ["calm", "peaceful", "serene", "composed", "平静", "冷静", "沉着", "平和", "淡定", "calmly"],
     "happy": ["happy", "cheerful", "joyful", "glad", "delighted", "smiling", "smile", "高兴", "开心", "欢快", "愉快", "喜悦", "微笑", "欢喜", "happily", "smiles", "with a smile"],
@@ -23,5 +23,8 @@
     "pause": ["pause", "beat", "silence", "a long pause", "停顿", "沉默", "静默", "停一下", "稍停", "顿一下", "停顿片刻", "沉默片刻", "pauses", "pause for", "long pause", "a short pause", "short pause", "brief pause", "dramatic pause", "pause briefly", "a beat", "deep breath", "coughs", "cough", "coughing", "clears throat", "clear throat", "顿了顿", "深吸一口气", "深呼吸", "咳嗽", "清嗓子", "气喘吁吁", "沉默了一会", "沉默良久", "片刻沉默", "稍作停顿", "短暂停顿", "长时间停顿"],
     "slow": ["slow", "slowly", "放慢", "缓慢", "慢慢", "慢速", "语速放慢", "放慢语速", "缓缓", "speaking slowly", "speaks slowly"],
     "fast": ["fast", "quickly", "hurried", "加快", "急促", "快速", "飞快", "语速加快", "加快语速"]
+  },
+  "oneShot": {
+    "style": ["laugh", "sigh"]
   }
 }

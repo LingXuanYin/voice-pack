@@ -28,7 +28,7 @@
 
 **没有单独的配置文件**：选项写在命令行上；要固定下来，用 `adapter new … --kind process` 生成的 `adapter.mjs`（里面的 `command`、`capabilities` 就是上面的选项），命令行上再给 `--adapter-option` 就盖过里面的同名项。
 
-名字在 `DECLARED_CAPABILITIES`（只是声明的能力，目前只有 `style-instruction`，见 `../README.md`）里的，适配器返回 `true`，不发请求；程序在 `ready` 里仍然要说有它：这是程序对「合成会按 `instructions` 里的话调整」的承诺。
+名字在 `DECLARED_CAPABILITIES`（只是声明的能力，目前有 `style-instruction` 和 `style-cues`，见 `../README.md`）里的，适配器返回 `true`，不发请求；程序在 `ready` 里仍然要说有它：这是程序对「合成会按 `instructions` 里的话调整」的承诺。
 
 ## 进程协议（版本 1）
 

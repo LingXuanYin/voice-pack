@@ -9,7 +9,7 @@
 //     能力名取自能力词表（vocab/capabilities.json），不认识的在写任何文件之前报用法错误。
 //
 //   node cli.mjs adapter check <名字|模块文件|目录> [--live] [--capability <能力,…>] [--text <文字>] [--adapter-option <键=值>]... [--json]
-//     检查一个适配器。默认只看结构，不调用任何能力：能加载，返回的形状对，能力名都在能力词表里，能力是函数、只是声明的能力（style-instruction）是 true。
+//     检查一个适配器。默认只看结构，不调用任何能力：能加载，返回的形状对，能力名都在能力词表里，能力是函数、只是声明的能力（style-instruction、style-cues）是 true。
 //     --live：再把每项能力用一段很短的输入真调一次，核对返回（音频能解码、长度大于 0、mimeType 和字节对得上、有没有 model）。会真的调用模型，可能花钱、占算力：
 //             调之前在标准错误里说明调哪几项、各几次（适配器给了费用说明时也写上；--json 时不说，免得弄脏机器读的输出，计划在输出的 live.plan 里）。
 //             输入：一句 Hello, this is a check.（或 --text 给的；有的模型一次至少 15 个字符，所以不用 Hello.），要音频的给基础部分附带的一段人声

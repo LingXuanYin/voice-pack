@@ -3,6 +3,7 @@
 // 用音色包给一段台本配音（流程层）。
 //   @capability voice-cloning       按挑中的参考合成每一句（签名在 vocab/capability-signatures.md）
 //   @capability style-instruction   可选：环境声明有它，才把配音指引、这一句的说明通过 instructions 传给模型
+//   @capability style-cues          可选：环境声明有它，才把这一句自己的舞台提示认出来的名字（情绪、风格）通过 cues 传给模型；语速、停顿和配音指引都不进去
 //   @capability text-generation     可选：台本里没有任何提示时，让它判断每句的情绪、风格（在 lib/reference-pick.mjs 里用）
 //
 //   const plan   = await planDub(env, pack, script, options);   只规划，不合成：每一段话挑了哪一段参考、为什么、读音词表换了什么。不花钱：不调任何要计费的能力，
@@ -38,9 +39,12 @@
 //   6 脚本（lib/pack-script.mjs）：登记在 dub 功能名下的脚本，合成之前跑 text 钩子（可以改要说的话），合成之后跑 audio 钩子（可以换音频）。
 //     清单里没写 feature 的脚本不属于任何功能，不运行；规划和正式运行的 notes 里都有一条 scripts_without_feature 点名它们（字段见下面「说明」），
 //     说明这次没有运行和原因。
-//   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, enhancers? }。
+//   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers? }。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
 //      返回值里说明没传和原因。配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
+//      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
+//      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一句分段时，一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在第一段带，情绪、风格每段都带。
+//      返回值的 units[i].cues 写明没传和原因（style_cues_missing、nothing_to_send）。
 //      enhancers：包里服务 voice-cloning 的增强件，以 { id, model, modelVersion, referenceVersion, capability, load } 递给能力，load() 才读文件。
 //      环境认识对应的模型就用上，并在返回里用 enhancers_used 报出用了哪几个（id）；不认识的会忽略 enhancers，照常生成。
 //      这一次有没有用上增强件，写在 enhancers 里：一个都没用上、而包里有，statement 是 'enhancers_not_used'，附上没用上的增强件是哪个模型的，
@@ -49,6 +53,7 @@
 // 语速和停顿：合成能力不收语速，停顿也不是合成出来的。unit.speed（0.85 放慢、1.15 加快、null 没要求）、unit.pauseBeforeMs、unit.pauseAfterMs、
 // unit.join 如实记着，由拼接的人按它们处理；有语速要求时 notes 里有一条 speed_not_applied。拼接的人是拿到这些 unit、交出成品音频的那一方：命令行的使用者（自己用 ffmpeg 之类拼），
 // 或者适配器（它自己把音频拼好、直接返回成品的，就是拼接的人，unit.speed 归它处理，例如变速、保持音高，不能原样丢掉）。dub 本身不把 speed 传给合成能力。
+// 语速和停顿只走这些字段，不进 cues（一个概念一条路）：拼接的人按 unit 做一次。不论环境声明不声明 style-cues，都一样。
 // 停顿有两个来源：台本标记 [pause …] 和舞台提示（（停顿 3 秒），一行里只有它时挂到前一句的后面，规则见 lib/line-hints.mjs）。同一处两样相加，
 // 加起来不超过 PAUSE_MAX_MS（tools/markup.mjs，[pause …] 的上限）；前一句的后面加后一句的前面（同一个缝）也不超过它，超过的从后一句的前面扣。
 //
@@ -91,7 +96,8 @@ import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { fromBase64 } from '../protocol/lib/bytes.mjs';
 import { parseScript, SPEED, PAUSE_MAX_MS } from '../tools/markup.mjs';
 import { splitSentences } from '../tools/sentences.mjs';
-import { readDirections } from './line-hints.mjs';
+import { readDirections, canonicalLabel } from './line-hints.mjs';
+import cues from '../vocab/cues.json' with { type: 'json' };
 import { pickReferences } from './reference-pick.mjs';
 import { lexiconRules, applyLexicon } from './pronunciation-lexicon.mjs';
 import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, runScript, audioForScript, HOOKS } from './pack-script.mjs';
@@ -259,10 +265,10 @@ function partsOf(text, max) {
 
 // ---------------------------------------------------------------- 短句并段（第 5b 步）
 
-/** 能不能把 before 和后面的 after 并成一段（规则见文件头第 5b 步）。 */
-function canJoin(before, beforeText, after, afterText, max) {
+/** 能不能把 before 和后面的 after 并成一段（规则见文件头第 5b 步）。说明（instructions）和名字（cues）都要一样：并起来的段只有一份。 */
+function canJoin(before, beforeStyle, after, afterStyle, max) {
   if (before.join !== undefined || before.pauseAfterMs !== 0 || after.pauseBeforeMs !== 0) return false;
-  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || beforeText !== afterText) return false;
+  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || JSON.stringify(beforeStyle) !== JSON.stringify(afterStyle)) return false;
   return max === null || count(joinSpoken(before.spoken, after.spoken)) <= max;
 }
 
@@ -280,22 +286,22 @@ function joinedUnit(before, after) {
 }
 
 /**
- * 短句并段：前一段不到下限，就并进后面的一段，直到够下限或者没有可并的（和 app 的 fitMinLength 一样的走法）。texts 是每一段的说明全文（instructionTexts），跟着段走。
- * @returns {{ units: object[], texts: (string|null)[] }} 段的编号按并完以后的次序重排（index）
+ * 短句并段：前一段不到下限，就并进后面的一段，直到够下限或者没有可并的（和 app 的 fitMinLength 一样的走法）。styles 是每一段要传给模型的（{ instructions, cues }），跟着段走。
+ * @returns {{ units: object[], styles: object[] }} 段的编号按并完以后的次序重排（index）
  */
-function joinShortUnits(units, texts, { min, max }) {
+function joinShortUnits(units, styles, { min, max }) {
   const out = [];
-  const outTexts = [];
+  const outStyles = [];
   units.forEach((unit, at) => {
     const last = out.length - 1;
-    if (last >= 0 && count(out[last].spoken) < min && canJoin(out[last], outTexts[last], unit, texts[at], max)) {
+    if (last >= 0 && count(out[last].spoken) < min && canJoin(out[last], outStyles[last], unit, styles[at], max)) {
       out[last] = joinedUnit(out[last], unit);
       return;
     }
     out.push({ ...unit });
-    outTexts.push(texts[at]);
+    outStyles.push(styles[at]);
   });
-  return { units: out.map((unit, index) => ({ ...unit, index })), texts: outTexts };
+  return { units: out.map((unit, index) => ({ ...unit, index })), styles: outStyles };
 }
 
 /** 比下限短、并不了的那一段的错。不是暂时出错：不标 transient，不重做（见文件头第 5b 步）。 */
@@ -326,12 +332,47 @@ function fitGuidance(guidance) {
   return { text: (cut > GUIDANCE_MAX / 2 ? head.slice(0, cut) : head).trim(), truncated: true };
 }
 
-/** 这一句的说明：调用方给的，加上管着这一句的舞台提示（从最后一个有情绪或风格的提示起，没有就全部）。原样用作者的词。 */
-function noteOf(line) {
+/** 管着这一句的舞台提示：从最后一个有情绪或风格的提示起，没有就全部。配音指引（noteOf）用的是这一批。 */
+function governingOf(line) {
   const last = line.directions.map((d) => d.emotion !== null || d.style !== null).lastIndexOf(true);
-  const governing = line.directions.slice(Math.max(last, 0)).map((d) => d.raw);
-  const parts = [line.instructions, ...governing].filter((part) => typeof part === 'string' && part.trim() !== '');
+  return line.directions.slice(Math.max(last, 0));
+}
+
+/** 这一句的说明：调用方给的，加上管着这一句的舞台提示（governingOf）。原样用作者的词。 */
+function noteOf(line) {
+  const parts = [line.instructions, ...governingOf(line).map((d) => d.raw)].filter((part) => typeof part === 'string' && part.trim() !== '');
   return parts.length === 0 ? null : [...new Set(parts)].join('；');
+}
+
+// ---------------------------------------------------------------- 这一句自己的名字（style-cues）
+
+// cues.json 是唯一的来源：规范名字就是它的键，一下子的声音（oneShot）也在那里标。这里只读，不另写一份。
+const CUE_EMOTIONS = new Set(Object.keys(cues.emotion));
+const CUE_STYLES = new Set(Object.keys(cues.style));
+const ONE_SHOT_STYLES = new Set(cues.oneShot.style);
+
+/** 调用方给这一项的标签（labels.emotion、labels.style）：规范化以后是词表里的名字才用，认不出的不用（不猜）。 */
+function labelCue(kind, value) {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const name = canonicalLabel(kind, value);
+  return (kind === 'emotion' ? CUE_EMOTIONS : CUE_STYLES).has(name) ? name : null;
+}
+
+/**
+ * 这一句自己的名字（cues，见 vocab/capability-signatures.md「怎么念」）。
+ * 情绪、风格：调用方在 labels 里给的（规范化以后认得出的）先用，和挑参考一样；没给的取读这一句的舞台提示时的状态（line.hints，和 readDirections 的读法一样）。
+ * 语速和停顿不在这里：它们是 unit.speed、unit.pauseBeforeMs、unit.pauseAfterMs，由拼接的人做一次（见文件头「语速和停顿」）。
+ * part 是第几段（从 1 数）：一下子的声音（oneShot）只在第一段带；情绪、风格（不是一下子的）每段都带。配音指引不进来：这里只看这一句。
+ * @param {object} line 台本的一句（buildLines 的结果，带 hints、labels）
+ * @param {number} part
+ * @returns {{ emotion: string|null, style: string|null }}
+ */
+function cuesOf(line, part) {
+  const emotion = labelCue('emotion', line.labels.emotion) ?? line.hints.emotion ?? null;
+  let style = labelCue('style', line.labels.style) ?? line.hints.style ?? null;
+  if (part === 1) return { emotion, style };
+  if (style !== null && ONE_SHOT_STYLES.has(style)) style = null;
+  return { emotion, style };
 }
 
 // ---------------------------------------------------------------- 规划
@@ -339,7 +380,7 @@ function noteOf(line) {
 const emptyEnhancers = (offers) => ({ offered: offers.map(summarizeOffer), used: [], notUsed: [], statement: null });
 
 /**
- * 规划：返回 { plan, instructionTexts }。instructionTexts[i] 是第 i 段真要传给模型的说明全文（环境没有 style-instruction 或没有可传的是 null）；
+ * 规划：返回 { plan, styles }。styles[i] 是第 i 段真要传给模型的 { instructions, cues }（环境没有 style-instruction 时 instructions 是 null，没有 style-cues 时 cues 是 null）；
  * 全文可能很长，不放进每一段的记录里，只有合成的人拿它。planOnly 为真时（planDub）不调任何要计费的能力。
  */
 async function buildPlan(env, pack, script, options, { planOnly }) {
@@ -364,12 +405,13 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
   const guidance = fitGuidance(rawGuidance);
   if (guidance.truncated) notes.push({ code: 'guidance_truncated', message: `配音指引有 ${count(rawGuidance)} 个字，超过 ${GUIDANCE_MAX}，截短以后才传给模型`, details: { chars: count(rawGuidance), max: GUIDANCE_MAX } });
   const styled = hasCapability(env, 'style-instruction');
+  const cued = hasCapability(env, 'style-cues');
 
   const offers = pack.enhancers('voice-cloning');
   const scripts = pack.scripts(FEATURE);
 
   let units = [];
-  let instructionTexts = [];
+  let styles = []; // 每一段要传给模型的：{ instructions（style-instruction 的说明全文，或 null）, cues（style-cues 的，或 null） }，跟着段走
   for (const line of lines) {
     const replaced = applyLexicon(line.text, rules);
     for (const replacement of replaced.replacements) {
@@ -383,7 +425,9 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
     parts.forEach((spoken, partIndex) => {
       const first = partIndex === 0;
       const last = partIndex === parts.length - 1;
-      instructionTexts.push(styled ? instructions : null);
+      const partCues = cuesOf(line, partIndex + 1);
+      const cueNames = partCues.emotion !== null || partCues.style !== null;
+      styles.push({ instructions: styled ? instructions : null, cues: cued && cueNames ? partCues : null });
       units.push({
         index: units.length,
         line: line.index,
@@ -396,6 +440,7 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
         spoken,
         pick: picks[line.index],
         instructions: !styled ? { sent: false, reason: 'style_instruction_missing' } : instructions === null ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...(note === null ? {} : { line: note }) },
+        cues: !cued ? { sent: false, reason: 'style_cues_missing' } : !cueNames ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...partCues },
         speed: line.speed,
         pauseBeforeMs: first ? line.pauseBeforeMs : 0,
         pauseAfterMs: last ? line.pauseAfterMs : 0,
@@ -407,9 +452,9 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
   }
   // 5b：有下限的，短句并段，并不了的那一段记成 failed（不调用能力，见文件头）。没有下限就什么都不做
   if (settings.minChars !== null) {
-    const grouped = settings.joinShort ? joinShortUnits(units, instructionTexts, { min: settings.minChars, max: settings.maxChars }) : { units, texts: instructionTexts };
+    const grouped = settings.joinShort ? joinShortUnits(units, styles, { min: settings.minChars, max: settings.maxChars }) : { units, styles };
     units = grouped.units;
-    instructionTexts = grouped.texts;
+    styles = grouped.styles;
     for (const unit of units) if (count(unit.spoken) < settings.minChars) { unit.status = 'failed'; unit.error = tooShortError(unit.spoken, settings.minChars); }
     const joined = units.filter((unit) => unit.joined !== undefined).length;
     if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个说明、同一个语速，中间没有停顿）`, details: { min: settings.minChars, units: joined } });
@@ -435,11 +480,11 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
     enhancers: emptyEnhancers(offers),
     scripts: scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS] })),
     missingRuntimes: missingScriptRuntimes(env, scripts, FEATURE),
-    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'text-generation': hasCapability(env, 'text-generation') },
+    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'text-generation': hasCapability(env, 'text-generation') },
     notes,
     verification: pack.manifest.verification ?? [],
   };
-  return { plan, instructionTexts };
+  return { plan, styles };
 }
 
 /**
@@ -460,7 +505,7 @@ export async function planDub(env, pack, script, options = {}) {
  */
 export async function dubScript(env, pack, script, options = {}) {
   const settings = readOptions(options);
-  const { plan, instructionTexts } = await buildPlan(env, pack, script, options, { planOnly: false });
+  const { plan, styles } = await buildPlan(env, pack, script, options, { planOnly: false });
   if (plan.units.length === 0) throw new VoicePackError('dub_nothing_to_say', '台本里没有可说的话（只有标记和舞台提示）');
   if (settings.only !== undefined && (!Array.isArray(settings.only) || settings.only.some((index) => !Number.isInteger(index) || index < 0 || index >= plan.units.length))) {
     throw invalid('only', `only 必须是数组，里面是 0–${plan.units.length - 1} 的整数（规划里每一段的编号）`);
@@ -506,7 +551,8 @@ export async function dubScript(env, pack, script, options = {}) {
     }
     const { segment, clip } = references.get(unit.pick.segmentId);
     const call = { text: spoken, ref_audio: clip, ref_text: segment.text };
-    if (unit.instructions.sent) call.instructions = instructionTexts[unit.index];
+    if (unit.instructions.sent) call.instructions = styles[unit.index].instructions;
+    if (unit.cues.sent) call.cues = styles[unit.index].cues;
     if (offers.length > 0) call.enhancers = offers;
 
     let result;

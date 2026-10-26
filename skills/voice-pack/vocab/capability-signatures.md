@@ -25,7 +25,8 @@
 ```js
 await env.capabilities['text-to-speech']({
   text,                  // string，必填：要说的话
-  instructions,          // string，可选：怎么念（语气、节奏、情绪）。只写想要的效果，不用某个模型的指令语法
+  instructions,          // string，可选：怎么念（语气、节奏、情绪）。只写想要的效果，不用某个模型的指令语法。环境有 style-instruction 才用
+  cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string }
 ```
@@ -39,7 +40,8 @@ await env.capabilities['voice-cloning']({
   text,                  // string，必填：要说的话
   ref_audio,             // {bytes, mimeType}，或它的数组（融合，见下）。必填
   ref_text,              // string，或和 ref_audio 一一对应的字符串数组。参考音频里说的原文，可选
-  instructions,          // string，可选：怎么念
+  instructions,          // string，可选：怎么念。环境有 style-instruction 才用
+  cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
   enhancers,             // 增强件的数组，可选，见下面「增强件」
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string, enhancers_used?: string[] }
@@ -48,6 +50,7 @@ await env.capabilities['voice-cloning']({
 - `ref_audio` 给数组表示**融合**，只在调用方明确要融合时才用；给一段就只用那一段。怎么融合（等权还是带权重）由环境决定，包不传权重。
 - `ref_text` 是参考音频的逐字文本。用不上的环境可以忽略它。
 - `instructions`：环境有 `style-instruction` 才能按说明念；没有就**忽略**（别把它当成别的意思）。配音指引要不要传 `instructions`，先看环境有没有 `style-instruction`，见下面「怎么念」和 `lib/dub.mjs`。
+- `cues`：环境有 `style-cues` 才能用；没有就**忽略**。只装这一句自己的名字（舞台提示认出来的，加调用方 `labels` 给的情绪和风格），配音指引不进去，见下面「怎么念」。
 - `enhancers`：可选，包里服务这项能力的增强件，用法见下面「增强件」。返回值里可以多一项 `enhancers_used`。
 - **字数下限**：环境可以声明这项能力一次至少要多少个字（适配器的 `limits.minChars`，见 `../adapters/README.md`）。库据此在合成之前并段（`lib/dub.mjs` 文件头第 5b 步），并不了的那一段记成失败，不调用能力；适配器自己不拦短文字，库不把它送进来。服务商那头说字数不够的，同样标 `details.textRejected`（见上面「通用约定」），库把那一段记成失败，别的段照常做。
 
@@ -197,6 +200,18 @@ await env.capabilities['text-generation']({
 - 库用 `hasCapability(env, 'style-instruction')` 问：有，配音就把配音指引（和这一句的舞台提示）通过 `instructions` 传给合成能力；没有，**整个不传 `instructions`** 这个键，照常合成，并在返回值里说明没传和原因（`unit.instructions.reason` 是 `style_instruction_missing`）。
 - 为什么用声明而不是看合成能力「收不收」`instructions`：合成能力的签名里 `instructions` 一直是可选的，没有 `style-instruction` 的环境会忽略它；这样「传了没效果」和「没传」分得开。
 - 不声明的理由写成「模型或服务做不到」，不要写成「我们的请求里没有 `instructions` 字段」：后者是适配器自己的构造，读的人会当成环境的结论（分工见 `../adapters/README.md`「只是声明的能力」）。
+
+### `style-cues`
+
+不是函数，是**声明**：环境提供它，表示合成能力（`text-to-speech`、`voice-cloning`）收参数 `cues`：这一句自己的几个名字（舞台提示认出来的，加调用方在 `labels` 里给的情绪和风格）。在 `env.capabilities['style-cues']` 里放 `true`（或任何不是 `undefined`、`null`、`false` 的值）。
+
+- `cues` 的形状是 `{ emotion, style }`：`emotion`、`style` 是 `vocab/cues.json` 里 `emotion`、`style` 的规范名字，没有就是 `null`。环境收到别的键（例如旧版本的 `actions`）忽略：不出标签，也不报错。
+- 库用 `hasCapability(env, 'style-cues')` 问：有，配音就把这一句的 `cues` 通过参数传给合成能力；没有，**整个不传 `cues`** 这个键，照常合成，并在 `unit.cues.reason` 里说明（`style_cues_missing`）。
+- 这一句的 `emotion`、`style`：调用方在 `labels` 里给这一项的（规范化以后认得出的才用）先用，和挑参考一样；没给的，取读这一句的舞台提示时的状态（最后一个有情绪或风格的提示起，和 `lib/line-hints.mjs` 的读法一样）。语速和停顿不进 `cues`，见下面一条。
+- **配音指引永远不进 `cues`。** 指引写的是这个声音的习惯（爱笑、说话慢），不是这一句的指示。它只通过 `style-instruction` 的 `instructions` 传，而且只在环境声明了它的时候才传。
+- 一句被切成几段（`maxChars`）时，`emotion`、`style` 每段都带，除了 `vocab/cues.json` 的 `oneShot` 标着的一下子的声音（笑、叹气）：它只在第一段带。
+- **语速和停顿不在 `cues` 里。** 它们是 `unit.speed`、`unit.pauseBeforeMs`、`unit.pauseAfterMs`（和 `unit.join`），由拼接的人按它们做一次（见 `lib/dub.mjs` 文件头「语速和停顿」）。语速只有一条路：合成能力不收语速，环境也不把它译成标签或变速；不论环境声明不声明 `style-cues`，都一样。
+- `style-instruction` 和 `style-cues` 是两回事：前者是一段**自由的文字**（配音指引加这一句的说明，原样交给环境，由环境去理解）；后者是**这一句认出来的几个名字**（库已经读过、规范化过，环境只需要对表）。一个环境可以两个都声明，也可以只声明一个。不声明的理由写成「模型或服务做不到」，不要写成「我们的请求里没有 `cues` 字段」（同 `style-instruction`，分工见 `../adapters/README.md`「只是声明的能力」）。
 
 ## 变声和唱歌
 

@@ -59,7 +59,7 @@ export default async function createAdapter({ cwd, dir, env, options, use, Voice
 
 ### 只是声明的能力
 
-有一类能力不是函数，是**声明**：环境提供它，表示别的能力会按它说的做。目前只有一个：`style-instruction`，写成 `'style-instruction': true`，表示合成能力会按参数 `instructions` 里的话调整语气（理由和用法见 `vocab/capability-signatures.md`「怎么念」）。名单只在 `protocol/lib/env.mjs` 的 `DECLARED_CAPABILITIES` 里写，检查、骨架生成都按它认；值不是 `true` 报 `declaration_not_true`。
+有一类能力不是函数，是**声明**：环境提供它，表示别的能力会按它说的做。目前有两个：`style-instruction`，写成 `'style-instruction': true`，表示合成能力会按参数 `instructions` 里的话调整语气；`style-cues`，写成 `'style-cues': true`，表示合成能力收参数 `cues`：这一句自己的舞台提示认出来的几个名字（情绪、风格），语速和停顿不在里面（它们是 unit 的字段），配音指引也不在里面。两者分开，一个环境可以都声明，也可以只声明一个（理由和用法见 `vocab/capability-signatures.md`「怎么念」）。名单只在 `protocol/lib/env.mjs` 的 `DECLARED_CAPABILITIES` 里写，检查、骨架生成都按它认；值不是 `true` 报 `declaration_not_true`。
 
 声明说的是**这个环境能为调用方做到什么**，不是模型或服务的请求格式里恰好有哪个字段。模型或服务要是有别的途径接受这类说明（一个 meta 字段、一次单独的调用、一段拼进提示的文字），适配器就翻译过去，再声明它。「模型或服务做不到」和「这个适配器没往请求里放」是两回事：后者要在适配器里补上，不能拿来当不声明的理由。判断依据是模型或服务能不能做到，不是现在的请求拼装代码里有没有那个键。
 

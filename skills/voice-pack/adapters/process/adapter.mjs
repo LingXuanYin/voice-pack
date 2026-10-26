@@ -13,7 +13,7 @@
 //   startTimeout   等程序说 ready 最多多少秒，默认 300（载入模型可能很慢）
 //   cwd            程序的当前目录，默认是适配器自己的目录（dir）；相对的写法相对 dir
 //
-// 返回：{ capabilities }。能力名在 DECLARED_CAPABILITIES（只是声明的能力，例如 style-instruction）里的，值是 true，不会发请求。
+// 返回：{ capabilities }。能力名在 DECLARED_CAPABILITIES（只是声明的能力，例如 style-instruction、style-cues）里的，值是 true，不会发请求。
 // 这个文件在适配器的主人一侧运行：可以用 Node 专有的东西（node:path），规则见 ../README.md「Node 专有的东西放哪」。
 //
 // 抛出的错误：process_option_invalid（选项不对，details.key）；别的 process_* 来自 cli/session.mjs，文件头写着。

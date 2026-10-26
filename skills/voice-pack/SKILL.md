@@ -42,9 +42,13 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 **设计**
 
 1. 从设计词表（`vocab/design.json`）挑属性：性别、年龄、音高、风格、英语口音、中文方言；可以再加音色、节奏、情绪的标签，也可以从预设角色起步。
-2. 把属性写成自然语言描述。可以手写，也可以让 `text-generation` 按一段话来写。
-3. 用 `voice-design` 合成试听。描述和试听文本最短多少、最长多少个字符、处理不了哪些字，由运行环境给出（接进来的适配器写明）；超了服务商会让这次合成失败，或者干脆超时，所以适配器在调用之前就报 `capability_input_invalid`（`vocab/capability-signatures.md` 的 `voice-design` 一节）。
-4. 满意的候选锁定成参考。之后用它就是克隆。
+2. 把属性写成一段自然语言描述，写这个人平常跟身边的人说话时的声音：年龄、性别、做什么的、音高、音色、语速、说话的样子。不用朗读、播音、解说、旁白、讲故事、表演、戏剧性这类词（英文 narrator、announcer、performing、dramatic 等），连否定的说法也不写（「不是播音腔」也会把这个词带进描述）。除非这本来就是他的工作：设计词表的预设里，纪录片旁白、新闻主播、睡前故事、播客主持人这些角色本来就是这样的人，照他的工作写，可以用这些词。可以手写，也可以让 `text-generation` 按一段话来写。
+3. 试听文本是这个人当面对一个人说的一句平常话（打招呼、回答、一个小请求），用说话的口气，不用写文章的口气：不用分号、格言、对仗、景物描写，也不用旁白式地讲过去的事。它会成为之后所有克隆的参考，所以要平静、普通。用 `voice-design` 合成几个候选（比如三个）。描述和试听文本的最短和最长字符数、处理不了哪些字，由运行环境给出（接进来的适配器写明）；超了服务商会让这次合成失败，或者干脆超时，所以适配器在调用之前就报 `capability_input_invalid`（`vocab/capability-signatures.md` 的 `voice-design` 一节）。
+4. 挑一个候选锁定成参考，之后用它就是克隆。环境有 `audio-text-to-text` 时，先盲听每个候选：只给它这段音频，不给描述和试听文本，每段分开问两次，问的就是下面这一句，不加别的提示，也不给它选项：
+
+   > 这像个真人吗？哪里像，哪里不像？
+
+   两次的回答都说不像真人的不锁定；一次说像、一次说不像的算拿不准，可以锁定，也可以再设计一个。候选都不锁定，就回到第 2 步改描述或试听文本，再设计一批。环境没有 `audio-text-to-text` 时，照旧挑候选，不盲听，并在给使用者的说明里写明没有盲听。
 
 **融合**：权重是和始终为 1 的份额，调一个，其余按比例重新分配。最多能融合几段，由运行环境给出（接进来的适配器写明）。
 
@@ -113,7 +117,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 2. 舞台提示（`（耳语）`、`*笑*`）变成这一句的情绪、风格、停顿和语速，从要说的话里拿掉。写法和近义词见 `vocab/cues.json`。括号里词表认不出的内容（例如 `（画外音）`），配音时也拿掉、不念，报告里记着；在配音以外的地方（例如 app 读普通正文），括号里的内容要整个都是词表里的提示才拿掉，其余（例如 `（笑话比赛）`）当正文念，不当舞台提示。规则的正本是 `lib/line-hints.mjs` 的文件头。
 3. **挑参考**（`lib/reference-pick.mjs`）：从参考集里挑语言、情绪、风格最对得上的一段。「怎么说」的标签按这个顺序取，前面有了就不再往后看：调用方给的，台本里的提示，环境有 `text-generation` 时它的判断，都没有就用默认参考段。语言先比，再比情绪、风格。默认一句只用一段参考，不融合；留出录音从不当参考。挑的理由写在 `units[i].pick` 里（`rule`、`matched`、`missed`）：`missed` 不空，说明台词要的这一项，参考集里没有哪一段有（例如生气的台词，参考集里没有生气的参考）。
 4. **读音词表**：包根目录的 `lexicon.pls`（W3C Pronunciation Lexicon，PLS）。只换要说的话里的词，不碰台本标记。读法是音素的做不到，报在 `lexicon.unapplied`。
-5. **配音指引**：包的 `SKILL.md` 最后一节。你先读它，写台本时照着做（语气、节奏、口头禅）。运行环境有 `style-instruction` 时，命令再把它连同这一句的说明，通过参数 `instructions` 传给模型；没有就不传，报告里说明。
+5. **配音指引**：包的 `SKILL.md` 最后一节。你先读它，写台本时照着做（语气、节奏、口头禅）。运行环境有 `style-instruction` 时，命令再把它连同这一句的说明，通过参数 `instructions` 传给模型；没有就不传，报告里说明。运行环境有 `style-cues` 时，每一句自己的舞台提示认出来的几个名字（情绪、风格）通过参数 `cues` 随段传给模型；配音指引不走这条路（它是这个声音的习惯，不是这一句的指示）。
 6. **增强件**：包里服务 `voice-cloning` 的增强件，递给能力。环境认识对应的模型就用上（报告 `enhancers.used`），不认识就照常生成，`enhancers.statement` 是 `enhancers_not_used`，并附上包的验证记录，让人知道当前环境下效果会差多少。
 7. **脚本**：登记在 `dub` 功能名下的，合成之前改要说的话，合成之后改音频，见下。
 
@@ -130,7 +134,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 | 功能 | 必须有 | 有就用 |
 |---|---|---|
-| 配音（`dub`） | `voice-cloning` | `style-instruction`（传配音指引）、`text-generation`（判断没有提示的句子的情绪）、增强件对应的模型 |
+| 配音（`dub`） | `voice-cloning` | `style-instruction`（传配音指引）、`style-cues`（传这一句的舞台提示）、`text-generation`（判断没有提示的句子的情绪）、增强件对应的模型 |
 | 变声（`convert`） | `voice-conversion` 或 `singing-voice-conversion` | 增强件对应的模型 |
 
 当前运行环境有哪些能力，看接进来的适配器的说明。要用别的模型，自己写一个适配器，用 `--adapter <目录或模块文件>` 交给命令：适配器是一个函数，返回一个对象（能力、运行时、网络读取、费用说明等，键都可选，写法见 `adapters/README.md`「返回的形状」）；后给的盖过先给的，也盖过命令已有的同名项。约定只写在 `adapters/README.md`，每项能力的调用参数和返回值见 `vocab/capability-signatures.md`。适配器在本进程里直接运行，不隔离，和包里的脚本一样。
@@ -153,7 +157,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 **还缺什么素材**：报告里的 `hints`，一条一个原因，例如没有留出录音（`no_holdout`）、没有某种情绪的参考（`emotion_missing`）、某种语言只有一段（`language_single_reference`）、没有配音指引（`guidance_missing`）。补了素材，发新版本。
 
-**配音指引和音色标签**：`--guidance <文件.md>` 写语气、节奏、口头禅、适合的场景，只写想要的效果，不写某个模型的指令语法，放进 `SKILL.md` 最后一节。`--direction <文件.json>`：`{ description, tags, scenes }`，音色标签只能从设计词表（`vocab/design.json`）里取，场景只能从 `vocab/scenes.json` 里取，中文名也认，写进清单的是规范写法；不在词表里的在花钱之前报 `make_pack_input_invalid`。`--lexicon <文件.pls>` 放读音词表；`--design-source <文件.json>` 记设计来源（`{ description, model, modelVersion, date }`），用设计出来的声音、默认音色、融合出来的声音做包时写；锁定的试听用 `--audition <文件>` 交：不分离（合成出来的本来就是干净的人声），同样切开、转写，一部分当参考、一部分当留出录音（做包照规则挑），设计来源写进清单；没给 `--design-source`，报告里提醒 `design_source_missing`。 `--sample-lines <文件.json>` 记示例台词：一份 JSON 数组，每项一句，原样写进清单的 `sampleLines`；最多 50 条，每条 1–500 个字符，不能只有空白（`text_blank`）；台词里可以带舞台提示，例如 `（耳语）`，格式只存这句字符串、不解析它。发新版本不给 `--sample-lines` 就沿用上一版的，给空数组就去掉。
+**配音指引和音色标签**：`--guidance <文件.md>` 写语气、节奏、口头禅、适合的场景，只写想要的效果，不写某个模型的指令语法，放进 `SKILL.md` 最后一节。`--direction <文件.json>`：`{ description, tags, scenes }`，音色标签只能从设计词表（`vocab/design.json`）里取，场景只能从 `vocab/scenes.json` 里取，中文名也认，写进清单的是规范写法；不在词表里的在花钱之前报 `make_pack_input_invalid`。`--lexicon <文件.pls>` 放读音词表；`--design-source <文件.json>` 记设计来源（`{ description, model, modelVersion, date }`），用设计出来的声音、默认音色、融合出来的声音做包时写；锁定的试听用 `--audition <文件>` 交：不分离（合成出来的本来就是干净的人声），同样切开、转写，一部分当参考、一部分当留出录音（做包照规则挑），设计来源写进清单；没给 `--design-source`，报告里提醒 `design_source_missing`。 `--sample-lines <文件.json>` 记示例台词：一份 JSON 数组，每项一句，原样写进清单的 `sampleLines`；最多 50 条，每条 1–500 个字符，不能只有空白（`text_blank`）；台词里可以带舞台提示，例如 `（耳语）`，格式只存这句字符串、不解析它。发新版本不给 `--sample-lines` 就沿用上一版的，给空数组就去掉。素材是设计出来的声音时，示例台词照第 2 节「设计」第 3 步试听文本的写法：当面对人说的平常话，其余几句也一样，每句一种情绪，至少两句是问句、回答或插话。
 
 **骨架的语言**：做出来的包里 `SKILL.md` 的骨架（各节的标题和说明）默认是中文；给英文作者做英文包，加 `--text-language en`（只有 `zh`、`en` 两个值，别的是用法错误，退出 2）。只管骨架：「## 配音指引」这一行所有语言都一样，`--name`、`--guidance`、`--direction` 里写的字原样放进包，不翻译；任何语言的包，读回来的指引都一样。发新版本用这一次给的语言，不看上一版是什么语言。规则的正本是 `protocol/FORMAT.md` 的「骨架的语言」。
 

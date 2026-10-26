@@ -59,7 +59,7 @@
 // 每项能力的输入和返回的规则，照 vocab/capability-signatures.md 写（那里是正本）。签名表里没有写法的能力这里不猜：真调用时跳过，原因是 no_signature；
 // 表里有写法而这里一时没接上的，列在 NOT_WIRED 里，跳过的原因是 not_wired（测试对着真的签名表核对：表里有写法的能力，必须是接上的、声明的或列在 NOT_WIRED 里的，
 // 所以「表里有、这里没接」不会悄悄被说成「没有签名」）。
-// 「只是声明的能力」的名单在 protocol/lib/env.mjs 的 DECLARED_CAPABILITIES（目前只有 style-instruction），这里按它认。
+// 「只是声明的能力」的名单在 protocol/lib/env.mjs 的 DECLARED_CAPABILITIES（目前有 style-instruction 和 style-cues），这里按它认。
 //
 // voice-design 的真调用：输入固定，一句够长的试听文本加一句短描述，不带参考音频，不跟 options.text 走。试听文本不能是 Hello. 这样的短句（有的服务要至少 15 个字符），
 // 所以不能借 options.text 的默认值；两句都只有基本平面的英文字符（有的服务处理不了增补平面的字），也远在见过的上限（试听文本 200、描述 500 个字符）以内。核对的是「返回的是音频」，
@@ -81,6 +81,7 @@
 // @capability audio-source-separation
 // @capability voice-activity-detection
 // @capability style-instruction
+// @capability style-cues
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import defaultVocabulary from '../vocab/capabilities.json' with { type: 'json' };

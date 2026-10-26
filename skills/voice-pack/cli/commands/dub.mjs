@@ -116,6 +116,10 @@ function render(report, { packArgument, scriptArgument, out, planOnly }) {
       ? `配音指引：环境有 style-instruction，${sent ? '随每句通过 instructions 传给了模型' : '这次没有可传的内容'}${report.guidance.truncated ? '（过长，截短了）' : ''}`
       : '配音指引：环境没有 style-instruction，没传 instructions（照指引写的话、选的参考，仍然生效）');
   }
+  if (report.capabilities['style-cues']) {
+    const cued = report.units.filter((unit) => unit.cues.sent).length;
+    lines.push(`舞台提示：环境有 style-cues，${cued > 0 ? `${cued} 段随段传了这一句自己的情绪、风格（cues）` : '这次没有要传的'}；语速、停顿和配音指引不在里面`);
+  }
   if (report.enhancers.offered.length > 0) {
     const describe = (list) => list.map((item) => `${item.id}（${item.model} ${item.modelVersion}）`).join('、');
     if (planOnly) lines.push(`增强件：包里有 ${describe(report.enhancers.offered)}；合成时递给环境，环境认识对应的模型才会用上`);
