@@ -233,6 +233,40 @@ export function kWeightingCoefficients(sampleRate) {
 
 const powerToLufs = (power) => -0.691 + 10 * Math.log10(power);
 
+// 滤波器的状态（两级的输出）绝对值小于它就置 0（flush to zero）。次正规数是 2.2e-308 以下的浮点数，CPU 上算得慢好几倍；
+// 数字静音之后两级的状态按指数衰减，会一路落进去（改之前，几秒的声音接几十秒的 0，有 1,216,881 个采样的滤波输出是次正规数）。
+// 1e-30 比 2.2e-308 大 10 的 277 次方以上：状态不小于 1e-30 时，乘上 K 计权的系数（整数采样率下非零的绝对值都在 2.8e-5 以上，1000 到 200000 Hz 逐个量过），
+// 还是正规数，所以算出来的项和它们的和也不会是次正规数。被清零的状态绝对值都在 1e-30 以下，它造成的能量差远小于
+// 超过 −70 LUFS 门限的块的功率（约 1e-7）的一个 ULP（约 1e-23），所以量出来的值不变。
+// 没有数字 0 的语音，状态从来到不了 1e-30，清零一次也不发生，算出来的值逐位一样（改前改后逐位比过）。
+const FLUSH_BELOW = 1e-30;
+
+/**
+ * K 计权的一个声道：两级递推（高频搁架、RLB 高通），逐个采样喂进去。step 返回这个采样的输出（第 2 级）；
+ * 第 1 级的输出留在 y1 里（数次正规数两级都要看）。integratedLoudness 用的就是这份递推。
+ */
+export class KWeighting {
+  constructor(sampleRate) {
+    const [shelf, highpass] = kWeightingCoefficients(sampleRate);
+    this.sb0 = shelf.b[0]; this.sb1 = shelf.b[1]; this.sb2 = shelf.b[2];
+    this.sa1 = shelf.a[1]; this.sa2 = shelf.a[2];
+    this.hb0 = highpass.b[0]; this.hb1 = highpass.b[1]; this.hb2 = highpass.b[2];
+    this.ha1 = highpass.a[1]; this.ha2 = highpass.a[2];
+    this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; // 第 1 级的状态：输入和输出的历史
+    this.u1 = 0; this.u2 = 0; this.w1 = 0; this.w2 = 0; // 第 2 级的状态：输入（第 1 级的输出）和输出的历史
+  }
+
+  step(x) {
+    let y = this.sb0 * x + this.sb1 * this.x1 + this.sb2 * this.x2 - this.sa1 * this.y1 - this.sa2 * this.y2;
+    if (Math.abs(y) < FLUSH_BELOW) y = 0;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+    let w = this.hb0 * y + this.hb1 * this.u1 + this.hb2 * this.u2 - this.ha1 * this.w1 - this.ha2 * this.w2;
+    if (Math.abs(w) < FLUSH_BELOW) w = 0;
+    this.u2 = this.u1; this.u1 = y; this.w2 = this.w1; this.w1 = w;
+    return w;
+  }
+}
+
 // 整体响度，LUFS；短于一个块、或者所有的块都低于绝对门限，返回 null。不取整：tools/loudness-normalize.mjs 要用精确值
 export function integratedLoudness(samples, rate) {
   const hop = Math.max(1, Math.round(rate * LOUDNESS_HOP_SECONDS));
@@ -240,23 +274,13 @@ export function integratedLoudness(samples, rate) {
   const frames = samples[0].length;
   const segments = Math.floor(frames / hop);
   if (segments < perBlock) return null;
-  const [shelf, highpass] = kWeightingCoefficients(rate);
-  const [sb0, sb1, sb2] = shelf.b;
-  const [, sa1, sa2] = shelf.a;
-  const [hb0, hb1, hb2] = highpass.b;
-  const [, ha1, ha2] = highpass.a;
   const energy = new Float64Array(segments); // 每 100 毫秒一段：所有声道经过 K 计权以后的平方和
   for (const channel of samples) {
-    let x1 = 0, x2 = 0, y1 = 0, y2 = 0; // 第 1 级的状态
-    let u1 = 0, u2 = 0, w1 = 0, w2 = 0; // 第 2 级的状态
+    const kw = new KWeighting(rate);
     for (let s = 0; s < segments; s++) {
       let sum = 0;
       for (let i = s * hop, end = i + hop; i < end; i++) {
-        const x = channel[i];
-        const y = sb0 * x + sb1 * x1 + sb2 * x2 - sa1 * y1 - sa2 * y2;
-        x2 = x1; x1 = x; y2 = y1; y1 = y;
-        const w = hb0 * y + hb1 * u1 + hb2 * u2 - ha1 * w1 - ha2 * w2;
-        u2 = u1; u1 = y; w2 = w1; w1 = w;
+        const w = kw.step(channel[i]);
         sum += w * w;
       }
       energy[s] += sum;

@@ -6,6 +6,18 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.10 — 2026-10
+
+The Cohub adapter puts `[shouting]` in front of a line whose style is `shout` again. It is the one emotion or style tag that stays: laughing and sighing are unchanged, and sad, excited, sarcastic, surprised, angry and whispering still come out without a tag. This time the sound was measured, not a listening model's answer: for each tag, eight pairs of a tagged clip and a plain clip of the same sentence and voice, judged by a rule written before the run. Shouting moved the expected way in all eight pairs: loudness rose 1.30 dB (two plain generations of the same settings differ by 0.08 dB) and the median pitch rose 3.31 semitones (they differ by 0.29). Each line in `cue-tags.mjs` has its tag's numbers.
+Cohub 适配器：`[shouting]`（大喊）重新出标签，是情绪、风格里唯一留下的。笑、叹气不变；悲伤、兴奋、讽刺、惊讶、生气、耳语仍然不出标签。这次量的是声音本身，不问听音模型：每个标签的八对（同一句、同一个声音的标签段和普通段）按开跑前定好的规则判。大喊八对全部朝预期方向变：响度上升 1.30 dB，同样设置生成两遍之间的差是 0.08 dB；音高中位数上升 3.31 个半音，两遍之间的差是 0.29 个。每行注释里有各个标签的数。
+
+The integrated loudness that the loudness check and the loudness normalizer both measure with no longer slows down on a clip that ends in digital silence. The K-weighting filter now sets its state to zero once that state has decayed to almost nothing, instead of running on through the very small numbers a processor handles slowly. The loudness of every clip tested is the same as before, to the last digit, with or without digital silence at the end.
+响度检查和响度统一量的整体响度，碰到末尾是数字静音的段不再变慢。K 计权滤波器的状态衰减到几乎为零以后直接置零，不再在处理器算得很慢的极小数里继续算。测过的每一段，响度都和以前逐位一样，末尾有没有数字静音都一样。
+
+- **A clip that ends in silence is measured as fast as any other.** A long digital silence after the words made the loudness measurement many times slower, and the synthesis check, which measures every clip, waited on it. / **末尾是数字静音的段，和别的段量得一样快。** 字后面接着很长的数字静音，以前让响度测量慢很多倍；合成时每段都要量，检查就等着它。
+- **The values do not change.** The loudness of each clip tested is the same as before, to the last digit, and so is the normalized output on the clips checked. / **值不变。** 测过的每一段，响度逐位一样；统一响度后的输出，检查过的几段也一样。
+- **Callers see no difference.** Callers of the measuring and normalizing functions get the same results; only the filter's internal state is handled differently. / **调用的一方看不出区别。** 量和统一响度的函数，拿到的结果都一样；只是滤波器内部的状态处理不同了。
+
 ## 2.0.9 — 2026-10
 
 A designed voice's first pack can now have its sample lines cloned from its locked audition, once the user has agreed to how many clones it takes: one voice-cloning call per line of the set in `vocab/design-sample-lines.json` (Chinese and English, seven lines each), with the audition as the reference and its words as `ref_text`. The clones go into the pack as material beside the audition, so it has several references and a held-out recording to measure the fidelity on. Section 7 says how an agent does the same. The sample lines are a vocabulary file, read by the app and by the agent alike. No program logic in the library changed.
