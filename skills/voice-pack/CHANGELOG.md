@@ -6,6 +6,15 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.9 — 2026-10
+
+A designed voice's first pack can now have its sample lines cloned from its locked audition, once the user has agreed to how many clones it takes: one voice-cloning call per line of the set in `vocab/design-sample-lines.json` (Chinese and English, seven lines each), with the audition as the reference and its words as `ref_text`. The clones go into the pack as material beside the audition, so it has several references and a held-out recording to measure the fidelity on. Section 7 says how an agent does the same. The sample lines are a vocabulary file, read by the app and by the agent alike. No program logic in the library changed.
+设计出来的声音第一次做成音色包时，可以用锁定的试听克隆示例台词：先说清要调几次，使用者确认后，每句调一次 voice-cloning，参考是试听，`ref_text` 是试听的原文。句子在 `vocab/design-sample-lines.json`，中文、英文各 7 句。克隆出来的几段和试听一起当素材，包里就有几段参考和留出录音，留出录音用来量还原度。第 7 节也写了 agent 怎么做。这份句子是词表，app 和 agent 读的是同一份。程序的逻辑没有改动。
+
+- **Asked before anything is spent.** The app says how many clones it takes and asks first. A no makes the pack from the audition alone, as before. / **先问再花。** app 先说要克隆几句、花几次；使用者不要，就只用试听做音色包，和以前一样。
+- **The sample lines are written for holding out.** Seven a language, each with a feeling of its own, two or more of them a question, a reply or an aside, and each long enough to be a held-out recording. / **句子是按留出录音的要求写的。** 每种语言 7 句，每句一种情绪，至少两句是问句、回答或插话，每句够作留出录音的字数。
+- **A refused line is left out.** A line the service refuses for its own text is not in the pack and the others go on. Three refusals with none made stop the make, because the reference itself may be what is refused. / **被拒的一句不进包。** 服务商因为这一句的文字拒了，它不进包，别的照常。拒了三句、还没有一句成功，就停下，因为可能是参考本身被拦了。
+
 ## 2.0.8 — 2026-10
 
 The default voice, which is used when no voice is chosen, is now described as a neutral adult talking to the people around them, not as someone reading aloud, and its sample text is several plain lines said face to face, not a welcome or the opening of a story. Every clone made from the default voice still takes the same sample. Step 4 of section 2 no longer asks the listening model whether a candidate sounds like a real person, because its answers do not tell real recordings from synthesized ones. The user or the agent chooses the candidate, and at most one more batch is designed. No program logic changed.
