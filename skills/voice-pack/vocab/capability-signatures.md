@@ -27,6 +27,7 @@ await env.capabilities['text-to-speech']({
   text,                  // string，必填：要说的话
   instructions,          // string，可选：怎么念（语气、节奏、情绪）。只写想要的效果，不用某个模型的指令语法。环境有 style-instruction 才用
   cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
+  continues,             // true，可选：同 voice-cloning 的 continues（接着下一段说的，不到字数下限补「，」）
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string }
 ```
@@ -42,6 +43,7 @@ await env.capabilities['voice-cloning']({
   ref_text,              // string，或和 ref_audio 一一对应的字符串数组。参考音频里说的原文，可选
   instructions,          // string，可选：怎么念。环境有 style-instruction 才用
   cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
+  continues,             // true，可选：这一段是接着下一段说的（句子被标记切开、没有停顿）：不到字数下限补「，」，句末的补「。」。没有就是 false
   enhancers,             // 增强件的数组，可选，见下面「增强件」
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string, enhancers_used?: string[] }
@@ -212,6 +214,15 @@ await env.capabilities['text-generation']({
 - 一句被切成几段（`maxChars`）时，`emotion`、`style` 每段都带，除了 `vocab/cues.json` 的 `oneShot` 标着的一下子的声音（笑、叹气）：它只在第一段带。
 - **语速和停顿不在 `cues` 里。** 它们是 `unit.speed`、`unit.pauseBeforeMs`、`unit.pauseAfterMs`（和 `unit.join`），由拼接的人按它们做一次（见 `lib/dub.mjs` 文件头「语速和停顿」）。语速只有一条路：合成能力不收语速，环境也不把它译成标签或变速；不论环境声明不声明 `style-cues`，都一样。
 - `style-instruction` 和 `style-cues` 是两回事：前者是一段**自由的文字**（配音指引加这一句的说明，原样交给环境，由环境去理解）；后者是**这一句认出来的几个名字**（库已经读过、规范化过，环境只需要对表）。一个环境可以两个都声明，也可以只声明一个。不声明的理由写成「模型或服务做不到」，不要写成「我们的请求里没有 `cues` 字段」（同 `style-instruction`，分工见 `../adapters/README.md`「只是声明的能力」）。
+
+### `pause-in-text`
+
+不是函数，是**声明**：环境提供它，表示合成能力（`voice-cloning`）认文字里的停顿：一次请求里的停顿写成 `<speak>…</speak>` 包着的 `<break time="Nms"/>`（文字里的 `& < >` 转义），或者只靠标点。在 `env.capabilities['pause-in-text']` 里放 `true`。
+
+- 库用 `hasCapability(env, 'pause-in-text')` 问：有，配音就把段落里不超过 2.5 秒的停顿并进一次请求（`lib/pause-in-request.mjs`，`lib/dub.mjs` 的第 5c 步）；没有，每个停顿照旧切成两次请求，文字里没有 `<speak>`。
+- 名字（`cues` 译成的行内标签，例如 `[laughing]`）放在 `<speak>` 的根里面、要念的文字前面，不放在它外面。
+- 字数下限（`padToMinLength`）按说出来的字数数，补的字在 `</speak>` 前面；续接的段（`continues`）补「，」（`padCharOf`）。两处都在适配器的 `limits.mjs`。
+- 配音怎么拼接（停顿、续接、并起来的段）只在 `SKILL.md` 第 6 节写一次。
 
 ## 变声和唱歌
 

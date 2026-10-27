@@ -129,6 +129,12 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 6. **增强件**：包里服务 `voice-cloning` 的增强件，递给能力。环境认识对应的模型就用上（报告 `enhancers.used`），不认识就照常生成，`enhancers.statement` 是 `enhancers_not_used`，并附上包的验证记录，让人知道当前环境下效果会差多少。
 7. **脚本**：登记在 `dub` 功能名下的，合成之前改要说的话，合成之后改音频，见下。
 
+**拼接**（把各句接成一个音频的人照这几条做：命令行的使用者，或者适配器自己拼的）：
+
+- 每一句的 `pauseBeforeMs` 挂在句首、`pauseAfterMs` 挂在句末，各按毫秒插静音（封顶 10000 毫秒）。续接的句子（`join` 为 `continue`，接着下一句说）也一样：`pauseAfterMs` 是 0 就不插；以「，、；：」结尾的续接处，`pauseAfterMs` 是 500（配音定的，常量在 `lib/pause-in-request.mjs` 的 `JOIN_PUNCTUATION_PAUSE_MS`）。合成能力收 `continues` 的，续接的那一段传 `continues: true`，不到最短字数补「，」，句末补「。」。
+- `joined` 的段（一段话里的停顿并进了一次请求，文字里写着 `<break>`，或者靠标点）是一段音频：里面的停顿已经在音频里，不再插静音，只看它的头和尾的 `pauseBeforeMs`、`pauseAfterMs`。只有声明了 `pause-in-text` 的环境会有这种段；没有声明的，报告里没有 `joined`。
+- `speed` 为 0.85（放慢）、1.15（加快）的，拼接的人自己变速：合成能力不收语速。
+
 **失败和重做**：服务暂时出错的句子记成 `failed`，别的句子照常做，退出 1，输出里给出带 `--only` 的重做命令；重做时，上一次做好的句子（话和参考段都没变、文件还在）原样沿用。文字被拒的句子（`details.textRejected`，只和这一句的文字有关，换一句就成）也记成 `failed`，只记这一句，别的照常做，不重试。调用之前就查出来的（文字空白、太长、有处理不了的字，错误码 `capability_input_invalid`）不计数；服务商拒的，连着 3 句、还没有一句成功，就和别的错一样停下来（错误码 `dub_text_rejected`，`stoppedBy` 的 `details.rejected` 写明被拒的句子）：可能是参考或别的输入被拦了，每一句都会这样被拒，接着做只会白花钱。别的错（401、参数不对、缺能力、缺运行时……）直接停下来，不再开始新的句子，已经做好的文件和一份写着 `stoppedBy` 的 `dub.json` 留着。401 说明授权有问题，先让使用者处理，不要重试。
 
 **包里的脚本**：清单 `scripts` 里的 `{ entry, runtime, feature }`，`feature` 是 `dub` 或 `convert`。一个功能只跑登记在自己名下的脚本；没写 `feature` 的不会自动运行（配音指引可以教你手动用）。运行环境完全信任脚本：直接运行，不让使用者确认，不隔离。运行时按名字取：`node` 就是运行命令的 Node，`python` 找 `python3` 或 `python`，别的名字按 PATH 找。缺运行时，只有用到这个脚本的功能报 `runtime_missing`，在合成之前报；`--dry-run` 不报，只在输出里说缺什么。脚本从标准输入读一份 JSON，往标准输出写一份 JSON（什么都不写或 `{}` 是不改）：

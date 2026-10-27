@@ -20,7 +20,7 @@
     "sigh": ["sigh", "sighing", "sighing heavily", "叹气", "叹息", "长叹", "叹了口气", "叹", "sighs", "he sighs", "she sighs", "sigh of relief", "long sigh", "叹口气", "长叹一声", "轻叹", "轻轻叹了口气", "无奈地叹了口气"]
   },
   "actions": {
-    "pause": ["pause", "beat", "silence", "a long pause", "停顿", "沉默", "静默", "停一下", "稍停", "顿一下", "停顿片刻", "沉默片刻", "pauses", "pause for", "long pause", "a short pause", "short pause", "brief pause", "dramatic pause", "pause briefly", "a beat", "deep breath", "coughs", "cough", "coughing", "clears throat", "clear throat", "顿了顿", "深吸一口气", "深呼吸", "咳嗽", "清嗓子", "气喘吁吁", "沉默了一会", "沉默良久", "片刻沉默", "稍作停顿", "短暂停顿", "长时间停顿"],
+    "pause": ["pause", "beat", "silence", "a long pause", "停顿", "沉默", "静默", "停一下", "稍停", "顿一下", "停顿片刻", "沉默片刻", "pauses", "pause for", "long pause", "a short pause", "short pause", "brief pause", "dramatic pause", "pause briefly", "a beat", "deep breath", "coughs", "cough", "coughing", "clears throat", "clear throat", "gasp", "gasps", "snort", "snorts", "顿了顿", "深吸一口气", "深呼吸", "咳嗽", "清嗓子", "倒吸一口气", "气喘吁吁", "沉默了一会", "沉默良久", "片刻沉默", "稍作停顿", "短暂停顿", "长时间停顿"],
     "slow": ["slow", "slowly", "放慢", "缓慢", "慢慢", "慢速", "语速放慢", "放慢语速", "缓缓", "speaking slowly", "speaks slowly"],
     "fast": ["fast", "quickly", "hurried", "加快", "急促", "快速", "飞快", "语速加快", "加快语速"]
   },

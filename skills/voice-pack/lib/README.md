@@ -18,6 +18,7 @@
 | `convert.mjs` | `convertAudio(env, pack, audio, options)`：变声和唱歌（`voice-conversion`、`singing-voice-conversion`）：把一段音频换成包的声音，内容、节奏、旋律不变 |
 | `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；没有任何标签的句子，环境有 `text-generation` 就让它判（一次收费的调用，只规划的调用方传 `judge: false` 不调） |
 | `line-hints.mjs` | 从一句台词读出提示（纯计算）：`readDirections` 读舞台提示（（耳语）、*笑*……）和停顿，`detectLanguages` 按文字系统认语种，`canonicalLabel`、`primaryLanguage`、`normalizeLanguage` 整理情绪、风格和语言标签。词表是 `../vocab/cues.json` |
+| `pause-in-request.mjs` | 一段话里的停顿交给模型（纯计算）：`requestsOf` 把相邻的段并成几次请求（停顿 ≤ 2.5 秒、标点、`<speak>` 和 `<break>`），`renderRun`、`endsMidSentence`、`JOIN_PUNCTUATION_PAUSE_MS`。app 和配音（`dub.mjs` 第 5c 步）都用它 |
 | `pronunciation-lexicon.mjs` | 读音词表（W3C 的 PLS）：`parseLexicon`、`lexiconRules`、`applyLexicon`：合成之前把台词里的词换成期望的读法。解析器是自己写的，不引第三方依赖 |
 | `enhancers.mjs` | 增强件的使用情况（配音和变声共用）：核对能力返回的音频和它报的 `enhancers_used`，汇总这一次有没有用上增强件 |
 | `pack-script.mjs` | 包里的脚本：按清单登记的入口和运行时叫脚本、读它的回答（`runScript`），查缺哪个运行时（`missingScriptRuntimes`），列出没登记功能的脚本（`scriptsWithoutFeature`） |

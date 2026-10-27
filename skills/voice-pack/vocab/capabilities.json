@@ -23,12 +23,14 @@
     "speech-to-speech": { "tier": "convention", "summary": "输入一段语音，直接输出另一段语音（例如同声传译、语音对话），不经过显式的文字环节" },
     "style-instruction": { "tier": "convention", "summary": "合成时接受「怎么说」的自然语言说明（语气、节奏、情绪），对应参数 instructions" },
     "style-cues": { "tier": "convention", "summary": "合成时接受这一句自己的舞台提示认出来的几个名字（情绪、风格：vocab/cues.json 的规范名字），对应参数 cues；语速和停顿不在里面（它们是 unit 的字段），配音指引也不在里面" },
+    "pause-in-text": { "tier": "convention", "summary": "合成时认文字里的停顿：<speak>…</speak> 包着的 <break time=\"Nms\"/>，整段一次请求；一段话里不超过 2.5 秒的停顿写在这里，不切成两次请求（lib/pause-in-request.mjs）" },
     "pronunciation-lexicon": { "tier": "convention", "summary": "合成时按读音词表（W3C PLS 格式）改读指定的词" }
   },
   "parameters": {
     "ref_audio": { "summary": "参考音频：要模仿的声音" },
     "ref_text": { "summary": "参考音频的逐字文本" },
     "instructions": { "summary": "怎么说的自然语言说明（语气、节奏、情绪）；只写想要的效果，不用某个模型的指令写法" },
-    "cues": { "summary": "这一句自己的舞台提示认出来的名字：{ emotion, style }，值是 vocab/cues.json 的规范名字；只装这一句的，配音指引和语速、停顿不进去" }
+    "cues": { "summary": "这一句自己的舞台提示认出来的名字：{ emotion, style }，值是 vocab/cues.json 的规范名字；只装这一句的，配音指引和语速、停顿不进去" },
+    "continues": { "summary": "这一段是接着下一段说的（句子被标记切开，没有停顿）：不到最短字数时，没有句末标点的补「，」，句末的补「。」（补字的规则只在适配器一处）" }
   }
 }

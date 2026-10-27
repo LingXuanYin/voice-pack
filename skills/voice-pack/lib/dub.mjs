@@ -4,6 +4,7 @@
 //   @capability voice-cloning       按挑中的参考合成每一句（签名在 vocab/capability-signatures.md）
 //   @capability style-instruction   可选：环境声明有它，才把配音指引、这一句的说明通过 instructions 传给模型
 //   @capability style-cues          可选：环境声明有它，才把这一句自己的舞台提示认出来的名字（情绪、风格）通过 cues 传给模型；语速、停顿和配音指引都不进去
+//   @capability pause-in-text       可选：环境声明有它，才把段落里不超过 2.5 秒的停顿并进一次请求，写在文字里（<speak> 和 <break>，规则在 lib/pause-in-request.mjs）
 //   @capability text-generation     可选：台本里没有任何提示时，让它判断每句的情绪、风格（在 lib/reference-pick.mjs 里用）
 //
 //   const plan   = await planDub(env, pack, script, options);   只规划，不合成：每一段话挑了哪一段参考、为什么、读音词表换了什么。不花钱：不调任何要计费的能力，
@@ -39,7 +40,10 @@
 //   6 脚本（lib/pack-script.mjs）：登记在 dub 功能名下的脚本，合成之前跑 text 钩子（可以改要说的话），合成之后跑 audio 钩子（可以换音频）。
 //     清单里没写 feature 的脚本不属于任何功能，不运行；规划和正式运行的 notes 里都有一条 scripts_without_feature 点名它们（字段见下面「说明」），
 //     说明这次没有运行和原因。
-//   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers? }。
+//   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers?, continues? }。
+//      continues：这一段是接着下一段说的（句子被标记切开，unit.join 为 'continue'）时才有，能力不到最短字数补「，」而不是「。」（补字的规则只在适配器一处）。
+//      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken。
+//      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 SKILL.md 第 6 节「拼接」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
 //      返回值里说明没传和原因。配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
 //      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
@@ -103,6 +107,7 @@ import { lexiconRules, applyLexicon } from './pronunciation-lexicon.mjs';
 import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, runScript, audioForScript, HOOKS } from './pack-script.mjs';
 import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
 import { isServiceError, isTextRejected, summarizeError, pool } from './capability-calls.mjs';
+import { requestsOf, endsMidSentence, JOIN_PUNCTUATION_PAUSE_MS } from './pause-in-request.mjs';
 
 export const FEATURE = 'dub';
 /** unit.error.code：比合成能力的下限短、并不了的那一段（第 5b 步）。make-pack 的试合成也认这个码，把它记成「没合成」，不是「暂时出错」。 */
@@ -380,6 +385,58 @@ function cuesOf(line, part) {
 const emptyEnhancers = (offers) => ({ offered: offers.map(summarizeOffer), used: [], notUsed: [], statement: null });
 
 /**
+ * 5c：段落内部的停顿（不超过 2.5 秒）并进一次请求，写在文字里。只在环境声明了 pause-in-text 时做（那样它才收 <speak> 的文字）。
+ * 停顿怎么写（<break>、靠标点、整段包 <speak>、转义）是 lib/pause-in-request.mjs 的；这里只决定哪两段能并：
+ *   同一章；前一段不是空行（join）接着的；同一个参考段；同一个语速；说明和名字一样（一个请求只有一套，放在前面）；
+ *   名字里没有一下子的声音（笑、叹气）：标签要写在各自的字前面，一个请求放不下两套，而且笑、叹气标签在 <speak> 里能不能出声没有测出明确的结论，保守不并。
+ * 包里登记了配音脚本的不并：text 钩子要看到每一句的原话。
+ * 并起来的段：unit.spoken 是原话的词（不带标记），unit.ssml 是发出去的文字（有 <break> 才有）；unit.joined 写明并了哪几句；停顿在它的两头
+ * （unit.pauseBeforeMs、unit.pauseAfterMs），中间的已经在文字里，拼接的人不再插静音。
+ * @returns {{ units: object[], styles: object[], joins: number }} joins 是并了几处（一句并进前一句算一处）
+ */
+function pausesInRequest(env, units, styles, { max, scripts }) {
+  if (!hasCapability(env, 'pause-in-text') || scripts.length > 0) return { units, styles, joins: 0 };
+  const oneShot = (at) => styles[at].cues !== null && ONE_SHOT_STYLES.has(styles[at].cues.style);
+  const sameStyle = (a, b) => JSON.stringify(styles[a]) === JSON.stringify(styles[b]);
+  // 一个缝的停顿：前一段的后面，加上后一段的前面（buildLines 已经把它封顶在 PAUSE_MAX_MS 以内）
+  const items = units.map((unit, at) => ({ text: unit.spoken, pause: at + 1 < units.length ? unit.pauseAfterMs + units[at + 1].pauseBeforeMs : unit.pauseAfterMs, inline: true, at }));
+  const requests = requestsOf(items, {
+    max,
+    measure: count,
+    canJoin: (prev, next) => {
+      const a = units[prev.at];
+      const b = units[next.at];
+      return a.status === 'planned' && b.status === 'planned' && a.join === undefined && a.chapter === b.chapter
+        && a.pick.segmentId === b.pick.segmentId && a.speed === b.speed && sameStyle(prev.at, next.at)
+        && !oneShot(prev.at) && !oneShot(next.at);
+    },
+  });
+  let joins = 0;
+  const out = [];
+  const outStyles = [];
+  for (const request of requests) {
+    const members = units.slice(request.first, request.last + 1);
+    outStyles.push(styles[request.first]);
+    if (members.length === 1) { out.push(members[0]); continue; }
+    joins += members.length - 1;
+    const head = members[0];
+    const last = members[members.length - 1];
+    const text = members.reduce((acc, member, k) => (k === 0 || member.line === members[k - 1].line ? acc : joinSpoken(acc, member.text)), head.text);
+    out.push({
+      ...head,
+      text,
+      spoken: request.words,
+      ...(request.ssml ? { ssml: request.text } : {}),
+      pauseAfterMs: last.pauseAfterMs,
+      joined: members.flatMap((member) => member.joined ?? [{ line: member.line, part: member.part }]),
+      ...(last.join === undefined ? {} : { join: last.join }),
+    });
+  }
+  return { units: out.map((unit, index) => ({ ...unit, index })), styles: outStyles, joins };
+}
+
+
+/**
  * 规划：返回 { plan, styles }。styles[i] 是第 i 段真要传给模型的 { instructions, cues }（环境没有 style-instruction 时 instructions 是 null，没有 style-cues 时 cues 是 null）；
  * 全文可能很长，不放进每一段的记录里，只有合成的人拿它。planOnly 为真时（planDub）不调任何要计费的能力。
  */
@@ -459,6 +516,13 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
     const joined = units.filter((unit) => unit.joined !== undefined).length;
     if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个说明、同一个语速，中间没有停顿）`, details: { min: settings.minChars, units: joined } });
   }
+  // 5c：段落内部的停顿并进一次请求（只在环境声明了 pause-in-text 时，见 pausesInRequest）
+  const paused = pausesInRequest(env, units, styles, { max: settings.maxChars ?? Number.POSITIVE_INFINITY, scripts });
+  units = paused.units;
+  styles = paused.styles;
+  if (paused.joins > 0) notes.push({ code: 'pauses_in_request', message: `有 ${paused.joins} 处停顿并进了一次请求（写在文字里：<speak> 和 <break>，或者标点），这几处的停顿不再交给拼接的人`, details: { joins: paused.joins } });
+  // 续接的段（unit.join）照旧两次请求，以「，、；：」结尾的，两段之间停 0.5 秒（这一处的 pauseAfterMs 定成 500；不以标点结尾的是 0）
+  for (const unit of units) if (unit.join === 'continue' && unit.pauseAfterMs === 0 && endsMidSentence(unit.spoken)) unit.pauseAfterMs = JOIN_PUNCTUATION_PAUSE_MS;
   if (units.some((unit) => unit.speed !== null)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着台本要求的语速（0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
   const unregistered = scriptsWithoutFeature(pack.scripts());
   if (unregistered.length > 0) {
@@ -480,7 +544,7 @@ async function buildPlan(env, pack, script, options, { planOnly }) {
     enhancers: emptyEnhancers(offers),
     scripts: scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS] })),
     missingRuntimes: missingScriptRuntimes(env, scripts, FEATURE),
-    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'text-generation': hasCapability(env, 'text-generation') },
+    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), 'text-generation': hasCapability(env, 'text-generation') },
     notes,
     verification: pack.manifest.verification ?? [],
   };
@@ -550,7 +614,8 @@ export async function dubScript(env, pack, script, options = {}) {
       return;
     }
     const { segment, clip } = references.get(unit.pick.segmentId);
-    const call = { text: spoken, ref_audio: clip, ref_text: segment.text };
+    const call = { text: unit.ssml ?? spoken, ref_audio: clip, ref_text: segment.text };
+    if (unit.join === 'continue') call.continues = true; // 续接的段：能力补字时补「，」
     if (unit.instructions.sent) call.instructions = styles[unit.index].instructions;
     if (unit.cues.sent) call.cues = styles[unit.index].cues;
     if (offers.length > 0) call.enhancers = offers;
