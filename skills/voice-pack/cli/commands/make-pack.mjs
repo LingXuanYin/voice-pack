@@ -6,7 +6,7 @@
 //
 //   node cli.mjs make-pack [<素材目录|素材.json>] [--recording <文件|目录>] [--audition <文件|目录>] [--no-separate] --output <新目录> --name <名字> [--base-version <x.y.z>]
 //                          [--short-name <英文短名>] [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>]
-//                          [--previous <上一版的包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>] [--default-segment <段名>]]
+//                          [--previous <上一版的包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>]] [--default-segment <段名>]
 //                          [--source-pack <来源包的目录或分享文件>]
 //                          [--protocol <协议核心目录>] [--base <基础部分目录>]
 //                          [--adapter <名字|模块文件>]... [--adapter-option <键=值>]... [--environment <名字>]
@@ -46,8 +46,9 @@
 //   --recording, --audition, --no-separate
 //                       长录音、设计试听、不分离，见上面「素材」。--no-separate 只有给了 --recording 才有意义。
 //   --previous          发新版本：上一版的包目录。包 ID 不变，版本号往上加（--version 明说，要比上一版大；或 --bump，默认 minor），上一版的参考和留出录音保持原来的角色，
-//                       新补的素材接在后面。--changelog 不给就按变化生成一份。--drop 去掉上一版里不要的段（逗号隔开，可以多次给）。--default-segment 明说换默认参考段。
+//                       新补的素材接在后面。--changelog 不给就按变化生成一份。--drop 去掉上一版里不要的段（逗号隔开，可以多次给）。
 //                       上一版有外部资源时要取回来核对，环境得有 fetch。验证记录不带过来：这一版重新量，没量出来就没有（lib/pack-version.mjs 文件头）。
+//   --default-segment   明说默认参考段：新包和发新版本都能给（不带 --previous 也行）。段名要是这次素材里的一段（或上一版的参考）；规则和理由在 lib/pack-material.mjs 的文件头。
 //   --source-pack       做「你自己的」一个新包时给：它是照着哪个包做的（目录，或分享文件）。给了就在花钱之前查重（lib/duplicate-check.mjs，规则、阈值、依据都在它的文件头）：
 //                       新包的文字（描述、配音指引、示例台词、设计来源）和录音（--recording、--audition、素材里的每一段）和来源包比，重合太多就报 duplicate_detected 停下（没花过钱），
 //                       说明是哪一项、量了多少、阈值是多少。只有用得上才给：来源包只在这一步读，不验签、不联网，也不往新包、标准输出、报告里写它的任何标识（路径、包 ID、名字）；
@@ -128,7 +129,7 @@ import { fixed2, renderFidelityReport } from '../fidelity-report.mjs';
 export const summary = '做包：读一批切好的录音，打标签、挑参考集和留出录音、试合成、量还原度、提示还缺什么素材；也能给已有的包发新版本';
 export const usage = `make-pack [<素材目录|素材.json>] [--recording <文件|目录>] [--audition <文件|目录>] [--no-separate] --output <新目录> --name <名字> [--short-name <英文短名>] [--base-version <x.y.z>]
       [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>]
-      [--previous <包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>] [--default-segment <段名>]]
+      [--previous <包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>]] [--default-segment <段名>]
       [--source-pack <来源包的目录或分享文件>] [--protocol <协议核心目录>] [--base <基础部分目录>] [--environment <名字>]
       ${ADAPTER_USAGE}
       [--dry-run] [--no-evaluate] [--no-loudness] [--no-limiter] [--seed <整数>] [--max-error-rate <数>] [--concurrency <1-8>] [--save-evaluation <新目录>] [--share-file <分享文件>] [--json]`;
@@ -592,7 +593,7 @@ export async function run(args, ctx) {
   if (options['text-language'] !== undefined && !TEXT_LANGUAGES.includes(options['text-language'])) {
     return usageProblem(ctx, usage, `--text-language 要给 ${TEXT_LANGUAGES.join('、')} 之一（包里 SKILL.md 骨架用的语言），收到 ${JSON.stringify(options['text-language'])}`);
   }
-  for (const flag of ['version', 'bump', 'changelog', 'drop', 'default-segment']) {
+  for (const flag of ['version', 'bump', 'changelog', 'drop']) {
     if (options[flag] !== undefined && options.previous === undefined) return usageProblem(ctx, usage, `--${flag} 只有发新版本（--previous）时才有意义`);
   }
   if (options.seed !== undefined && !Number.isInteger(options.seed)) return usageProblem(ctx, usage, `--seed 要给一个整数，收到 ${options.seed}`);

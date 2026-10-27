@@ -173,7 +173,7 @@ export async function makePack(env, input, options = {}) {
 
   // 不花钱的几步：筛片段，查出花钱之前能查出的问题，试装，规划
   await screen(env, items, { thresholds: settings.thresholds, loudness: settings.loudness });
-  assertDefaultUsable(items, version.defaultSegment);
+  assertDefaultUsable(items, version.defaultSegment, materialOptions);
   if (previous !== null) await assertSomethingNew(previous, { effective, items, fresh, defaultSegment: version.defaultSegment }); // 花钱之前先看一眼：新补的素材一段都用不上、别的也没改，就不用往下做了
   const context = { effective, input, previous, versionNumber, changelog: version.changelog, textLanguage: settings.textLanguage };
   await preflight(items, context);

@@ -4,7 +4,7 @@
 // 哪些当参考、哪些当留出录音、默认参考段怎么挑，规则的正本是 lib/pack-material.mjs 的文件头（纯数据）；这里是它和做包的条目之间的一层：
 // 把条目整理成它要的候选，把它的结论写回条目，没有一段能用、选出来的和作者明说的对不上时报错。
 //
-//   assertDefaultUsable(items, defaultSegment)                        作者明说的默认参考段这次已经被淘汰了，当不了：在花钱之前就报
+//   assertDefaultUsable(items, defaultSegment, materialOptions)       作者明说的默认参考段这次已经被淘汰了，或者是新补的、上一版的参考已经占满上限，当不了：在花钱之前就报
 //   pickMaterial(env, items, { previous, version, materialOptions })  挑（异步：环境有说话人相似度时要量）。返回 { chosen, roleOf }：chosen 是 chooseMaterial 的结果
 //                                                                     （references、holdouts、unused、defaultSegment、defaultRule，规则见 lib/pack-material.mjs 的规则 5；
 //                                                                     defaultRule 在这里报成 'author' 或 'previous'，别的原样；量相似度出错、退回按优先级的还有 unmeasured），roleOf 是 Map<段名, 'reference' | 'holdout'>。
@@ -23,7 +23,7 @@
 //
 // 抛出的错误（details 的写法见 lib/make-pack.mjs 文件头「抛出的错误」）：
 //   make_pack_no_material    没有一段能用，做不出包
-//   make_pack_input_invalid  默认参考段这次被淘汰了，或者没进参考集（field 是 defaultSegment）；去掉以后参考集里一段都不剩（field 是 drop）
+//   make_pack_input_invalid  默认参考段这次被淘汰了，或者新补的它进不了参考集（field 是 defaultSegment）；去掉以后参考集里一段都不剩（field 是 drop）
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
@@ -32,7 +32,7 @@ import { parseScript } from '../tools/markup.mjs';
 import { readDirections } from './line-hints.mjs';
 import { summarizeError } from './capability-calls.mjs';
 import { isNoSpeechError, speakerSimilarity, tokenizeTranscript } from './fidelity.mjs';
-import { chooseMaterial, defaultCandidatesOf } from './pack-material.mjs';
+import { DEFAULTS, chooseMaterial, defaultCandidatesOf } from './pack-material.mjs';
 import { invalid } from './make-pack-input.mjs';
 
 /**
@@ -49,10 +49,20 @@ function isPlainSpeech(text) {
   return directions.length === 0 && pieces.length === 1 && pieces[0].text === span.text;
 }
 
-/** 作者明说的默认参考段，这次已经被淘汰了（没用上）：当不了默认参考段，在花钱之前就报。 */
-export function assertDefaultUsable(items, defaultSegment) {
+/**
+ * 作者明说的默认参考段，这次当不了的，在花钱之前就报（field 是 defaultSegment）：
+ *   这次没能用上（筛片段淘汰了：音质被拒、重复……）；
+ *   或者是新补的，而上一版的参考已经占满参考上限：规则 4 不裁它，但已有的参考保持原来的角色，它进不了参考集（lib/pack-material.mjs）。
+ * materialOptions 是调用方给的挑素材选项（这里只用 maxReferences；没给就是 lib/pack-material.mjs 的默认值）。
+ */
+export function assertDefaultUsable(items, defaultSegment, materialOptions = {}) {
   const wanted = defaultSegment === undefined ? undefined : items.find((item) => item.id === defaultSegment);
   if (wanted?.unused !== undefined) throw invalid('defaultSegment', `${JSON.stringify(wanted.id)} 这次没能用上（${wanted.unused.reason}），当不了默认参考段`);
+  const cap = materialOptions.maxReferences ?? DEFAULTS.maxReferences;
+  const previousReferences = items.filter((item) => item.previous === 'reference' && item.unused === undefined).length;
+  if (wanted !== undefined && wanted.previous === undefined && previousReferences >= cap) {
+    throw invalid('defaultSegment', `${JSON.stringify(wanted.id)} 是这次新补的，上一版的参考已经占满参考上限（${cap} 段），它进不了参考集，当不了默认参考段`);
+  }
 }
 
 /**
@@ -151,7 +161,7 @@ export async function pickMaterial(env, items, { previous, version, materialOpti
   }
   if (chosen.references.length === 0) throw invalid('drop', '去掉以后参考集里一段都不剩：至少要留一段参考');
   if (version.defaultSegment !== undefined && chosen.defaultSegment !== version.defaultSegment) {
-    throw invalid('defaultSegment', `${JSON.stringify(version.defaultSegment)} 这次没进参考集（新补的段按规则当了留出录音，或者超过了参考的上限），当不了默认参考段`);
+    throw invalid('defaultSegment', `${JSON.stringify(version.defaultSegment)} 这次没进参考集，当不了默认参考段`);
   }
   for (const dropped of chosen.unused) items.find((item) => item.id === dropped.id).unused = { reason: dropped.reason, details: {} };
   const roleOf = new Map([...chosen.references.map((id) => [id, 'reference']), ...chosen.holdouts.map((id) => [id, 'holdout'])]);

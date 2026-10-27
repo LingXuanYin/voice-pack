@@ -6,6 +6,14 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.13 — 2026-10
+
+A new pack can name its default reference segment with `--default-segment`, not only a new version. The named segment is never picked as a holdout and never cut by the reference limit, even when its quality is a warning.
+新包也能用 `--default-segment` 明说默认参考段，不只是发新版本时能给。明说的那一段不会被挑成留出录音，也不会被参考上限裁掉，音质是 warn 也一样。
+
+- **A named default segment stays in the reference set.** The rules are in `lib/pack-material.mjs`; with no segment named, nothing changes. / **明说的默认段留在参考集里。** 规则在 `lib/pack-material.mjs`；不明说的，什么都不变。
+- **A named segment that cannot fit is refused before labelling.** When the previous version's references already fill the reference limit, a new segment named as the default cannot enter the set; the make refuses it before any labelling is paid for (before, it was found only after). / **明说的新段进不了参考集，在打标签之前就拒绝。** 上一版的参考已经占满参考上限时，新补的、明说当默认段的那一段进不去；现在打标签之前就拒绝（以前要打完标签才报错）。
+
 ## 2.0.12 — 2026-10
 
 A designed voice has no real recordings, so its fidelity report now says what its numbers mean. The baseline is how alike the voice is to itself across several syntheses, not how alike it is to a real person; the three readings of "judged the same speaker" do not apply to it, so the report gives the count and the number of valid listenings and draws no conclusion; and when there are fewer than five valid held-out recordings, the hint says how many more to synthesize (the count the pack needs, from the same rule the pack uses to choose its holdouts). A pack counts as designed when its manifest has a design source; a pack without one is read as before, with real recordings. The design vocabulary also gets three timbre tags for voices that do not sound human (robotic, metallic and growling); they say how a voice sounds, and a design written with one is not guaranteed to come out that way.

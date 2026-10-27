@@ -29,10 +29,14 @@
 //     每个组都取不动、而一段都还没留出来时（标签打得碎，每个组都只有一段），放宽一次：只守「这种语言至少还留一段参考」，
 //     从有两段以上的语言里取优先级最低的那段能当留出录音的（这时它的情绪可能一段参考也没有了：没有留出录音就量不了还原度，这个取舍偏向量得了）。
 //     那一次放宽也找不到能当留出录音的，就不留：报告会提示没有留出录音（lib/material-hints.mjs 的 suggestMaterial）。
-//   4 参考集：除了留出录音，剩下的都是参考；超过 maxReferences 段时，先保证每个标签组都有最好的一段，再按优先级补满，多出来的不要（over_limit）。
+//     作者明说的默认段（新补的，见规则 5）不取：它要当默认参考段，轮到它的时候跳过，取它下一段。
+//   4 参考集：除了留出录音，剩下的都是参考；超过 maxReferences 段时，先保证作者明说的默认段（新补的）留住，再保证每个标签组都有最好的一段，
+//     再按优先级补满，多出来的不要（over_limit）。明说的段不因为音质是 warn 或者优先级靠后被裁掉；上一版的参考已经占满上限、它进不了参考集的，
+//     在花钱之前就报（lib/make-pack-pick.mjs 的 assertDefaultUsable）。
 //     参考在清单里的次序：新做的包按优先级（好的在前，配音时同样合适的几段里取在前面的）；发新版本时，已有的在前、次序不变，新的接在后面。
 //   5 默认参考段（「平常说话」，不带舞台提示的台词都用它）。候选：最常见的语言里（一样多取先出现的）、情绪是 calm 或没有标签、又没有风格标签的参考；
-//     没有这样的，候选就是全部参考（defaultCandidatesOf）。发新版本时，上一版的默认段还在参考集里就沿用（'kept'）；作者明说的，也沿用（'kept'）。
+//     没有这样的，候选就是全部参考（defaultCandidatesOf）。发新版本时，上一版的默认段还在参考集里就沿用（'kept'）；作者明说的，也沿用（'kept'），
+//     它在参考集里是规则 3、4 保证的（音质 warn 也照样当，音质结论照常写在报告里）。
 //     候选只有一段：就是它（'only'）。候选有几段，而且调用方给了相似度（options.similarities）：挑平均相似度最高的一段，也就是和其余参考平均最像的一段（'typical'）；
 //     和它相差不到 TYPICAL_TIE 的几段算差不多，在这几段里按优先级排第一的那段是默认段（tied 记下这几段）。
 //     量不到的候选（一段相似度都没有）不参与；一段都量不到，或者没给相似度（环境没有说话人相似度），或者量的时候出错（调用方退回，见 lib/make-pack-pick.mjs）：按优先级排第一的那段（'priority'）。
@@ -153,11 +157,11 @@ function groupsOf(ranked) {
   return [...groups.values()].sort((a, b) => b.members.length - a.members.length || a.first - b.first);
 }
 
-/** 规则 3：从新的片段里挑出还要留出几条。返回挑中的 id 的集合。ranked 是全部候选，按优先级从好到坏。 */
-function pickHoldouts(groups, ranked, { needed, isNew, settings, alreadyHeldOut }) {
+/** 规则 3：从新的片段里挑出还要留出几条。返回挑中的 id 的集合。ranked 是全部候选，按优先级从好到坏；named 是作者明说的默认段（不挑它）。 */
+function pickHoldouts(groups, ranked, { needed, isNew, settings, alreadyHeldOut, named }) {
   const taken = new Set();
   const heldOutIn = new Map(groups.map((group) => [group.key, group.members.filter((member) => alreadyHeldOut.has(member.id)).length]));
-  const lowestEligible = (group) => [...group.members].reverse().find((member) => isNew(member) && !taken.has(member.id) && canBeHoldout(member, settings));
+  const lowestEligible = (group) => [...group.members].reverse().find((member) => isNew(member) && member.id !== named && !taken.has(member.id) && canBeHoldout(member, settings));
   while (taken.size < needed) {
     let progressed = false;
     for (const group of groups) {
@@ -175,17 +179,22 @@ function pickHoldouts(groups, ranked, { needed, isNew, settings, alreadyHeldOut 
   if (taken.size === 0 && alreadyHeldOut.size === 0 && needed > 0) {
     const perLanguage = new Map();
     for (const candidate of ranked) perLanguage.set(candidate.tags.language, (perLanguage.get(candidate.tags.language) ?? 0) + 1);
-    const member = [...ranked].reverse().find((candidate) => isNew(candidate) && perLanguage.get(candidate.tags.language) >= 2 && canBeHoldout(candidate, settings));
+    const member = [...ranked].reverse().find((candidate) => isNew(candidate) && candidate.id !== named && perLanguage.get(candidate.tags.language) >= 2 && canBeHoldout(candidate, settings));
     if (member !== undefined) taken.add(member.id);
   }
   return taken;
 }
 
-/** 规则 4：参考超过上限时，挑出保留哪些（fixedIds 是已有的参考，一定留）。返回保留的 id 的集合。 */
-function capReferences(references, groups, { cap, fixedIds }) {
+/** 规则 4：参考超过上限时，挑出保留哪些（fixedIds 是已有的参考，一定留；named 是作者明说的默认段，它排在别的前面留住，位子不够就留不住）。返回保留的 id 的集合。 */
+function capReferences(references, groups, { cap, fixedIds, named }) {
   const keep = new Set(fixedIds);
   let room = cap - keep.size;
   const isFree = (candidate) => !keep.has(candidate.id);
+  const namedCandidate = references.find((candidate) => candidate.id === named && isFree(candidate));
+  if (namedCandidate !== undefined && room > 0) {
+    keep.add(namedCandidate.id);
+    room -= 1;
+  }
   const covered = new Set(references.filter((candidate) => keep.has(candidate.id)).map(groupKey));
   const inReferences = new Set(references.map((candidate) => candidate.id));
   for (const group of groups) {
@@ -260,7 +269,8 @@ function readSimilarities(similarities) {
  * @param {object[]} candidates 可用的片段
  * @param {{ holdoutRatio?: number, maxHoldout?: number, maxReferences?: number, minHoldoutTokens?: number, maxSynthesisChars?: number | null,
  *           fixed?: Record<string, 'reference' | 'holdout'>, defaultSegment?: string, similarities?: Record<string, number[]> }} [options]
- *   fixed：发新版本时，已有的片段保持原来的角色（id -> 角色）；defaultSegment：上一版的默认段（或作者明说的）；
+ *   fixed：发新版本时，已有的片段保持原来的角色（id -> 角色）；defaultSegment：上一版的默认段（或作者明说的）。作者明说的，要是这次新补的（不在 fixed 里），
+ *   规则 3、4 不挑它做留出录音，参考上限也不裁它（上一版的默认段本来就在 fixed 里，不受影响）；
  *   similarities：每段候选和其余参考的说话人相似度（段名 -> 数的数组，只量参考之间的）。它只影响默认段，参考和留出录音不因此改变
  * @returns {{ references: string[], holdouts: string[], unused: { id: string, reason: 'over_limit' }[], defaultSegment: string | null,
  *             defaultRule: 'kept' | 'only' | 'typical' | 'priority' | null, typicality?: Record<string, number>, tied?: string[] }}
@@ -273,6 +283,8 @@ export function chooseMaterial(candidates, options = {}) {
   const fixed = settings.fixed ?? {};
   const roleOf = (candidate) => fixed[candidate.id];
   const isNew = (candidate) => roleOf(candidate) === undefined;
+  // 作者明说的默认段，要是这次新补的：不挑成留出录音，参考上限也不裁它（规则 3、4）
+  const named = candidates.find((candidate) => candidate.id === settings.defaultSegment && isNew(candidate))?.id;
   const ranked = [...candidates].sort(byPriority);
   const groups = groupsOf(ranked);
   const total = candidates.length;
@@ -280,12 +292,12 @@ export function chooseMaterial(candidates, options = {}) {
   const wanted = plannedHoldouts(total, settings);
   const alreadyHeldOut = new Set(candidates.filter((candidate) => roleOf(candidate) === 'holdout').map((candidate) => candidate.id));
   const needed = Math.max(0, wanted - alreadyHeldOut.size);
-  const newHoldouts = pickHoldouts(groups, ranked, { needed, isNew, settings, alreadyHeldOut });
+  const newHoldouts = pickHoldouts(groups, ranked, { needed, isNew, settings, alreadyHeldOut, named });
   const holdoutIds = new Set([...alreadyHeldOut, ...newHoldouts]);
 
   const references = ranked.filter((candidate) => !holdoutIds.has(candidate.id));
   const fixedReferences = references.filter((candidate) => roleOf(candidate) === 'reference');
-  const keep = references.length > settings.maxReferences ? capReferences(references, groups, { cap: settings.maxReferences, fixedIds: fixedReferences.map((candidate) => candidate.id) }) : new Set(references.map((candidate) => candidate.id));
+  const keep = references.length > settings.maxReferences ? capReferences(references, groups, { cap: settings.maxReferences, fixedIds: fixedReferences.map((candidate) => candidate.id), named }) : new Set(references.map((candidate) => candidate.id));
 
   const kept = references.filter((candidate) => keep.has(candidate.id));
   // 次序：已有的在前（按它们在输入里的次序），新的接在后面（按优先级）
