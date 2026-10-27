@@ -116,7 +116,8 @@ export function readEvaluationSet(file) {
       throw invalid(`holdouts[${index}].reference`, `holdouts[${index}].reference 指向的 id「${track.reference}」不在参考集里`);
     }
   }
-  return { references, holdouts };
+  if (data.designSource !== undefined && typeof data.designSource !== 'boolean') throw invalid('designSource', 'designSource 必须是 true 或 false（这份评测集是不是设计出来的声音）');
+  return { references, holdouts, ...(data.designSource === true ? { designSource: true } : {}) };
 }
 
 /**
@@ -158,7 +159,7 @@ export function evaluationSetFiles(result) {
   const references = result.evaluation.references.map((entry) => ({ id: entry.id, audio: put(`reference-${entry.id}`, entry.audio), text: entry.text, labels: entry.labels }));
   const holdouts = result.evaluation.holdouts.map((entry) => ({ id: entry.id, audio: put(`holdout-${entry.id}`, entry.audio), text: entry.text, labels: entry.labels, generated: put(`generated-${entry.id}`, entry.generated), reference: picks.get(entry.id) }));
   const json = (value) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
-  files.set(EVALUATION_FILE, json({ references, holdouts }));
+  files.set(EVALUATION_FILE, json({ references, holdouts, ...(result.pack?.manifest?.designSource === undefined ? {} : { designSource: true }) }));
   files.set(FIDELITY_REPORT_FILE, json(result.report.fidelity));
   return files;
 }

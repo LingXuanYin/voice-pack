@@ -19,7 +19,8 @@
   "extra": {
     "timbre": [
       ["温暖", "warm"], ["清亮", "bright"], ["磁性", "magnetic"], ["沙哑", "husky"], ["浑厚", "deep"], ["甜美", "sweet"], ["干净", "clean"], ["空灵", "ethereal"],
-      ["清晰", "clear"], ["气声", "breathy"], ["尖锐", "sharp"], ["高亢", "soaring"], ["中性", "androgynous"], ["暗沉", "dark"]
+      ["清晰", "clear"], ["气声", "breathy"], ["尖锐", "sharp"], ["高亢", "soaring"], ["中性", "androgynous"], ["暗沉", "dark"],
+      ["机械感", "robotic"], ["金属感", "metallic"], ["低吼", "growling"]
     ],
     "pace": [
       ["舒缓", "slow"], ["自然", "natural"], ["轻快", "brisk"], ["紧凑", "fast"],
@@ -41,7 +42,10 @@
     ["友好", "friendly"],
     ["生动", "lively"], ["活力", "lively"], ["Energetic", "lively"], ["有动感", "lively"], ["dynamic", "lively"],
     ["开朗", "happy"],
-    ["Villain", "villainous"]
+    ["Villain", "villainous"],
+    ["机械音", "robotic"], ["电子音", "robotic"], ["robot voice", "robotic"],
+    ["金属音", "metallic"], ["metal", "metallic"],
+    ["吼声", "growling"], ["咆哮", "growling"], ["growl", "growling"]
   ],
   "personas": [
     { "id": "narrator", "zh": "纪录片旁白", "en": "Documentary narrator", "attrs": { "Gender": "male", "Age": "middle-aged", "Pitch": "low pitch" }, "extra": ["浑厚", "舒缓", "权威"], "desc": "沉稳、有权威感的纪录片旁白，节奏克制" },

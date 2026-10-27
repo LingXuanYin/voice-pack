@@ -53,6 +53,7 @@ export function resultOf({ made, evaluated, verification, items, fresh, chosen, 
     unused: items.filter((item) => item.unused !== undefined).map((item) => ({ id: item.id, reason: item.unused.reason, details: item.unused.details })),
     guidance: effective.guidance !== undefined && effective.guidance.trim() !== '',
     direction: (made.manifest.direction?.tags ?? []).length > 0,
+    designSource: effective.designSource !== undefined,
   });
   return {
     pack: { id: made.id, manifest: made.manifest, files: made.files },

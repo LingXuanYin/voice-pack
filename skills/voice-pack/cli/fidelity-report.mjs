@@ -41,16 +41,19 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
   const models = view.models.map(({ capability, model }) => `${capability} ${model}`);
   lines.push(`评测用的模型：${models.length > 0 ? models.join('；') : '没有取到'}`);
 
-  lines.push('', '说话人相似度（跟真人基线比）');
-  if (view.baseline.status === 'measured') lines.push(`  真人基线：${fixed2(view.baseline.value)}（${view.baseline.pairs} 对真录音）`);
-  else lines.push(`  真人基线：${unmeasurableLine(view.baseline)}`);
+  lines.push('', view.designSource ? '说话人相似度（跟设计声音的基线比）' : '说话人相似度（跟真人基线比）');
+  // 设计来源的包：基线是这个设计声音自己几次合成之间的，不是真人（lib/fidelity.mjs 文件头第 10 点）
+  const baselineName = view.designSource ? '设计声音的基线' : '真人基线';
+  if (view.designSource) lines.push('  素材是设计来源：基线是这个设计声音自己几次合成之间的一致程度，比值是包内一致的程度，不是像不像某个真人');
+  if (view.baseline.status === 'measured') lines.push(`  ${baselineName}：${fixed2(view.baseline.value)}（${view.baseline.pairs} 对${view.designSource ? '合成' : '真录音'}）`);
+  else lines.push(`  ${baselineName}：${unmeasurableLine(view.baseline)}`);
   if (view.baseline.excluded.length > 0) {
     lines.push(`  没用上的真录音（里面没有能嵌声纹的语音）：${view.baseline.excluded.map((entry) => `${entry.id}（${entry.role === 'holdout' ? '留出录音' : '参考'}）`).join('、')}`);
   }
   const speaker = view.overall.speakerSimilarity;
   if (speaker.status === 'measured') {
     const also = alsoNotMeasured(speaker);
-    lines.push(`  ${speaker.n} 条${also.length > 0 ? `（另有 ${also.join('、')}）` : ''}：平均相似度 ${fixed2(speaker.meanSimilarity)}，比值 ${fixed2(speaker.ratio)}（生成的录音 / 真人基线）`);
+    lines.push(`  ${speaker.n} 条${also.length > 0 ? `（另有 ${also.join('、')}）` : ''}：平均相似度 ${fixed2(speaker.meanSimilarity)}，比值 ${fixed2(speaker.ratio)}（生成的录音 / ${baselineName}）`);
   } else if (speaker.status === 'not_heard') {
     lines.push(speaker.noSpeech === 0 ? `  总体：全部没听成（${speaker.notHeard} 条），没有比值可报` : `  总体：一条也没量到（${alsoNotMeasured(speaker).join('，')}），没有比值可报`);
   } else if (speaker.status === 'no_speech') {
@@ -71,6 +74,7 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
     lines.push(`  有效 ${blind.trials} 条，${voidedWords(blind)}${blind.notHeard > 0 ? `，没听成 ${blind.notHeard} 条` : ''}；每条问两遍，共 ${blind.asks} 次`);
     lines.push(`  认出合成的那一段：${blind.identified.count}/${blind.identified.of} = ${fixed2(blind.identified.rate)}${blind.identified.isScore ? '' : '（不是分数，怎么读见 lib/fidelity.mjs 文件头「怎么读这份报告」）'}`);
     lines.push(`  判成同一个人：${blind.sameSpeaker.count}/${blind.sameSpeaker.of} = ${fixed2(blind.sameSpeaker.rate)}（${blind.trials} 条有效：${blind.sameSpeaker.label}）`);
+    if (view.designSource) lines.push('  设计来源：「判成同一个人」的比例只列次数和条数，三档读法不适用，不读成结论（见 lib/fidelity.mjs 文件头第 10 点）');
     lines.push(`  换序后指的还是同一段：${blind.consistent.count}/${blind.consistent.of} = ${fixed2(blind.consistent.rate)}`);
   } else if (blind.status === 'voided') {
     lines.push(`  全部作废（${blind.voided} 条${blind.blocked > 0 ? `，${blockedWords(blind)}` : ''}），没有比例可报`);

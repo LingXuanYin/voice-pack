@@ -13,6 +13,8 @@
 //               lib/make-pack-transcribe.mjs、lib/make-pack-tags.mjs、lib/pack-material.mjs）
 //   guidance    有没有写配音指引（布尔值，默认 true：不知道就不提示）
 //   direction   音色标签有没有写（布尔值，默认 true）
+//   designSource 素材是不是设计出来的（布尔值，默认 false）：清单里有 designSource 就是 true（lib/fidelity.mjs 文件头第 10 点）。
+//               是的话，holdouts_few 写明再合成几句才够留出 5 条（details.segments 是总段数，details.more 是要再合成几句）；不是的话照旧。
 // 提示 hints：[{ code, message, details }]，次序固定（下面表里的次序，同一条规则里按取值的次序）。code 是机器读的，message 是给人看的中文，
 // details 里是这条提示依据的数。没有可提示的就是空数组。提示只是建议，不挡任何事（不设门槛）。
 //
@@ -32,6 +34,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
+import { segmentsForHoldouts } from './pack-material.mjs';
 
 /** 建议的参考段长度（秒）：音质检查的提醒线（tools/audio-quality.mjs 的 REFERENCE_THRESHOLDS.duration），提示里说的长度就是它，不另写一份。 */
 const { warnBelow: REFERENCE_MIN_SECONDS, warnAbove: REFERENCE_MAX_SECONDS } = REFERENCE_THRESHOLDS.duration;
@@ -75,7 +78,7 @@ function readMaterial(material) {
   for (const [index, entry] of unused.entries()) {
     if (!isPlainObject(entry) || typeof entry.reason !== 'string') throw new TypeError(`unused[${index}] 必须是 { id, reason }`);
   }
-  return { references, holdouts, unused, guidance: material.guidance !== false, direction: material.direction !== false };
+  return { references, holdouts, unused, guidance: material.guidance !== false, direction: material.direction !== false, designSource: material.designSource === true };
 }
 
 /**
@@ -84,14 +87,25 @@ function readMaterial(material) {
  * @returns {{ code: string, message: string, details: object }[]}
  */
 export function suggestMaterial(material) {
-  const { references, holdouts, unused, guidance, direction } = readMaterial(material);
+  const { references, holdouts, unused, guidance, direction, designSource } = readMaterial(material);
   const hints = [];
   const add = (code, message, details = {}) => hints.push({ code, message, details });
 
   if (holdouts.length === 0) {
     add('no_holdout', '没有留出录音，还原度量不了：再补一些素材（至少 3 段可用的），做包时才会留出几条来量。', { references: references.length });
   } else if (holdouts.length < THRESHOLDS.holdoutsToRead) {
-    add('holdouts_few', `留出录音只有 ${holdouts.length} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论，再补一些素材。`, { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead });
+    if (designSource) {
+      // 设计来源的包：留出录音由总段数定（plannedHoldouts），多合成几句才够。找最小的总段数，使留出够 needed 条，提示写明再合成几句
+      const total = references.length + holdouts.length;
+      const segments = segmentsForHoldouts(THRESHOLDS.holdoutsToRead);
+      const more = segments === null ? 0 : Math.max(0, segments - total);
+      const message = more > 0
+        ? `留出录音只有 ${holdouts.length} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论。这是设计出来的声音，没有真人录音，再合成 ${more} 句（段数到 ${segments} 段，留出才够 ${THRESHOLDS.holdoutsToRead} 条）。`
+        : `留出录音只有 ${holdouts.length} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论，再补一些素材。`;
+      add('holdouts_few', message, { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead, segments, more, designSource: true });
+    } else {
+      add('holdouts_few', `留出录音只有 ${holdouts.length} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论，再补一些素材。`, { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead });
+    }
   }
   if (references.length < THRESHOLDS.minReferences) {
     add('few_references', `参考只有 ${references.length} 段，建议至少 ${THRESHOLDS.minReferences} 段：参考越多，越能按台词挑到合适的那一段。`, { count: references.length, needed: THRESHOLDS.minReferences });

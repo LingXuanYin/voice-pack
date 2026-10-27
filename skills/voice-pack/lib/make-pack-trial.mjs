@@ -201,7 +201,7 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
     const reason = items.some((item) => item.check?.status === 'voided') ? 'generated_voided' : 'no_generated';
     return { trial, fidelity: { status: 'skipped', reason }, evaluation: null, redo: null };
   }
-  const fidelity = await measureFidelity(env, evaluation, { ...(random === undefined ? {} : { random }), maxErrorRate });
+  const fidelity = await measureFidelity(env, evaluation, { ...(random === undefined ? {} : { random }), maxErrorRate, designSource: manifest.designSource !== undefined });
   return { trial, fidelity, evaluation, redo: fidelity.notHeard.length > 0 ? planRedo(fidelity) : null };
 }
 

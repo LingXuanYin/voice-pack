@@ -87,6 +87,11 @@
 //      不进任何比例，也不算分数低。和「没听成」不同，同一段录音再量还是一样，所以不能补做（planRedo、redoNotHeard 都不算它）；
 //      和「量不了」不同，它只是某一条的某一段录音，别的条照常量，整份报告照常出。显示时写条数和是哪几条，例如「6 条里 1 条量不到」。
 //      留出的真录音自己嵌不出时，真人基线也不用它（报告里 baseline.excluded 记着）；剩下的真录音凑不出一对时，说话人相似度整体「量不了」。
+//   10. 设计来源的包（measureFidelity 的 options.designSource 是 true，做包时清单里有 designSource）。它的素材不是真人录音，读法不一样：
+//      基线是这个设计声音自己几次合成之间的一致程度（同一个设计声音的几段合成，两两之间相似度的平均），比值说的是「用这个包合成的，和这个设计声音自己有多一致」，
+//      不是像不像哪个真人。所以第 1 点的三档对它不适用：盲听的「判成同一人的比例」照列数（次数、条数），但不读成档，不下结论，写明「三档读法不适用」。
+//      有效的留出录音不到 5 条的，也照列数，并提示再合成几句（material-hints 的 holdouts_few，按 plannedHoldouts 算到 5 条要多少段）。
+//      清单里没有 designSource 的，照真人录音读（第 1 点到第 9 点照旧）：判不出是不是设计来源，不猜。
 //
 // 抛出的错误（code 小写下划线，details 里放什么在抛出处写明）：
 //   fidelity_input_invalid         输入不是约定的形状（补做时，上一次的报告不是 measureFidelity 出的形状、或要补做的留出录音不在输入里，也是它）。
@@ -304,11 +309,12 @@ function assertBlindClip(clip, name) {
 
 /** 核对盲听的选项，省略的用默认值。measureFidelity 也在开始前调它，免得量了一半才发现选项不对。 */
 function normalizeBlindOptions(options) {
-  const { random = Math.random, maxErrorRate = DEFAULT_MAX_ERROR_RATE, firstX } = options ?? {};
+  const { random = Math.random, maxErrorRate = DEFAULT_MAX_ERROR_RATE, firstX, designSource = false } = options ?? {};
   if (typeof random !== 'function') throw invalid('random', 'random 必须是返回 [0, 1) 的函数');
   if (typeof maxErrorRate !== 'number' || !Number.isFinite(maxErrorRate) || maxErrorRate < 0) throw invalid('maxErrorRate', 'maxErrorRate 必须是不小于 0 的数');
   if (firstX !== undefined && firstX !== 'a' && firstX !== 'b') throw invalid('firstX', 'firstX 必须是 "a" 或 "b"（第一次问的时候放在 X 的是哪一段）');
-  return { random, maxErrorRate, firstX };
+  if (typeof designSource !== 'boolean') throw invalid('designSource', 'designSource 必须是 true 或 false（素材是不是设计出来的：清单里有 designSource 就是 true，没有就是 false，见 lib/fidelity.mjs 文件头第 10 点）');
+  return { random, maxErrorRate, firstX, designSource };
 }
 
 /** 抽一次随机数，决定第一次问的时候哪一段放在 X：小于 0.5 是 a，否则是 b。 */
@@ -702,7 +708,7 @@ const modelsOf = (speakerModel, blindModel) => ({
  * speakerUnmeasurable、blindUnmeasurable：这一类整个量不了（缺能力、没有留出录音、真人基线不够……）时的那条「量不了」，
  * 每一组和总体都报它；没有就是 null。referenceCount(key, value)：参考集里带这个标签取值的有几段。
  */
-function buildReport({ counts, models, baseline, items, referenceCount, speakerUnmeasurable, blindUnmeasurable }) {
+function buildReport({ counts, models, baseline, items, referenceCount, speakerUnmeasurable, blindUnmeasurable, designSource = false }) {
   const speakerOf = (members) => speakerUnmeasurable ?? aggregateSpeaker(members, baseline);
   const blindOf = (members) => blindUnmeasurable ?? aggregateBlind(members.map((item) => ({ id: item.id, blind: item.blindListening })));
   // 按标签分组：有什么标签就分什么，先按标签名、再按取值排好
@@ -717,6 +723,7 @@ function buildReport({ counts, models, baseline, items, referenceCount, speakerU
     counts,
     models,
     baseline,
+    designSource,
     overall: { holdouts: items.length, speakerSimilarity: speakerOf(items), blindListening: blindOf(items) },
     groups,
     items,
@@ -838,6 +845,7 @@ export async function measureFidelity(env, input, options = {}) {
     referenceCount: (key, value) => references.filter((ref) => ref.labels[key] === value).length,
     speakerUnmeasurable,
     blindUnmeasurable,
+    designSource: blindOptions.designSource,
   });
 }
 
@@ -984,6 +992,8 @@ export async function redoNotHeard(env, input, previous, options = {}) {
     // 整类量不了的（缺能力、没有留出录音、基线不够）原样带过来
     speakerUnmeasurable: report.overall.speakerSimilarity.status === 'unmeasurable' ? report.overall.speakerSimilarity : null,
     blindUnmeasurable: report.overall.blindListening.status === 'unmeasurable' ? report.overall.blindListening : null,
+    // 补做沿用上一次的读法：设计来源的还是设计来源的（补做的报告和做完的一样）
+    designSource: report.designSource === true,
   });
 }
 

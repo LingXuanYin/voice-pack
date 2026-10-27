@@ -21,6 +21,7 @@ export const SAME_SPEAKER_TIERS = Object.freeze({
   same: '判成同一人',
   not_same: '判成不是同一人',
   unsure: '说不准',
+  not_applicable: '三档读法不适用',
 });
 
 /**
@@ -53,6 +54,10 @@ export const READING_NOTES = Object.freeze({
     point: 9,
     zh: '量不到：某一段录音里没有能嵌出声纹的语音。那一条的说话人相似度单独报，写明是生成的还是留出的那一段，不进比例；同一段录音再量还是一样，所以不能补做。别的条照常量。',
   },
+  design_source: {
+    point: 10,
+    zh: '素材是设计来源的（设计出来的声音，没有真人录音）：基线是这个设计声音自己几次合成之间的一致程度，比值说的是包内一致的程度，不是像不像某个真人。「判成同一人」的比例照列次数和条数，三档读法不适用，不下结论。留出录音不到 {minTrials} 条时，提示再合成几句。',
+  },
 });
 
 /** 把说明正文里的 {minTrials}、{same}、{notSame} 换成 READING 里的数。 */
@@ -60,12 +65,19 @@ export const fillReading = (text) => Object.entries(READING).reduce((out, [name,
 
 /**
  * 读法第 1 点：一组留出录音的「判成同一人的比例」读成哪一档。
+ * 设计来源的包（读法第 10 点）不读成档：基线是设计声音自己的一致程度，不是像不像某个真人，三档对它不适用，档是 not_applicable，不下结论。
  * @param {{ trials: number, rate: number }} one trials 是有效的条数（不含作废的、没听成的），rate 是判成同一人的比例
- * @returns {{ tier: 'not_enough' | 'same' | 'not_same' | 'unsure', label: string, canConclude: boolean }}
+ * @param {{ designSource?: boolean }} [options] designSource 是 true 时不分档
+ * @returns {{ tier: 'not_enough' | 'same' | 'not_same' | 'unsure' | 'not_applicable', label: string, canConclude: boolean }}
  */
-export function readSameSpeaker({ trials, rate }) {
-  const tier = trials < READING.minTrials ? 'not_enough' : rate >= READING.same ? 'same' : rate <= READING.notSame ? 'not_same' : 'unsure';
-  return { tier, label: SAME_SPEAKER_TIERS[tier], canConclude: tier !== 'not_enough' };
+export function readSameSpeaker({ trials, rate }, { designSource = false } = {}) {
+  if (trials < READING.minTrials) {
+    const tier = 'not_enough';
+    return { tier, label: SAME_SPEAKER_TIERS[tier], canConclude: false };
+  }
+  if (designSource) return { tier: 'not_applicable', label: SAME_SPEAKER_TIERS.not_applicable, canConclude: false };
+  const tier = rate >= READING.same ? 'same' : rate <= READING.notSame ? 'not_same' : 'unsure';
+  return { tier, label: SAME_SPEAKER_TIERS[tier], canConclude: true };
 }
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -90,7 +102,7 @@ const headOf = ({ status, label, reason, capability, message }) => ({
  *   identified   认出合成的：读法第 2 点，不是分数（isScore: false）
  *   consistent   换序后指的还是同一段：读法第 3 点，不是分数（isScore: false）
  */
-function blindListeningView(blind) {
+function blindListeningView(blind, { designSource = false } = {}) {
   const head = headOf(blind);
   const none = { sameSpeaker: null, identified: null, consistent: null };
   if (blind.status === 'unmeasurable') return { ...head, ...none };
@@ -99,7 +111,7 @@ function blindListeningView(blind) {
   return {
     ...head,
     ...counts,
-    sameSpeaker: { count: blind.sameSpeaker, of: blind.asks, rate: blind.sameSpeakerRate, ...readSameSpeaker({ trials: blind.trials, rate: blind.sameSpeakerRate }) },
+    sameSpeaker: { count: blind.sameSpeaker, of: blind.asks, rate: blind.sameSpeakerRate, ...readSameSpeaker({ trials: blind.trials, rate: blind.sameSpeakerRate }, { designSource }) },
     identified: { count: blind.identified, of: blind.asks, rate: blind.identifiedRate, isScore: false },
     consistent: { count: blind.consistent, of: blind.trials, rate: blind.consistentRate, isScore: false },
   };
@@ -145,13 +157,13 @@ function assertReport(report) {
   }
 }
 
-const groupView = (group) => ({
+const groupView = (group, { designSource = false } = {}) => ({
   key: group.key,
   value: group.value,
   holdouts: group.holdouts,
   references: group.references,
   speakerSimilarity: speakerSimilarityView(group.speakerSimilarity),
-  blindListening: blindListeningView(group.blindListening),
+  blindListening: blindListeningView(group.blindListening, { designSource }),
 });
 
 /** 一件出的事：错误码、原文。完整的（details）留在报告里。 */
@@ -200,13 +212,15 @@ function listsOf(report, items) {
  * 有模型说的区别、作废的、没听成的、量不到的才各要一条；量到了说话人相似度才要说比值是分数；不设门槛、两种方法不合成、适用范围总是要的。
  * 按 READING_NOTES 的先后（也就是文件头的先后）列全部，applies 说这份报告用不用得上。
  */
-function notesOf({ overall, groups, baseline, differences, voided, notHeard, noSpeech }) {
+function notesOf({ overall, groups, baseline, differences, voided, notHeard, noSpeech, designSource }) {
   const blindViews = [overall, ...groups].map((one) => one.blindListening).filter((one) => one.status === 'measured');
+  // 设计来源的包：三档读法（点 1 的三条说明）和「说不准」都不适用；点 10 适用
+  const tiered = !designSource && blindViews.length > 0;
   const applies = {
     no_threshold: true,
-    same_speaker_tiers: blindViews.length > 0,
-    same_speaker_meaning: blindViews.length > 0,
-    unsure: blindViews.some((one) => one.sameSpeaker.tier === 'unsure'),
+    same_speaker_tiers: tiered,
+    same_speaker_meaning: tiered,
+    unsure: !designSource && blindViews.some((one) => one.sameSpeaker.tier === 'unsure'),
     identified_not_score: blindViews.length > 0,
     consistent_not_score: blindViews.length > 0,
     differences_verbatim: differences.length > 0,
@@ -216,6 +230,7 @@ function notesOf({ overall, groups, baseline, differences, voided, notHeard, noS
     two_methods: true,
     scope: true,
     no_speech_separate: noSpeech.length > 0 || baseline.excluded.length > 0,
+    design_source: designSource,
   };
   return Object.entries(READING_NOTES).map(([key, { point }]) => ({ key, point, applies: applies[key] === true }));
 }
@@ -229,12 +244,14 @@ function notesOf({ overall, groups, baseline, differences, voided, notHeard, noS
 export function readReport(report) {
   assertReport(report);
   const items = report.items;
+  const designSource = report.designSource === true;
   const view = {
     counts: report.counts,
     models: Object.entries(report.models).map(([capability, model]) => ({ capability, model })),
     baseline: baselineView(report.baseline),
-    overall: { holdouts: report.overall.holdouts, speakerSimilarity: speakerSimilarityView(report.overall.speakerSimilarity), blindListening: blindListeningView(report.overall.blindListening) },
-    groups: report.groups.map(groupView),
+    designSource,
+    overall: { holdouts: report.overall.holdouts, speakerSimilarity: speakerSimilarityView(report.overall.speakerSimilarity), blindListening: blindListeningView(report.overall.blindListening, { designSource }) },
+    groups: report.groups.map((group) => groupView(group, { designSource })),
     items: items.map((item) => ({ id: item.id, labels: item.labels, speakerSimilarity: speakerItemView(item.speakerSimilarity), blindListening: blindItemView(item.blindListening) })),
     differences: differencesOf(items),
     ...listsOf(report, items),

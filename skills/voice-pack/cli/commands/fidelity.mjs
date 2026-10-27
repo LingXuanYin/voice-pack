@@ -146,6 +146,8 @@ export async function run(args, ctx) {
   const measureOptions = {
     ...(options.seed === null ? {} : { random: seededRandom(options.seed) }),
     ...(options.maxErrorRate === undefined ? {} : { maxErrorRate: options.maxErrorRate }),
+    // 评测集里写了 designSource（设计出来的声音）就照设计来源读（lib/fidelity.mjs 文件头第 10 点）；没写就照真人录音读
+    designSource: set.designSource === true,
   };
 
   // 补做时要用到的留出录音：上一次没听成的那几条。不在评测集里就在加载适配器、花钱之前报

@@ -81,6 +81,22 @@ export function plannedHoldouts(total, options = {}) {
 }
 
 /**
+ * 留出够 holdouts 条，一共要几段可用的（规则 2 的反推）：plannedHoldouts 随段数增加，找最小的段数。
+ * 设计来源的包（没有真人录音）用它告诉作者再合成几句：lib/material-hints.mjs 的 holdouts_few 用它。
+ * 留出的条数由 maxHoldout 封顶，超过封顶的数永远够不到：返回 null，而不是一个算不出来的段数。
+ * @returns {number | null} 段数；够不到就是 null
+ */
+export function segmentsForHoldouts(holdouts, options = {}) {
+  const settings = resolveOptions(options);
+  if (!Number.isInteger(holdouts) || holdouts < 1) throw new TypeError('holdouts 必须是不小于 1 的整数');
+  if (holdouts > settings.maxHoldout || settings.holdoutRatio === 0) return null;
+  for (let total = 1; total <= 10_000; total++) {
+    if (plannedHoldouts(total, settings) >= holdouts) return total;
+  }
+  return null;
+}
+
+/**
  * 选项里不合约定的地方：[{ field, message }]，field 是选项的名字，没有问题就是空数组。undefined 等于没给。
  * 规则只在这里写一遍：chooseMaterial 和 plannedHoldouts 照它抛 TypeError（调用方的代码写错了）；
  * 做包（lib/make-pack-input.mjs）在花钱之前照它报 make_pack_input_invalid，点名是哪个选项。
