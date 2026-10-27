@@ -6,6 +6,15 @@ Each version of the base part, newest first. The top entry is the version in `ma
 Versions 1.0.0 to 1.0.9 were released under the product's earlier names (the skill was `cohub-voice-studio`, the release files `cohub-voice-studio-<version>.voicepack.zip`), except 1.0.3, which was never published: what it changed first shipped in 1.0.4. The published files keep those names and stay in the version index.
 1.0.0 到 1.0.9 是用产品原来的名字发的（skill 叫 `cohub-voice-studio`，发布文件叫 `cohub-voice-studio-<版本>.voicepack.zip`），只有 1.0.3 没有发布过：它改的东西第一次发出去是在 1.0.4。发布过的文件名不变，仍然列在版本索引里。
 
+## 2.0.11 — 2026-10
+
+The description and the sample text of the default voice, and the design step of section 2, now follow the voice-design and reference guides of the model. The default voice is described as a neutral young adult talking slightly slowly and calmly in everyday conversation, and its sample is several connected lines of about 75 characters. Section 2 gives the seven-dimension table of the design guide once, and step 3 asks for several connected lines of plain talk, read aloud in 10 to 20 seconds, not one sentence. Every clone made from the default voice still takes the same sample. No program logic changed.
+默认声音的描述和样本，以及第 2 节的设计步骤，现在照模型的设计和参考的官方要求写。默认声音的描述是一个中性的青年平常跟身边的人说话的声音，语速稍慢，情绪平静，用在日常对话里；样本是几句连贯的平常话，约 75 个字。第 2 节只在一处写设计描述的七个维度表；第 3 步的试听文本改成几句连贯的平常话，读出来 10 到 20 秒，不再是一句。从它做的每一段克隆，仍然都以同一个样本为参考。程序的逻辑没有改动。
+
+- **The default voice's words follow the guide.** Its description names the speed as slightly slow and says what the voice is for, and its sample is long enough to read well above the shortest reference the clone model takes. / **默认声音的用词照官方的写法。** 描述里语速写稍慢，用途写日常对话；样本够长，读出来远超克隆模型的参考下限。
+- **The design table is written once.** The seven dimensions (gender, age, pitch, speed, mood, trait, use) and their values are in section 2, step 2, and nowhere else. Values outside the table, such as "natural" or "pleasant", are not used. / **维度表只写一处。** 七个维度（性别、年龄、音高、语速、情绪、特点、用途）和取值只在第 2 节第 2 步；表外的评价词（「自然」「好听」）不用。
+- **The audition is several connected lines.** Plain talk, said face to face in the register of speech, with one meaning across the lines, the same speed from start to end, and no long pause. / **试听文本是几句连贯的话。** 仍是当面对人说的平常话，用说话的口气；几句意思连贯，语速前后一致，中间没有长停顿。
+
 ## 2.0.10 — 2026-10
 
 The Cohub adapter puts `[shouting]` in front of a line whose style is `shout` again. It is the one emotion or style tag that stays: laughing and sighing are unchanged, and sad, excited, sarcastic, surprised, angry and whispering still come out without a tag. This time the sound was measured, not a listening model's answer: for each tag, eight pairs of a tagged clip and a plain clip of the same sentence and voice, judged by a rule written before the run. Shouting moved the expected way in all eight pairs: loudness rose 1.30 dB (two plain generations of the same settings differ by 0.08 dB) and the median pitch rose 3.31 semitones (they differ by 0.29). Each line in `cue-tags.mjs` has its tag's numbers.
