@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "tiers": {
+    "task": "有通用名字的，照用 Hugging Face 的任务名",
+    "convention": "没有通用名字的，用业内趋同的叫法"
+  },
+  "capabilities": {
+    "text-to-speech": { "tier": "task", "summary": "把文字合成为语音，用环境的默认音色；可以带 instructions 说明怎么念" },
+    "automatic-speech-recognition": { "tier": "task", "summary": "把语音转写成文字，可带语言；返回的形状见 vocab/capability-signatures.md" },
+    "text-to-audio": { "tier": "task", "summary": "按文字描述生成非语音的声音，例如音效、音乐" },
+    "audio-text-to-text": { "tier": "task", "summary": "听一段或几段音频，按文字指令回答；盲听和给声音打标签都用它" },
+    "voice-activity-detection": { "tier": "task", "summary": "找出音频里哪些时间段有人在说话" },
+    "text-generation": { "tier": "task", "summary": "按文字提示生成文字（大语言模型），例如润色、翻译、写配音指引" },
+    "text-to-image": { "tier": "task", "summary": "按文字描述生成图片，例如头像、封面" },
+
+    "voice-cloning": { "tier": "convention", "summary": "按参考音频（ref_audio）和它的逐字文本（ref_text）合成新台词，声音像参考里的人；默认只用一段参考，明确要融合时才传多段" },
+    "voice-design": { "tier": "convention", "summary": "按自然语言描述（性别、年龄、音高、口音、音色等）合成一个原本不存在的声音来说台词" },
+    "text-to-dialogue": { "tier": "convention", "summary": "一次请求配完一段多说话人的对白：文字里用编号标出每个说话人的台词，每个说话人各带一段参考录音（和它的逐字文本，可选）；只有一个人说话，用 voice-cloning" },
+    "voice-conversion": { "tier": "convention", "summary": "把一段语音换成另一个声音说，内容和节奏不变" },
+    "singing-voice-conversion": { "tier": "convention", "summary": "把一段歌声换成另一个声音唱，旋律和歌词不变" },
+    "audio-source-separation": { "tier": "convention", "summary": "把混在一起的音频分成人声和伴奏等分轨" },
+    "audio-watermarking": { "tier": "convention", "summary": "给生成的音频加听不出来的水印，或检测音频里有没有水印" },
+    "speaker-verification": { "tier": "convention", "summary": "判断两段语音是不是同一个人，给出说话人相似度" },
+    "speech-to-speech": { "tier": "convention", "summary": "输入一段语音，直接输出另一段语音（例如同声传译、语音对话），不经过显式的文字环节" },
+    "style-instruction": { "tier": "convention", "summary": "合成时接受「怎么说」的自然语言说明（语气、节奏、情绪），对应参数 instructions" },
+    "style-cues": { "tier": "convention", "summary": "合成时接受这一句自己的舞台提示认出来的几个名字（情绪、风格：vocab/cues.json 的规范名字），对应参数 cues；语速和停顿不在里面（它们是 unit 的字段），配音指引也不在里面" },
+    "pause-in-text": { "tier": "convention", "summary": "合成时认文字里的停顿：<speak>…</speak> 包着的 <break time=\"Nms\"/>，整段一次请求；一段话里不超过 2.5 秒的停顿写在这里，不切成两次请求（lib/pause-in-request.mjs）" },
+    "pronunciation-lexicon": { "tier": "convention", "summary": "合成时按读音词表（W3C PLS 格式）改读指定的词" }
+  },
+  "parameters": {
+    "ref_audio": { "summary": "参考音频：要模仿的声音" },
+    "ref_text": { "summary": "参考音频的逐字文本" },
+    "instructions": { "summary": "怎么说的自然语言说明（语气、节奏、情绪）；只写想要的效果，不用某个模型的指令写法" },
+    "cues": { "summary": "这一句自己的舞台提示认出来的名字：{ emotion, style }，值是 vocab/cues.json 的规范名字；只装这一句的，配音指引和语速、停顿不进去" },
+    "continues": { "summary": "这一段是接着下一段说的（句子被标记切开，没有停顿）：不到最短字数时，没有句末标点的补「，」，句末的补「。」（补字的规则只在适配器一处）" }
+  }
+}

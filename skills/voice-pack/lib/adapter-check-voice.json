@@ -1,0 +1,6 @@
+{
+  "text": "The weather is really nice this morning, so after breakfast let us take a slow walk along the river and enjoy the fresh air.",
+  "voicePrompt": "A neutral adult voice: calm, clear, medium pitch, plain everyday delivery, no accent, no emotion.",
+  "source": "一个环境的 voice-design（所需能力，见 vocab/capability-signatures.md）：2026-10-25 生成一次，设计出的声音念 text 这一句，返回 mp3；再用 ffmpeg 转成 16 kHz 单声道 16 位 PCM WAV（-map_metadata -1 -bitexact）。哪个环境、哪个模型不写在基础部分里。",
+  "date": "2026-10-25"
+}

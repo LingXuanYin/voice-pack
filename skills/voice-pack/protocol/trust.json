@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "comment": "官方公钥的信任名单：验签只认这里列出的公钥，按签名里的 key id 找。换了密钥以后，新公钥加进来，旧公钥留着，旧版本照样能验。格式和用法见 SIGNATURES.md。official_url 是官方地址：官方基础部分每个版本的 zip、签名和版本索引放在这个目录里，布局见 RELEASES.md。",
+  "official_url": "https://lingxuanyin.github.io/voice-pack/releases/",
+  "keys": [
+    {
+      "public_key": "RWSjypN2YBM32FVM5kTkUblfdUKOSy7t651LPp+3OQ1NZG7UICjDvMu2",
+      "comment": "voice-pack 官方公钥（第一把）。私钥由发布者保管，不进 git。key id D83713607693CAA3，由公钥算出（SHA-256 的前 8 字节），写法见 SIGNATURES.md"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "categories": {
+    "Gender": ["Auto", "male", "female"],
+    "Age": ["Auto", "child", "teenager", "young adult", "middle-aged", "elderly"],
+    "Pitch": ["Auto", "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"],
+    "Style": ["Auto", "whisper"],
+    "EnglishAccent": ["Auto", "american accent", "british accent", "australian accent", "canadian accent", "indian accent", "chinese accent", "korean accent", "japanese accent", "portuguese accent", "russian accent"],
+    "ChineseDialect": ["Auto", "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话", "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话"]
+  },
+  "labels": {
+    "Gender": ["性别", "Gender"], "Age": ["年龄", "Age"], "Pitch": ["音高", "Pitch"],
+    "Style": ["风格", "Style"], "EnglishAccent": ["英语口音", "English accent"], "ChineseDialect": ["中文方言", "Chinese dialect"]
+  },
+  "zh": {
+    "male": "男声", "female": "女声", "child": "儿童", "teenager": "少年", "young adult": "青年", "middle-aged": "中年", "elderly": "老年",
+    "very low pitch": "很低沉", "low pitch": "低沉", "moderate pitch": "适中", "high pitch": "明亮偏高", "very high pitch": "很高亢", "whisper": "耳语气声",
+    "american accent": "美式口音", "british accent": "英式口音", "australian accent": "澳洲口音", "canadian accent": "加拿大口音", "indian accent": "印度口音", "chinese accent": "中式口音", "korean accent": "韩式口音", "japanese accent": "日式口音", "portuguese accent": "葡式口音", "russian accent": "俄式口音"
+  },
+  "extra": {
+    "timbre": [
+      ["温暖", "warm"], ["清亮", "bright"], ["磁性", "magnetic"], ["沙哑", "husky"], ["浑厚", "deep"], ["甜美", "sweet"], ["干净", "clean"], ["空灵", "ethereal"],
+      ["清晰", "clear"], ["气声", "breathy"], ["尖锐", "sharp"], ["高亢", "soaring"], ["中性", "androgynous"], ["暗沉", "dark"],
+      ["机械感", "robotic"], ["金属感", "metallic"], ["低吼", "growling"]
+    ],
+    "pace": [
+      ["舒缓", "slow"], ["自然", "natural"], ["轻快", "brisk"], ["紧凑", "fast"],
+      ["流畅", "fluent"]
+    ],
+    "mood": [
+      ["平静", "calm"], ["亲切", "friendly"], ["权威", "authoritative"], ["活泼", "lively"], ["神秘", "mysterious"], ["严肃", "serious"], ["温柔", "gentle"], ["热情", "passionate"],
+      ["沉稳", "steady"], ["戏剧性", "dramatic"], ["欢快", "happy"], ["表现力强", "expressive"], ["俏皮", "playful"], ["专业", "professional"], ["自信", "confident"], ["威严", "commanding"],
+      ["紧张", "nervous"], ["愤怒", "angry"], ["悲伤", "sad"], ["电影感", "cinematic"], ["亲密", "intimate"], ["反派", "villainous"], ["励志", "motivational"], ["英雄", "heroic"]
+    ]
+  },
+  "aliases": [
+    ["明亮", "bright"], ["清脆", "clear"],
+    ["柔和", "gentle"], ["轻柔", "gentle"], ["Soft", "gentle"],
+    ["英式", "british accent"], ["British", "british accent"],
+    ["ASMR", "whisper"],
+    ["快速", "fast"], ["Fast-paced", "fast"], ["缓慢", "slow"],
+    ["冷静", "calm"], ["composed", "calm"], ["放松", "calm"], ["relaxed", "calm"],
+    ["友好", "friendly"],
+    ["生动", "lively"], ["活力", "lively"], ["Energetic", "lively"], ["有动感", "lively"], ["dynamic", "lively"],
+    ["开朗", "happy"],
+    ["Villain", "villainous"],
+    ["机械音", "robotic"], ["电子音", "robotic"], ["robot voice", "robotic"],
+    ["金属音", "metallic"], ["metal", "metallic"],
+    ["吼声", "growling"], ["咆哮", "growling"], ["growl", "growling"]
+  ],
+  "personas": [
+    { "id": "narrator", "zh": "纪录片旁白", "en": "Documentary narrator", "attrs": { "Gender": "male", "Age": "middle-aged", "Pitch": "low pitch" }, "extra": ["浑厚", "舒缓", "权威"], "desc": "沉稳、有权威感的纪录片旁白，节奏克制" },
+    { "id": "anchor", "zh": "新闻主播", "en": "News anchor", "attrs": { "Gender": "female", "Age": "middle-aged", "Pitch": "moderate pitch" }, "extra": ["干净", "自然", "严肃"], "desc": "吐字清晰、专业克制的电视新闻主播" },
+    { "id": "bedtime", "zh": "睡前故事", "en": "Bedtime story", "attrs": { "Gender": "female", "Age": "young adult", "Pitch": "moderate pitch" }, "extra": ["温暖", "舒缓", "温柔"], "desc": "温柔安心的睡前故事讲述者" },
+    { "id": "host", "zh": "活力播客", "en": "Energetic host", "attrs": { "Gender": "male", "Age": "young adult", "Pitch": "high pitch" }, "extra": ["清亮", "轻快", "活泼"], "desc": "热情有感染力的播客主持人" },
+    { "id": "kid", "zh": "好奇小孩", "en": "Curious kid", "attrs": { "Gender": "Auto", "Age": "child", "Pitch": "high pitch" }, "extra": ["甜美", "轻快", "活泼"], "desc": "天真好奇、语调上扬的孩子" },
+    { "id": "villain", "zh": "反派船长", "en": "Gravelly villain", "attrs": { "Gender": "male", "Age": "elderly", "Pitch": "very low pitch" }, "extra": ["沙哑", "自然", "神秘"], "desc": "嗓音沙哑、带点戏剧感的老船长反派（原创角色）" },
+    { "id": "asmr", "zh": "耳语 ASMR", "en": "Whisper", "attrs": { "Gender": "female", "Age": "young adult", "Style": "whisper" }, "extra": ["空灵", "舒缓", "平静"], "desc": "贴耳轻语、气声明显的 ASMR 风格" },
+    { "id": "dongbei", "zh": "东北大叔", "en": "Northeast uncle", "attrs": { "Gender": "male", "Age": "middle-aged", "ChineseDialect": "东北话" }, "extra": ["浑厚", "自然", "热情"], "desc": "豪爽幽默、带东北口音的大叔" }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$comment": "设计出来的声音做包时，agent 把其中一组写进清单的 `sampleLines`（不克隆成素材，做法见 `references/make-pack.md`），每种语言一组（zh、en）。口气和长度的规则写在 SKILL.md（第 2 节「设计」第 3 步，第 7 节）；这里的数字取自 pack-material.mjs 的 minHoldoutTokens 和 product-contract.json 的 minChars。app 和 agent 都从这一处取，改句子改这里。",
+  "zh": [
+    { "text": "你来啦，快进来坐，外面冷吧？我刚把水烧上。", "feel": "热情，高兴见到人", "kind": "greeting" },
+    { "text": "你昨天说的那家店，到底在哪条路上呀？我找了半天都没找到。", "feel": "好奇，有点急", "kind": "question" },
+    { "text": "好的，我记住了，明天上午十点我在门口等你。", "feel": "踏实，答应下来", "kind": "reply" },
+    { "text": "哦对，差点忘了跟你说，钥匙我放在花盆底下了。", "feel": "想起什么，随口一提", "kind": "aside" },
+    { "text": "麻烦你帮我把窗户关一下好不好？风有点大，桌上的纸都要吹跑了。", "feel": "客气，带点催", "kind": "request" },
+    { "text": "真不好意思，让你等了这么久，路上堵得厉害，我一直在往这边赶。", "feel": "抱歉，有点懊恼", "kind": "apology" },
+    { "text": "真的假的？这么快就做完了啊，我还以为要忙到晚上呢。", "feel": "惊讶", "kind": "question" }
+  ],
+  "en": [
+    { "text": "Hey, you made it! Come on in and sit down. Is it cold outside?", "feel": "warm, glad to see them", "kind": "greeting" },
+    { "text": "Wait, which street was that cafe on again? I've been looking for it for ages.", "feel": "curious, a bit impatient", "kind": "question" },
+    { "text": "Sure, I've got it. I'll be waiting at the front door at ten tomorrow morning.", "feel": "settled, agreeing", "kind": "reply" },
+    { "text": "Oh, I nearly forgot to tell you. The spare key is under the flower pot.", "feel": "remembering something, offhand", "kind": "aside" },
+    { "text": "Could you close the window for me, please? It's getting windy, and the papers on the desk keep blowing away.", "feel": "polite, a little urgent", "kind": "request" },
+    { "text": "I'm really sorry you had to wait so long. The traffic was terrible, and I've been hurrying here ever since.", "feel": "apologetic, a bit flustered", "kind": "apology" },
+    { "text": "No way, really? You finished that already? I thought it would take us all evening.", "feel": "surprised", "kind": "question" }
+  ]
+}
