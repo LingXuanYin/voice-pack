@@ -22,6 +22,19 @@
 
 **配音指引和音色标签**：`--guidance <文件.md>` 写配音指引，三节的写法见下面「配音指引的三层」，放进 `SKILL.md` 最后一节；只写想要的效果；模型的指令语法由适配器决定，写进配音指引会绑死某个模型。`--direction <文件.json>`：`{ description, tags, scenes }`，音色标签只能从设计词表（`vocab/design.json`）里取，场景只能从 `vocab/scenes.json` 里取，中文名也认，写进清单的是规范写法；不在词表里的在花钱之前报 `make_pack_input_invalid`。`--lexicon <文件.pls>` 放读音词表：只有清单的 `files` 列着它才读（`lib/voice-pack.mjs`），所以直接改已装的包里的 `lexicon.pls` 不生效。改读音要发新版本（`--previous <上一版> --lexicon <新文件.pls>`，见「发新版本」），由它把词表和哈希写进清单。`--design-source <文件.json>` 记设计来源，用设计出来的声音、默认音色、融合出来的声音做包时写：`{ description, model, modelVersion, date }`。`model` 取能力调用返回的 `model` 字段（`voice-design` 的返回里有，适配器给了才有；候选是在运行环境的命令行里生成的，取法见接进来的适配器的说明），返回里没有就不写；`modelVersion` 返回里没有这一项，不写。锁定的试听用 `--audition <文件>` 交：不分离（合成出来的本来就是干净的人声），同样切开、转写，一部分当参考、一部分当留出录音（做包照规则挑），设计来源写进清单；没给 `--design-source`，报告里提醒 `design_source_missing`。`--sample-lines <文件.json>` 记示例台词：一份 JSON 数组，每项一句，原样写进清单的 `sampleLines`；最多 50 条，每条 1–500 个字符，不能只有空白（`text_blank`）；台词里可以带舞台提示，例如 `（耳语）`，格式只存这句字符串、不解析它。发新版本不给 `--sample-lines` 就沿用上一版的，给空数组就去掉。
 
+**读音词表**：`--lexicon <文件.pls>` 放 W3C PLS 格式的读音词表，只换要说的话里的词，台本标记原样保留。两种写法：`<alias>` 用别的写法替换要念的词（所有适配器都生效）；`<phoneme>` 标音素，字母表名必须是 `x-pinyin`（PLS 规定非 `ipa` 的字母表要用 `x-` 开头的名字；适配器把它译成自己服务的写法），词条只能是汉字，`ph` 是拼音加数字声调：每个汉字一个音节，声调 1 到 5（5 是轻声），音节用空格分开，个数和词里的汉字数相等（`银行` 写 `yin2 hang2`）；拼音里的 ü 写成 `v`（`lü3` 写成 `lv3`）。词条写整词：词条按字面在台词里找，写单字（例如「曾」）会连带改掉含这个字的每个词，「曾经」「不曾」也会念成 zēng。例子：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<lexicon version="1.0" xmlns="http://www.w3.org/2005/01/pronunciation-lexicon" alphabet="x-pinyin" xml:lang="zh-CN">
+  <lexeme><grapheme>曾小雨</grapheme><phoneme>zeng1 xiao3 yu3</phoneme></lexeme>
+  <lexeme><grapheme>银行</grapheme><phoneme>yin2 hang2</phoneme></lexeme>
+  <lexeme><grapheme>Mira</grapheme><alias>Meera</alias></lexeme>
+</lexicon>
+```
+
+音素只在环境声明了 `phoneme-in-text` 的时候才用；哪些环境声明它、在哪些能力上有效、没测过的范围，看所用适配器的说明。没有声明的环境，音素一律报在 `lexicon.unapplied`（`reason` 是 `phoneme`），和没有拼音这一项时一样；声明了的环境里，音节数或写法对不上的报 `phoneme_format`（`problem` 是 `term`、`count` 或 `form`）；其他字母表（例如 `ipa`）照旧不用。
+
 素材是设计出来的声音时，示例台词照 `SKILL.md` 第 2 节「设计」第 3 步试听文本的写法：当面对人说的平常话，其余几句也一样，每句一种情绪，至少两句是问句、回答或插话。示例台词取 `vocab/design-sample-lines.json` 里跟声音语言一样的那一组（zh、en 各 7 句，每句的 `feel` 各不相同，`kind` 写明是问句、回答还是插话）的 `text`，写成字符串数组：`--sample-lines` 要的是字符串数组，直接给那一组的对象会报 `manifest_invalid`。也可以自己写同样口气的几句。示例台词只写进 `sampleLines`，不克隆成素材。
 
 **配音指引的三层**：配音指引写的是这个声音怎么说话、怎么念、说什么，分三节。三节都可选，小节名照「## 配音指引」的规矩不翻译：

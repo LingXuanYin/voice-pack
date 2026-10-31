@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "runtimes": [
     { "runtime": "ffmpeg", "optional": true, "purpose": "解码 WAV 以外的音频（mp3、flac、ogg、m4a……）；WAV 自己解，不需要它" }
   ]

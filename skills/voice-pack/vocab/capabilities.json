@@ -25,6 +25,7 @@
     "style-instruction": { "tier": "convention", "summary": "合成时接受「怎么说」的自然语言说明（语气、节奏、情绪），对应参数 instructions" },
     "style-cues": { "tier": "convention", "summary": "合成时接受这一句自己的舞台提示认出来的几个名字（情绪、风格：vocab/cues.json 的规范名字），对应参数 cues；语速和停顿不在里面（它们是 unit 的字段），配音指引也不在里面" },
     "pause-in-text": { "tier": "convention", "summary": "合成时认文字里的停顿：<speak>…</speak> 包着的 <break time=\"Nms\"/>，整段一次请求；一段话里不超过 2.5 秒的停顿写在这里，不切成两次请求（lib/pause-in-request.mjs）" },
+    "phoneme-in-text": { "tier": "convention", "summary": "合成时认文字里的音素：<speak>…</speak> 包着的 <phoneme alphabet=\"x-pinyin\" ph=\"zeng1\">曾</phoneme>，按标的音念（读音词表里的拼音音素，lib/pronunciation-lexicon.mjs）" },
     "pronunciation-lexicon": { "tier": "convention", "summary": "合成时按读音词表（W3C PLS 格式）改读指定的词" }
   },
   "parameters": {

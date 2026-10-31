@@ -5,7 +5,7 @@
 //
 // 三个函数，数据进、数据出：
 //   parseLexicon(input)          把 PLS 文件（字符串，或 UTF-8 字节）读成 { version, alphabet, language, lexemes }
-//   lexiconRules(lexicon)        按 PLS 4.9.2 给每个词选定读法 -> { rules, unapplied }
+//   lexiconRules(lexicon, opts)  按 PLS 4.9.2 给每个词选定读法 -> { rules, phonemes, unapplied }（opts.phonemeInText：环境声明了拼音音素）
 //   applyLexicon(text, rules)    把规则用到台词上 -> { text, replacements }
 //
 // 包里的读音词表放在角色部分的根上，文件名是 LEXICON_FILE（lexicon.pls）。清单没有专门的字段：它和别的包内文件一样列在 files 里，
@@ -55,6 +55,7 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
 import { MARKER_PATTERN } from '../tools/markup.mjs';
+import { escapeSsml } from './pause-in-request.mjs';
 
 /** 读音词表在角色部分根上的文件名（约定，清单里没有专门的字段）。 */
 export const LEXICON_FILE = 'lexicon.pls';
@@ -463,13 +464,18 @@ function readLexeme(element, ids) {
 
 /**
  * 给每个词选定读法，规则见文件头「怎么选读法」。
+ * phonemeInText：环境声明了 phoneme-in-text（见 dub.mjs）。没有声明，所有音素都是 reason 'phoneme'，和没有拼音这一项时一字不差。
+ * 声明了：拼音（x-pinyin）写对的进 phonemes；写不对的（音节数、写法、词条里有非汉字）reason 是 phoneme_format，problem 写明是哪一种。
+ * unapplied 列着所有音素（能用的也列着，调用方在用上的时候去掉）。
  * @param {ReturnType<typeof parseLexicon>} lexicon
+ * @param {{ phonemeInText?: boolean }} [options]
  * @returns {{
  *   rules: { term: string, say: string, language: string }[],
- *   unapplied: ({ term: string, reason: 'phoneme', phoneme: string, alphabet: string } | { term: string, reason: 'role', role: string, lexemeId: string|null })[]
+ *   phonemes: { term: string, alphabet: string, ph: string }[],
+ *   unapplied: ({ term: string, reason: 'phoneme', phoneme: string, alphabet: string } | { term: string, reason: 'phoneme_format', phoneme: string, alphabet: string, problem: 'term'|'count'|'form' } | { term: string, reason: 'role', role: string, lexemeId: string|null })[]
  * }}
  */
-export function lexiconRules(lexicon) {
+export function lexiconRules(lexicon, { phonemeInText = false } = {}) {
   const byTerm = new Map(); // 词 -> 按文档次序收齐的读法
   const unapplied = [];
   for (const lexeme of lexicon.lexemes) {
@@ -482,13 +488,78 @@ export function lexiconRules(lexicon) {
     }
   }
   const rules = [];
+  const phonemes = [];
   const notApplied = [];
   for (const [term, pronunciations] of byTerm) {
     const chosen = pronunciations.find((p) => p.prefer) ?? pronunciations[0];
-    if (chosen.kind === 'alias') rules.push({ term, say: chosen.value, language: lexicon.language });
-    else notApplied.push({ term, reason: 'phoneme', phoneme: chosen.value, alphabet: chosen.alphabet ?? lexicon.alphabet });
+    if (chosen.kind === 'alias') {
+      rules.push({ term, say: chosen.value, language: lexicon.language });
+      continue;
+    }
+    const alphabet = chosen.alphabet ?? lexicon.alphabet;
+    const pinyin = phonemeInText && alphabet === PINYIN_ALPHABET;
+    const problem = pinyin ? pinyinProblem(term, chosen.value) : null;
+    if (pinyin && problem === null) phonemes.push({ term, alphabet, ph: chosen.value });
+    if (problem === null) notApplied.push({ term, reason: 'phoneme', phoneme: chosen.value, alphabet });
+    else notApplied.push({ term, reason: 'phoneme_format', phoneme: chosen.value, alphabet, problem });
   }
-  return { rules, unapplied: [...notApplied, ...unapplied] };
+  return { rules, phonemes, unapplied: [...notApplied, ...unapplied] };
+}
+
+// ---------------------------------------------------------------- 拼音音素
+//
+// 包里的拼音音素：字母表 x-pinyin（PLS 第 2 节：非 ipa 的字母表是 x- 开头的自定义名）；ph 是拼音加数字声调，每个汉字一个音节，
+// 音节用空格分开，个数和词里的汉字数相等，声调 1 到 5（5 是轻声）。拼音里的 ü 写成 v（lü3 写成 lv3）。
+// 认不认得这个字母表、怎么写进文字，由环境定：环境声明了 phoneme-in-text 才用（适配器的字母表名见它的 env.mjs）。
+// 这里只管读、判、写成标签；发送时在 dub.mjs 的 runUnit 里做（停顿、切段、字数都仍按纯文字算，标签不计字数）。
+
+/** 包里写汉语拼音用的字母表名。 */
+export const PINYIN_ALPHABET = 'x-pinyin';
+const PINYIN_SYLLABLE = /^[a-z]+[1-5]$/;
+
+/** 拼音音素写得对不对：null 是对的；'term' 是词条里有不是汉字的字（拼音只标汉字）；'count' 是音节数和汉字数对不上；'form' 是某个音节的写法不对。 */
+export function pinyinProblem(term, ph) {
+  const characters = [...term];
+  if (!characters.every((character) => /^\p{Script=Han}$/u.test(character))) return 'term';
+  const syllables = ph.split(' ');
+  if (syllables.length !== characters.length) return 'count';
+  return syllables.every((syllable) => PINYIN_SYLLABLE.test(syllable)) ? null : 'form';
+}
+
+/**
+ * 把读音标在台词的词上（拼音音素）。spoken 是要念的文字；ssml 为 true 时它已经是 <speak>…</speak>（转义过，标记和 <break> 不动，只换文字段）；
+ * 为 false 时是纯文字，有替换的就转义、包一层 <speak>。没有替换的原样交回，所以没有音素的句子和以前一字不差。
+ * phonemes 是 lexiconRules 的 phonemes（{ term, alphabet, ph }）；同一个词条只用第一个。匹配和长词优先的规则和 applyLexicon 一样。
+ * @returns {{ text: string, replacements: { term: string, ph: string, count: number }[] }} replacements 按第一次换到的先后排
+ */
+export function applyPhonemes(spoken, phonemes, { ssml }) {
+  if (typeof spoken !== 'string') throw new TypeError('台词必须是字符串');
+  if (!Array.isArray(phonemes)) throw new TypeError('音素必须是数组');
+  const pick = new Map();
+  for (const item of phonemes) if (!pick.has(item.term)) pick.set(item.term, item);
+  if (pick.size === 0) return { text: spoken, replacements: [] };
+  // 匹配的是转义以后的文字（<speak> 里写的是 &amp; 这类），词条也按转义以后的样子认；词条是汉字时转义不改它
+  const byEscaped = new Map([...pick.values()].map((item) => [escapeSsml(item.term), item]));
+  const terms = [...byEscaped.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(terms.map(termPattern).join('|'), 'gu');
+  const counts = new Map();
+  const rewrite = (run) => run.replace(pattern, (matched) => {
+    const item = byEscaped.get(matched);
+    counts.set(item.term, (counts.get(item.term) ?? 0) + 1);
+    return `<phoneme alphabet="${PINYIN_ALPHABET}" ph="${escapeSsml(item.ph).replace(/"/g, '&quot;')}">${matched}</phoneme>`;
+  });
+  let text;
+  if (ssml) {
+    // 标签（<speak>、<break …/>）原样，只换标签之间的文字
+    text = spoken.split(/(<[^>]*>)/).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('');
+  } else {
+    const marked = rewrite(escapeSsml(spoken));
+    if (counts.size === 0) return { text: spoken, replacements: [] };
+    text = `<speak>${marked}</speak>`;
+  }
+  if (counts.size === 0) return { text: spoken, replacements: [] };
+  const replacements = [...counts].map(([term, count]) => ({ term, ph: pick.get(term).ph, count }));
+  return { text, replacements };
 }
 
 // ---------------------------------------------------------------- 用到台词上

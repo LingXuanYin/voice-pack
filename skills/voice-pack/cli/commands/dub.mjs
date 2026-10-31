@@ -58,6 +58,13 @@ export const FLAGS = {
   language: 'string', emotion: 'string', style: 'string', energy: 'string', instructions: 'string', pack: 'strings',
 };
 const LABEL_FLAGS = ['language', 'emotion', 'style', 'energy'];
+
+/** 读音词表里做不到的一条，写成一句话说明原因（reason 的写法见 lib/pronunciation-lexicon.mjs 的 lexiconRules）。 */
+function unappliedReason(item) {
+  if (item.reason === 'phoneme') return '读法是音素，要合成的模型自己会读';
+  if (item.reason === 'phoneme_format') return item.problem === 'term' ? '拼音只标汉字，这个词里有别的字' : item.problem === 'count' ? '拼音的音节数和汉字数对不上' : '拼音写法不对：每个音节是字母加声调 1 到 5';
+  return '按词性挑读法，这里没有语法信息';
+}
 const REPORT_FILE = 'dub.json';
 
 const pad = (number) => String(number).padStart(3, '0');
@@ -112,10 +119,12 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
     ? `包：${report.packs.map((item) => `${item.name}（${item.id} ${item.version}）`).join('、')}（开头的声音是 ${report.pack.name}）`
     : `包：${report.pack.name}（${report.pack.id} ${report.pack.version}）`);
   const { lexicon } = report;
-  if (lexicon.applied.length > 0 || lexicon.unapplied.length > 0) {
+  const phonemes = lexicon.phonemes ?? [];
+  if (lexicon.applied.length > 0 || lexicon.unapplied.length > 0 || phonemes.length > 0) {
     const applied = lexicon.applied.map((item) => `${item.term} → ${item.say}（${item.count} 处）`).join('；');
-    const unapplied = lexicon.unapplied.map((item) => `${item.term}（${item.reason === 'phoneme' ? '读法是音素，要合成的模型自己会读' : '按词性挑读法，这里没有语法信息'}）`).join('；');
-    lines.push(`读音词表：${applied === '' ? '这份台本里没有用到' : `换了 ${applied}`}${unapplied === '' ? '' : `；做不到的：${unapplied}`}`);
+    const marked = phonemes.map((item) => `${item.term}（${item.ph}，${item.count} 处）`).join('；');
+    const unapplied = lexicon.unapplied.map((item) => `${item.term}（${unappliedReason(item)}）`).join('；');
+    lines.push(`读音词表：${applied === '' ? '这份台本里没有用到' : `换了 ${applied}`}${marked === '' ? '' : `；标了音素 ${marked}`}${unapplied === '' ? '' : `；做不到的：${unapplied}`}`);
   }
   if (report.guidance.present) {
     const sent = report.units.some((unit) => unit.instructions.sent);

@@ -38,7 +38,9 @@
 //     括号里词表认不出的内容（（画外音））配音时也拿掉，不念；如实记在这一段的 pick.directions 里（recognized 为 false）。
 //   3 每一段挑参考（lib/reference-pick.mjs）：调用方的标签、台本里的提示、text-generation 的判断、默认参考。理由放在 units[i].pick 里。
 //     text-generation 的判断是计费的，在 onPlan 之后才调（见上面的 onPlan）。
-//   4 读音词表（包里的 lexicon.pls，lib/pronunciation-lexicon.mjs）：换掉要说的话里的词，只换标记之间的文字。做不到的（音素）如实报在 lexicon.unapplied。
+//   4 读音词表（包里的 lexicon.pls，lib/pronunciation-lexicon.mjs）：换掉要说的话里的词，只换标记之间的文字。做不到的如实报在 lexicon.unapplied。
+//     拼音音素（字母表 x-pinyin）：环境声明了 phoneme-in-text 才用，句子里用上的记在 unit.phonemes 和 lexicon.phonemes，从 unapplied 去掉；
+//     没声明的，照旧报在 unapplied（reason 是 phoneme，和没有这一项时一样）；声明了、音节数等对不上的，reason 是 phoneme_format。
 //   5 超过 maxChars 的按句子切成几段，同一句的几段共用同一段参考。
 //   5b 有下限（minChars，环境声明的；没有就跳过这一步）：一段的字数不到下限，就和后面的一段并成一段（joinShort 为 true 时），直到够下限或者没有可并的。
 //     并段的规则和 app 的 fitMinLength 一样：同一个声音（台本里的声音都是这个包，voice_unknown 保证），
@@ -52,7 +54,7 @@
 //     说明这次没有运行和原因。
 //   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers?, continues? }。
 //      continues：这一段是接着下一段说的（句子被标记切开，unit.join 为 'continue'）时才有，能力不到最短字数补「，」而不是「。」（补字的规则只在适配器一处）。
-//      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken。
+//      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
 //      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub.md 的「拼接」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
 //      返回值里说明没传和原因。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
@@ -117,7 +119,7 @@ import { splitSentences } from '../tools/sentences.mjs';
 import { readDirections, canonicalLabel } from './line-hints.mjs';
 import cues from '../vocab/cues.json' with { type: 'json' };
 import { pickReferences } from './reference-pick.mjs';
-import { lexiconRules, applyLexicon } from './pronunciation-lexicon.mjs';
+import { lexiconRules, applyLexicon, applyPhonemes, PINYIN_ALPHABET } from './pronunciation-lexicon.mjs';
 import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, runScript, audioForScript, HOOKS } from './pack-script.mjs';
 import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
 import { isServiceError, isTextRejected, summarizeError, pool } from './capability-calls.mjs';
@@ -530,6 +532,8 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
   const notes = [];
   const styled = hasCapability(env, 'style-instruction');
   const cued = hasCapability(env, 'style-cues');
+  // 读音词表的拼音音素：环境声明了 phoneme-in-text 才用；没有声明，音素和以前一样只报在 unapplied（reason 是 phoneme）
+  const phonemeOn = hasCapability(env, 'phoneme-in-text');
   // 每个包各自的：挑参考（text-generation 的判断也在这里；计费的那一次在 askJudge 时才调）、读音词表、配音指引、增强件、脚本
   const perPack = new Map();
   for (const pack of packs) {
@@ -537,14 +541,14 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY);
     const picks = new Map(own.map((line, k) => [line.index, { ...picked[k], index: line.index }]));
     const lexicon = await pack.lexicon();
-    const { rules, unapplied } = lexicon === null ? { rules: [], unapplied: [] } : lexiconRules(lexicon);
+    const { rules, phonemes, unapplied } = lexicon === null ? { rules: [], phonemes: [], unapplied: [] } : lexiconRules(lexicon, { phonemeInText: phonemeOn });
     const rawGuidance = settings.guidance === undefined ? await pack.guidance() : settings.guidance;
     // 新式指引（有三个小节中的任何一个）只交演法，没有演法就什么都不交；旧式（三个都没有）整段交（guidanceForModel）。要在拼之前取：下面 instruction 把说明和舞台提示接在指引后面，
     // 等适配器在拼好的串里取，演法之后的说明会被切掉，或被并进演法。
     const sentGuidance = guidanceForModel(rawGuidance) ?? rawGuidance;
     const guidance = fitGuidance(sentGuidance);
     if (guidance.truncated) notes.push({ code: 'guidance_truncated', message: named(pack, `配音指引有 ${count(sentGuidance)} 个字，超过 ${GUIDANCE_MAX}，截短以后才传给模型`), details: { chars: count(sentGuidance), max: GUIDANCE_MAX } });
-    perPack.set(pack, { own, judge, picks, rules, unapplied, rawGuidance, guidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
+    perPack.set(pack, { own, judge, picks, rules, unapplied, phonemes, usedTerms: new Set(), rawGuidance, guidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
   }
 
   const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
@@ -610,6 +614,16 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
   if (paused.joins > 0) notes.push({ code: 'pauses_in_request', message: `有 ${paused.joins} 处停顿并进了一次请求（写在文字里：<speak> 和 <break>，或者标点），这几处的停顿不再交给拼接的人`, details: { joins: paused.joins } });
   // 续接的段（unit.join）照旧两次请求，以「，、；：」结尾的，两段之间停 0.5 秒（这一处的 pauseAfterMs 定成 500；不以标点结尾的是 0）
   for (const unit of units) if (unit.join === 'continue' && unit.pauseAfterMs === 0 && endsMidSentence(unit.spoken)) unit.pauseAfterMs = JOIN_PUNCTUATION_PAUSE_MS;
+  // 拼音音素：每一句记下用上了哪几个（unit.phonemes，只在用上时才有），用上的词记在它的包里（从 unapplied 去掉）。发送时在 runUnit 里换成标签
+  if (phonemeOn) {
+    for (const unit of units) {
+      const owner = perPack.get(ownerOfUnit(packs, unit));
+      const { replacements } = applyPhonemes(unit.spoken, owner.phonemes, { ssml: false });
+      if (replacements.length === 0) continue;
+      unit.phonemes = replacements.map(({ term, ph, count }) => ({ term, alphabet: PINYIN_ALPHABET, ph, count }));
+      for (const { term } of replacements) owner.usedTerms.add(term);
+    }
+  }
   if (units.some((unit) => unit.speed !== null)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着台本要求的语速（0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
   // 包里没登记功能的脚本：每个包各自说（几个包时点名是哪个包）
   for (const pack of packs) {
@@ -626,23 +640,33 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
 
   // 要用到脚本运行时的包：几个包时只看这次真用到的（没有句子的包，不要它的运行时）
   const inUse = packsInUse(packs, units);
-  const lexiconUnapplied = packs.flatMap((pack) => perPack.get(pack).unapplied);
+  // 用上的音素从 unapplied 去掉（只有用到的；没用到的仍报着，它是词表里有、这句话里没有）；用上的按词、读法汇总成 lexicon.phonemes（没有用上就没有这一项）
+  const lexiconUnapplied = packs.flatMap((pack) => perPack.get(pack).unapplied.filter((item) => !(item.reason === 'phoneme' && perPack.get(pack).usedTerms.has(item.term))));
+  const usedPhonemes = new Map();
+  for (const unit of units) {
+    for (const item of unit.phonemes ?? []) {
+      const key = `${item.term}\u0000${item.alphabet}\u0000${item.ph}`;
+      const seen = usedPhonemes.get(key);
+      usedPhonemes.set(key, seen === undefined ? { ...item } : { ...seen, count: seen.count + item.count });
+    }
+  }
   const plan = {
     pack: packInfo(packs[0]),
     lines: lines.map(({ index, source, chapter, span, voice, text, labels }) => ({ index, source, chapter, span, voice, text, labels })),
     units,
     judge: combineJudges(packs.map((pack) => perPack.get(pack).judge)),
-    lexicon: { applied: [...applied.values()], unapplied: many ? uniqueJson(lexiconUnapplied) : lexiconUnapplied },
+    lexicon: { applied: [...applied.values()], unapplied: many ? uniqueJson(lexiconUnapplied) : lexiconUnapplied, ...(usedPhonemes.size > 0 ? { phonemes: [...usedPhonemes.values()] } : {}) },
     guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, truncated: perPack.get(pack).guidance.truncated }))),
     enhancers: emptyEnhancers(mergedOffers(packs.map((pack) => perPack.get(pack).offers))),
     scripts: packs.flatMap((pack) => perPack.get(pack).scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS], ...(many ? { pack: pack.manifest.id } : {}) }))),
     missingRuntimes: inUse.flatMap((pack) => missingScriptRuntimes(envFor(env, settings, pack), perPack.get(pack).scripts, FEATURE).map((item) => (many ? { ...item, pack: pack.manifest.id } : item))),
-    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), 'text-generation': hasCapability(env, 'text-generation') },
+    // phoneme-in-text 只在环境声明了它的时候才写进来：没有声明的环境，计划和 dub.json 和没有这一项时一字不差
+    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), ...(phonemeOn ? { 'phoneme-in-text': true } : {}), 'text-generation': hasCapability(env, 'text-generation') },
     notes,
     verification: many ? packs.flatMap((pack) => pack.manifest.verification ?? []) : (packs[0].manifest.verification ?? []),
     ...(many ? { packs: packs.map(packInfo) } : {}),
   };
-  return { plan, styles, unmergedCount };
+  return { plan, styles, unmergedCount, phonemesOf: new Map(packs.map((pack) => [pack, perPack.get(pack).phonemes])) };
 }
 
 /**
@@ -695,7 +719,7 @@ export async function dubScript(env, pack, script, options = {}) {
   const second = await buildPlan(env, packs, script, options, { askJudge: true });
   checkOnly(second.plan.units.length);
   const plan = Object.assign(draft.plan, second.plan);
-  const { styles } = second;
+  const { styles, phonemesOf } = second;
   // 规划里已经记成 failed 的（比下限短、并不了的）不调用能力：不进要做的，也不标成 skipped
   const todo = plan.units.filter((unit) => unit.status === 'planned' && chosen(unit.index));
   for (const unit of plan.units) if (unit.status === 'planned' && !todo.includes(unit)) unit.status = 'skipped';
@@ -736,7 +760,9 @@ export async function dubScript(env, pack, script, options = {}) {
       return;
     }
     const { segment, clip } = references.get(referenceKey(unit));
-    const call = { text: unit.ssml ?? spoken, ref_audio: clip, ref_text: segment.text };
+    // 拼音音素：发送前在文字上换成标签（没有声明、或这一句没有用到的，文字原样）。unit.ssml 是并段时写好的 <speak>（标签在它里面换），没有就是纯文字
+    const sentText = applyPhonemes(unit.ssml ?? spoken, phonemesOf.get(owner) ?? [], { ssml: unit.ssml !== undefined }).text;
+    const call = { text: sentText, ref_audio: clip, ref_text: segment.text };
     if (unit.join === 'continue') call.continues = true; // 续接的段：能力补字时补「，」
     if (unit.instructions.sent) call.instructions = styles[unit.index].instructions;
     if (unit.cues.sent) call.cues = styles[unit.index].cues;
