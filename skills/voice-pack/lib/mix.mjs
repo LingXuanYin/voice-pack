@@ -14,20 +14,32 @@
 //   5. 非 WAV 的句子（mp3、flac 等）要解码：decodeAudio 会要 ffmpeg，没有就 runtime_missing（点名 ffmpeg）。WAV 自己能解，不要 ffmpeg。
 //      即使没有语速要求，mp3 句子也要解码（拼起来要同一种 PCM），所以它需要 ffmpeg。报告不另记它（它不是「格式不同」，是解码）。
 //   6. 报告：总时长（秒）、帧数、采样率、声道、接了几句（units）、插了几段静音（silences：次数和总毫秒数）、变了速的句子（speedChanged：{ number, speed }）、
-//      统一过格式的句子（converted：号数）、notes（speed_not_applied 等）。
+//      统一过格式的句子（converted：号数）、换人处削了静音的（turnTrims：几处、共几毫秒）、notes（speed_not_applied、silent_unit 等）。
+//   7. 换人处（相邻两句的包 unit.pack 不同）：上一句的尾、下一句的头，静音各削到 TURN_EDGE_MS（50 毫秒），再插这一处标的停顿（规则 2）。
+//      只削、不补：头或尾本来就不到 50 毫秒的，原样。同一个包接着说的两句不削。只有一个包（没有换人处）时，成品和没有这一条以前一字节不差。
+//      静音的判法：每 SILENCE_FRAME_MS（10 毫秒）取一次 RMS，低于 SILENCE_DBFS（-40 dBFS）的算静音。整句都低于门限的不削，notes 里记 silent_unit。
 //
-// 输入的 dub.json 形状（dub 命令写的）：{ units: [{ index, status, file, audio?… , pauseBeforeMs, pauseAfterMs, speed, stoppedBy? }], pack?, packs?, stoppedBy? }。
-// 这里只用 units 里的 status、file、pauseBeforeMs、pauseAfterMs、speed；音频字节由命令行层按 file 读出来，作为 parts 传进来。
+// 输入的 dub.json 形状（dub 命令写的）：{ units: [{ index, status, file, audio?… , pauseBeforeMs, pauseAfterMs, speed, pack, stoppedBy? }], pack?, packs?, stoppedBy? }。
+// 这里只用 units 里的 status、file、pauseBeforeMs、pauseAfterMs、speed、pack；音频字节由命令行层按 file 读出来，作为 parts 传进来。
 //
 // 导出：
 //   planMix(report)          检查报告，返回 { ok, stopped, incomplete, units }：stopped 是 dub 中途停下的 stoppedBy（没有就 null）；incomplete 是没做成的句子
-//                            （{ number, status, error? }）；units 是要接的句子（{ number, file, pauseBeforeMs, pauseAfterMs, speed }）。ok 为假时命令行层不读音频、不写文件。
-//   mixParts(env, parts)     parts 是 [{ number, bytes, speed, pauseBeforeMs, pauseAfterMs }]（次序就是台本的次序）。返回 { wav, report }：wav 是 Uint8Array（16 位 PCM 的 WAV），
+//                            （{ number, status, error? }）；units 是要接的句子（{ number, file, pack, pauseBeforeMs, pauseAfterMs, speed }）。ok 为假时命令行层不读音频、不写文件。
+//   mixParts(env, parts)     parts 是 [{ number, bytes, speed, pauseBeforeMs, pauseAfterMs, pack }]（次序就是台本的次序；pack 没有就是 null）。返回 { wav, report }：wav 是 Uint8Array（16 位 PCM 的 WAV），
 //                            report 见第 6 条（不含文件名，文件名由命令行层加）。
 //   resampleChannel、remixChannels：内部用，导出给测试。
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
 import { VoicePackError } from '../protocol/lib/errors.mjs';
+
+/**
+ * 换人处的静音（规则 7）。出处：对话里换人的间隔，众数在 0 到 200 毫秒（Stivers et al. 2009，PNAS 106(26)）；700 毫秒以上的多和不情愿的回应一起出现
+ * （Levinson & Torreira 2015，Frontiers in Psychology 6:731）。两边各留 50 毫秒，没标停顿的换人处约 100 毫秒，落在众数里。
+ * 静音的判法（每 10 毫秒一帧，低于 -40 dBFS 算静音）是量合成句子头尾静音时用的那一套（-30、-50 dBFS 只用来看敏感度）。
+ */
+const TURN_EDGE_MS = 50;
+const SILENCE_DBFS = -40;
+const SILENCE_FRAME_MS = 10;
 
 /** 变速（atempo）用的 ffmpeg 参数：输入、输出各一个文件（约定见 tools/audio-decode.mjs 的 @runtime ffmpeg；覆盖输出由运行环境加 -y）。 */
 const ATEMPO_ARGS = (speed) => ['-hide_banner', '-nostdin', '-v', 'error', '-protocol_whitelist', 'file', '-i', '{input}', '-filter:a', `atempo=${speed}`, '-f', 'wav', '-acodec', 'pcm_f32le', '{output}'];
@@ -40,7 +52,7 @@ export function planMix(report) {
   }
   const incomplete = units.filter((unit) => unit.status !== 'ok').map((unit) => ({ number: unit.index + 1, status: unit.status, ...(unit.error === undefined ? {} : { error: unit.error }) }));
   if (incomplete.length > 0) return { ok: false, stopped: null, incomplete, units: [] };
-  return { ok: true, stopped: null, incomplete: [], units: units.map((unit) => ({ number: unit.index + 1, file: unit.file, pauseBeforeMs: unit.pauseBeforeMs ?? 0, pauseAfterMs: unit.pauseAfterMs ?? 0, speed: unit.speed ?? null })) };
+  return { ok: true, stopped: null, incomplete: [], units: units.map((unit) => ({ number: unit.index + 1, file: unit.file, pack: unit.pack ?? null, pauseBeforeMs: unit.pauseBeforeMs ?? 0, pauseAfterMs: unit.pauseAfterMs ?? 0, speed: unit.speed ?? null })) };
 }
 
 /** 线性插值的窗口 sinc 重采样，单声道。from、to 是采样率。长度按时长取整（四舍五入）。 */
@@ -85,8 +97,47 @@ const silence = (frames, channels) => Array.from({ length: channels }, () => new
 /** 毫秒换成帧（四舍五入）。 */
 const framesOf = (ms, rate) => Math.round((ms * rate) / 1000);
 
+/** 有声的范围（样本）：第一帧的开头、最后一帧的末尾（超过门限的）。整句都低于门限就是 null。每帧按各声道平均后的 RMS 算。 */
+function activeSpan(channels, rate) {
+  const length = channels[0].length;
+  const frame = Math.max(1, Math.round((rate * SILENCE_FRAME_MS) / 1000));
+  let first = -1;
+  let last = -1;
+  for (let start = 0; start < length; start += frame) {
+    const end = Math.min(length, start + frame);
+    let sum = 0;
+    for (let i = start; i < end; i++) {
+      let mono = 0;
+      for (const channel of channels) mono += channel[i];
+      mono /= channels.length;
+      sum += mono * mono;
+    }
+    const rms = Math.sqrt(sum / (end - start));
+    if (rms > 0 && 20 * Math.log10(rms) > SILENCE_DBFS) {
+      if (first < 0) first = start;
+      last = end;
+    }
+  }
+  return first < 0 ? null : { first, last };
+}
+
 /**
- * 把几句接成一个 WAV。parts：[{ bytes, speed, pauseBeforeMs, pauseAfterMs, number, file }]，次序就是台本的次序。
+ * 换人处的一句：头（head）、尾（tail）的静音削到 TURN_EDGE_MS 毫秒，只削、不补。整句静音返回 null。
+ * 返回削完的声道数列，和削掉的样本数 cutHead、cutTail（在这一句自己的采样率下算）。
+ */
+function trimTurnEdges(audio, { head, tail }) {
+  const { samples, sampleRate } = audio;
+  const span = activeSpan(samples, sampleRate);
+  if (span === null) return null;
+  const keep = Math.round((sampleRate * TURN_EDGE_MS) / 1000);
+  const length = samples[0].length;
+  const cutHead = head ? Math.max(0, span.first - keep) : 0;
+  const cutTail = tail ? Math.max(0, length - (span.last + keep)) : 0;
+  return { samples: samples.map((channel) => channel.slice(cutHead, length - cutTail)), cutHead, cutTail };
+}
+
+/**
+ * 把几句接成一个 WAV。parts：[{ bytes, speed, pauseBeforeMs, pauseAfterMs, number, file, pack }]，次序就是台本的次序。
  * env：运行环境（只用 env.runtimes.ffmpeg：解码 WAV 以外的格式、有语速要求时的 atempo）。
  * @returns {Promise<{ wav: Uint8Array, report: object }>}
  */
@@ -112,6 +163,33 @@ export async function mixParts(env, parts) {
   }
   if (unapplied.length > 0) {
     notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着台本要求的语速）`, details: { units: unapplied } });
+  }
+  // 换人处（规则 7）：相邻两句的包不同。第 i 句的头削的是它和第 i-1 句之间的那一处，尾削的是它和第 i+1 句之间的那一处
+  const packOf = (part) => part.pack ?? null;
+  const turnBefore = decoded.map((item, i) => i > 0 && packOf(decoded[i - 1]) !== packOf(item));
+  const turnAfter = decoded.map((item, i) => i + 1 < decoded.length && packOf(decoded[i + 1]) !== packOf(item));
+  const trimmedTurns = new Set(); // 削了静音的换人处（用前一句的下标）
+  let trimmedMs = 0;
+  const silentTurnUnits = []; // 整句低于门限的（号数）：它的静音不削
+  decoded.forEach((item, i) => {
+    if (!turnBefore[i] && !turnAfter[i]) return;
+    const cut = trimTurnEdges(item.audio, { head: turnBefore[i], tail: turnAfter[i] });
+    if (cut === null) {
+      silentTurnUnits.push(item.number);
+      return;
+    }
+    if (cut.cutHead > 0) {
+      trimmedTurns.add(i - 1);
+      trimmedMs += (cut.cutHead * 1000) / item.audio.sampleRate;
+    }
+    if (cut.cutTail > 0) {
+      trimmedTurns.add(i);
+      trimmedMs += (cut.cutTail * 1000) / item.audio.sampleRate;
+    }
+    item.audio = { ...item.audio, samples: cut.samples, frames: cut.samples[0].length };
+  });
+  if (silentTurnUnits.length > 0) {
+    notes.push({ code: 'silent_unit', message: `第 ${silentTurnUnits.join('、')} 句整句低于 ${SILENCE_DBFS} dBFS（是静音），换人处不削它的静音，照原样接上`, details: { units: silentTurnUnits } });
   }
   // 成品的格式：第一句的采样率和声道。别的句子统一过去（记下是哪几句）
   const sampleRate = decoded[0].audio.sampleRate;
@@ -149,6 +227,7 @@ export async function mixParts(env, parts) {
     silences: { count: silences, totalMs: silenceMs },
     speedChanged,
     converted,
+    turnTrims: { count: trimmedTurns.size, totalMs: Math.round(trimmedMs) },
     notes,
   };
   return { wav, report };

@@ -14,7 +14,8 @@
 - `direction.json`：`description` 由你写；`tags`、`scenes` 原样抄 `attributes.json` 里的。
 - `guidance.md`：配音指引的正文，小节照 `template/guidance.md`。
 - `sample-lines.json`：示例台词。
-- `design-source.json`：只有 `attributes.json` 里的 `designed` 是 `true` 时才写。
+
+`template/design-source.json` 不用填：设计来源由调用方给（见 `spec/README.md`「设计来源」）。
 
 ## 规矩
 

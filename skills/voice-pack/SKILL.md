@@ -19,7 +19,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 ## 1. 所需能力
 
 - **能力词表**在 `vocab/capabilities.json`，带版本号。有通用名字的用 Hugging Face 的任务名（`text-to-speech`、`automatic-speech-recognition`、`audio-text-to-text`、`text-generation` 等），没有的用业内趋同的叫法（`voice-cloning`、`voice-design`、`text-to-dialogue`、`audio-source-separation` 等）；参数名用 `ref_audio`、`ref_text`、`instructions`。流程和包里写的能力只从这份词表取。
-- **运行环境缺某项能力**时，只有用到它的功能报错，并说明缺哪一项，其他功能照常。取能力和报错的写法见 `protocol/README.md` 的「运行环境」。
+- **运行环境缺某项能力**时，只有用到它的功能报错，并说明缺哪一项，其他功能照常。取能力和报错的写法见 `protocol/README.md` 的「运行环境」（写适配器时读）。
 - **适配器**每种运行环境一个。官方的只有 `process`（把能力调用转给你自己的程序，入口 `adapters/process/README.md`）；别的适配器在它自己的目录里，用路径接进来。约定只写在 `adapters/README.md`。
 - 要用模型才能做的处理（分离、水印、说话人相似度、转写）作为所需能力向运行环境要；运行环境没有的，报不可用。
 
@@ -67,19 +67,19 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 ## 5. 命令行
 
-在本目录运行 `node cli.mjs help` 列出当前可用的命令，`node cli.mjs <命令> --help` 看用法。只有协议核心时用 `node protocol/cli.mjs`。命令行默认给命令一个只有网络读取、没有任何所需能力的运行环境；要用模型的命令，用 `--adapter` 把适配器接进来（见第 8 节和 `adapters/README.md`）。命令的写法、退出码和错误的报告方式，见 `protocol/README.md` 的「命令行」。放进环境、配音、变声的命令写在第 6 节「用音色包配音和变声」；做包（`node cli.mjs make-pack`）写在第 7 节「做音色包」。
+在本目录运行 `node cli.mjs help` 列出当前可用的命令，`node cli.mjs <命令> --help` 看用法。只有协议核心时用 `node protocol/cli.mjs`。命令行默认给命令一个只有网络读取、没有任何所需能力的运行环境；要用模型的命令，用 `--adapter` 把适配器接进来（见第 8 节和 `adapters/README.md`）。命令的写法、退出码和错误的报告方式，见 `protocol/README.md` 的「命令行」（命令出错、要查退出码时读）。放进环境、配音、变声的命令写在第 6 节「用音色包配音和变声」；做包（`node cli.mjs make-pack`）写在第 7 节「做音色包」。
 
 ## 6. 用音色包配音和变声
 
 拿到一个音色包（角色部分的目录，里面有 `manifest.json`、`SKILL.md`、`reference/`），先 `install` 放进环境，再用它的声音给台本配音（`dub`），或者把一段音频换成它的声音（`convert`）。三个命令都不点名模型，只要运行环境有对应的所需能力。先加 `--dry-run` 看规划，只规划，不合成，不花钱。
 
-命令的选项、报告、拼接、失败和重做、包里的脚本、变声的细则，都在 `references/dub.md`。配音指引（包的 `SKILL.md` 最后一节）分三节，配音时交给模型的范围在那里定。
+命令的选项、报告、包里的脚本，都在 `references/dub.md`；拼接、失败和重做、变声的细则在 `references/dub-details.md`（`dub.md` 里各处有指针）。配音指引（包的 `SKILL.md` 最后一节）分三节，配音时交给模型的范围在那里定。
 
 几个角色的一场戏：`node cli.mjs dub --pack <包目录> --pack <包目录> <台本文件> --out <输出目录>`，台本里的 `[voice:名字]` 换角色。把输出目录接成一个音频：`node cli.mjs mix <dub 输出目录> --out <文件.wav>`，只在本地算，不花钱，规则见 `references/dub.md`「拼接」。
 
 ## 7. 做音色包
 
-作者交来一批原声，做成一个音色包的角色部分：`node cli.mjs make-pack [<素材>] --output <新目录> --name <名字>`，素材可以省（长录音用 `--recording`，发新版本用 `--previous`）。素材的格式、标签、配音指引的三层、发新版本、设计出来的声音怎么做包（`--no-holdout`），都在 `references/make-pack.md`；响度、还原度、留出录音、增强件、发新版本的其余细则、照一个已有的包做新包（净室和查重），在 `references/make-pack-details.md`。命令只管读文件、写文件，正本在 `lib/make-pack.mjs` 的文件头。
+作者交来一批原声，做成一个音色包的角色部分：`node cli.mjs make-pack [<素材>] --output <新目录> --name <名字>`，素材可以省（长录音用 `--recording`，发新版本用 `--previous`）。素材的格式、标签、配音指引的三层、发新版本、设计出来的声音怎么做包（`--no-holdout`），都在 `references/make-pack.md`；还原度、增强件、响度、留出录音、发新版本的其余细则、读音词表、骨架的语言、完整包、分享文件，在 `references/make-pack-details.md`；照一个已有的包做新包（净室和查重），在 `references/clean-room.md`。命令只管读文件、写文件，正本在 `lib/make-pack.mjs` 的文件头。
 
 ## 8. 接自己的模型
 

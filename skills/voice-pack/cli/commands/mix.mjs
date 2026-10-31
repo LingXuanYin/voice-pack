@@ -48,6 +48,7 @@ function render(result) {
   const layout = result.channels === 1 ? '单声道' : `${result.channels} 声道`;
   lines.push(`总时长 ${result.durationSeconds.toFixed(2)} 秒（${result.frames} 帧，${result.sampleRate} Hz，${layout}），接了 ${result.units} 句`);
   lines.push(`插了 ${result.silences.count} 段静音，共 ${result.silences.totalMs} 毫秒`);
+  if (result.turnTrims.count > 0) lines.push(`换人处削了 ${result.turnTrims.count} 处静音，共 ${result.turnTrims.totalMs} 毫秒`);
   if (result.speedChanged.length > 0) lines.push(`变了速（保持音高）：${result.speedChanged.map((item) => `第 ${item.number} 句（${item.speed}）`).join('、')}`);
   if (result.converted.length > 0) lines.push(`统一成第一句的格式：第 ${result.converted.join('、')} 句`);
   for (const note of result.notes) lines.push(`注意：${note.message}`);
@@ -73,7 +74,7 @@ export async function run(args, ctx) {
     throw new VoicePackError('mix_incomplete', `有 ${numbers.length} 句没做成（第 ${numbers.join('、')} 句），不出成品：先用 dub --only ${numbers.join(',')} 重做这几句，再 mix`, { details: { failed: plan.incomplete } });
   }
 
-  const parts = plan.units.map((unit) => ({ number: unit.number, bytes: readBytes(ctx, path.join(dir, unit.file)), speed: unit.speed, pauseBeforeMs: unit.pauseBeforeMs, pauseAfterMs: unit.pauseAfterMs }));
+  const parts = plan.units.map((unit) => ({ number: unit.number, bytes: readBytes(ctx, path.join(dir, unit.file)), speed: unit.speed, pauseBeforeMs: unit.pauseBeforeMs, pauseAfterMs: unit.pauseAfterMs, pack: unit.pack }));
   const { wav, report } = await mixParts(ctx.env, parts);
   writeNewFile(file, wav);
   const result = { file, ...report };

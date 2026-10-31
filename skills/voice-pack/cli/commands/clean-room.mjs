@@ -12,7 +12,7 @@
 //   --tags, --scenes    设计词表里的标签、场景词表里的场景（中文名、英文名都认），用逗号隔开（中文逗号也行）。写法见 lib/design-vocab.mjs；不在词表里的在组装之前就报
 //   --words, --words-file   使用者自己的话，原样交给做包 agent：不改写，不补充。--words 是命令行里直接写的一段话，--words-file 是一个 UTF-8 的文字文件（话长、带换行时用它）。只能给一个
 //   --language          语言标签，例如 zh、en、zh-CN
-//   --designed          这个声音是设计出来的（不是用录音做的）：做包 agent 要写设计来源
+//   --designed          这个声音是设计出来的（不是用录音做的）：只记在属性里，做包 agent 不因此写设计来源（设计来源由调用方给，见 protocol/new-pack/README.md「设计来源」）
 //   --attributes        整份属性写在一个 JSON 文件里（{ tags?, scenes?, words?, language?, designed? }，键的意思同上）；不能和上面的属性选项一起给
 // 选项：
 //   --output            净室输入写到这个新目录。目录必须还不存在：不往已有的目录里写，也不覆盖

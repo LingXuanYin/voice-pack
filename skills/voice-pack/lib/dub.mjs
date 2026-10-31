@@ -55,7 +55,7 @@
 //   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers?, continues? }。
 //      continues：这一段是接着下一段说的（句子被标记切开，unit.join 为 'continue'）时才有，能力不到最短字数补「，」而不是「。」（补字的规则只在适配器一处）。
 //      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
-//      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub.md 的「拼接」，这里不重复。
+//      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
 //      返回值里说明没传和原因。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
 //      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。

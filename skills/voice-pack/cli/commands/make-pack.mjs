@@ -41,7 +41,7 @@
 //                       只管骨架：「## 配音指引」这一行所有语言都一样，--name、--guidance、--direction 里写的字原样放进包，不翻译（规则的正本是 protocol/FORMAT.md「骨架的语言」）。
 //                       发新版本时用这一次给的，不看上一版是什么语言；不给就是中文。
 //   --guidance          配音指引的正文（Markdown 文件），放进 SKILL.md 的最后一节。--direction：{ description?, tags?, scenes? }，tags 只能从设计词表选。
-//                       --design-source：{ description?, model?, modelVersion?, date? }，设计出来的声音、默认音色、融合出来的声音做包时写。--lexicon：读音词表（PLS），放进包里的 lexicon.pls。
+//                       --design-source：{ description?, model?, modelVersion?, date?, auditionLines? }，设计出来的声音、默认音色、融合出来的声音做包时写。--lexicon：读音词表（PLS），放进包里的 lexicon.pls。
 //                       --sample-lines：示例台词，一份 JSON 数组，每项一句台词（最多 50 条，每条 1–500 个字符，不能只有空白；可以带舞台提示，例如（耳语）），原样写进清单；发新版本不给就沿用上一版的，给空数组就去掉。
 //   --recording, --audition, --no-separate
 //                       长录音、设计试听、不分离，见上面「素材」。--no-separate 只有给了 --recording 才有意义。

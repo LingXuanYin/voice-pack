@@ -34,7 +34,7 @@
 //     guidance?,        配音指引的正文（Markdown），放进 SKILL.md 的最后一节
 //     sampleLines?,     示例台词：字符串数组，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节：最多 50 条，每条 1–500 个字符，不能只有空白；台词里可以带舞台提示，例如（耳语））。
 //                       不是数组报 make_pack_input_invalid（field 是 sampleLines）；条数、长度、空白由清单检查在花钱之前报（试装，manifest_invalid）。空数组等于没写
-//     designSource?,    设计来源 { description?, model?, modelVersion?, date? }：设计出来的声音、默认音色、融合出来的声音做包时写
+//     designSource?,    设计来源 { description?, model?, modelVersion?, date?, auditionLines? }：设计出来的声音、默认音色、融合出来的声音做包时写
 //     files?,           角色部分的其他文件 Map<路径, Uint8Array>：读音词表 lexicon.pls、脚本、增强件……原样放进包里
 //     scripts?, enhancers?   清单里登记的脚本和增强件；增强件只保证格式上能放（见下），做包不做训练
 //     notes?,           前面几步（分离、切段、转写）留下的说明 [{ code, message, details? }]，原样放进报告，例如「这次没做分离，输入要是干净的人声」。details 是这条说明说的那些事实

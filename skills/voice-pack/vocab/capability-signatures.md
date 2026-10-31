@@ -245,13 +245,13 @@ await env.capabilities['text-generation']({
 - 库用 `hasCapability(env, 'pause-in-text')` 问：有，配音就把段落里不超过 2.5 秒的停顿并进一次请求（`lib/pause-in-request.mjs`，`lib/dub.mjs` 的第 5c 步）；没有，每个停顿照旧切成两次请求，文字里没有 `<speak>`。
 - 名字（`cues` 译成的行内标签，例如 `[laughing]`）放在 `<speak>` 的根里面、要念的文字前面，不放在它外面。
 - 字数下限（`padToMinLength`）按说出来的字数数，补的字在 `</speak>` 前面；续接的段（`continues`）补「，」（`padCharOf`）。两处都在适配器的 `limits.mjs`。
-- 配音怎么拼接（停顿、续接、并起来的段）只在 `references/dub.md` 的「拼接」写一次。
+- 配音怎么拼接（停顿、续接、并起来的段、换人处的静音）只在 `references/dub-details.md` 的「拼接的细则」写一次。
 
 ### `phoneme-in-text`
 
 不是函数，是**声明**：环境提供它，表示它的合成能力（例如 `voice-cloning`，以及没有参考音频的朗读）认文字里的音素：`<speak>…</speak>` 包着的 `<phoneme alphabet="x-pinyin" ph="zeng1">曾</phoneme>`，按 `ph` 念，标签本身不念。在 `env.capabilities['phoneme-in-text']` 里放 `true`。
 
-- 库用 `hasCapability(env, 'phoneme-in-text')` 问：有，读音词表里的拼音音素（`lexicon.pls` 的 `<phoneme>`，字母表是 `x-pinyin`，写法见 `references/make-pack.md`「读音词表」）才写进要说的话里；没有，它照旧报在 `lexicon.unapplied`（`reason` 是 `phoneme`），文字里没有它。
+- 库用 `hasCapability(env, 'phoneme-in-text')` 问：有，读音词表里的拼音音素（`lexicon.pls` 的 `<phoneme>`，字母表是 `x-pinyin`，写法见 `references/make-pack-details.md`「读音词表」）才写进要说的话里；没有，它照旧报在 `lexicon.unapplied`（`reason` 是 `phoneme`），文字里没有它。
 - 字母表名：包里统一写 `x-pinyin`（PLS 第 2 节：非 `ipa` 的字母表必须是 `x-` 开头的自定义名）。适配器把它译成自己服务的写法，并在它的说明里写明认哪个字母表名；不认的字母表不译，由库报在 `unapplied`。
 - `ph` 是拼音加数字声调（`zeng1`，声调 1 到 5，5 是轻声）：每个汉字一个音节，用空格分开，个数和汉字数相等；声明了的环境里，词条不全是汉字的、对不上的不写，报 `unapplied`（`reason` 是 `phoneme_format`，`problem` 写明是 `term`、`count` 还是 `form`）。
 - 和 `pause-in-text` 共用一层 `<speak>`：一句里既有停顿又有音素，只包一层（`lib/pause-in-request.mjs` 的 `renderRun`）。
