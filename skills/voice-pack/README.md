@@ -19,7 +19,7 @@
 voice-pack/
 ├── SKILL.md                入口：流程按所需能力写，不点名模型
 ├── README.md               本文件
-├── references/             参考：角色的声音（character-voice.md）、配音（dub.md）、做包（make-pack.md）、台本标记（markup.md）；SKILL.md 只写流程，指到这里
+├── references/             参考：角色的声音（character-voice.md）、配音（dub.md）、做包（make-pack.md，细则在 make-pack-details.md）、台本标记（markup.md）；SKILL.md 只写流程，指到这里
 ├── LICENSE                 Apache-2.0 全文
 ├── CHANGELOG.md            每个版本改了什么（中英文），新的在前；最上面一条是 manifest-fields.json 里的版本，发布说明取这一条
 ├── manifest-fields.json    基础部分清单里除文件列表以外的字段：版本号（version）和登记的运行时（ffmpeg，可选）；发布时 seal --fields 读它

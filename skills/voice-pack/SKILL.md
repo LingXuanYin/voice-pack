@@ -43,7 +43,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 **怎么选能力**：有描述而没有参考，用 `voice-design`；参考多于一段，用 `voice-cloning` 做融合；其余按调用者的要求，没要求时有参考用 `voice-cloning`，没有参考用 `text-to-speech`。
 
-**从已有角色开始**：先看手上有什么材料（角色的文字：小说、剧本、设定；录音：原作配音、同一个人的样音），再选路。有录音，走克隆，逐字文本从录音里来；只有文字，走设计，描述按上面的七个维度写。演法和台词由 `text-generation` 从文字材料里分析；有录音，录音的情绪和能量标签由做包时给出（`references/make-pack.md` 的「标签」）。每条带出处，材料里没有、按人物类型推的标「推断」。默认参考段和情绪台词怎么录、怎么挑，见 `references/character-voice.md`。
+**从已有角色开始**：先看手上有什么材料（角色的文字：小说、剧本、设定；录音：原作配音、同一个人的样音），再选路。有录音，走克隆，逐字文本从录音里来；只有文字，走设计，描述按上面的七个维度写。演法和台词由 `text-generation` 从文字材料里分析；有录音，录音的情绪和能量标签由做包时给出（`references/make-pack.md` 的「标签」）。分析时每条带出处，材料里没有、按人物类型推的标「推断」；写进包的时候，演法的每一项只写内容，不带出处和标记（演法一节整节交给模型），音色和台词照旧带出处。默认参考段和情绪台词怎么录、怎么挑，见 `references/character-voice.md`。
 
 ## 3. 合成一段话
 
@@ -75,9 +75,11 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 命令的选项、报告、拼接、失败和重做、包里的脚本、变声的细则，都在 `references/dub.md`。配音指引（包的 `SKILL.md` 最后一节）分三节，配音时交给模型的范围在那里定。
 
+几个角色的一场戏：`node cli.mjs dub --pack <包目录> --pack <包目录> <台本文件> --out <输出目录>`，台本里的 `[voice:名字]` 换角色。把输出目录接成一个音频：`node cli.mjs mix <dub 输出目录> --out <文件.wav>`，只在本地算，不花钱，规则见 `references/dub.md`「拼接」。
+
 ## 7. 做音色包
 
-作者交来一批原声，做成一个音色包的角色部分：`node cli.mjs make-pack [<素材>] --output <新目录> --name <名字>`，素材可以省（长录音用 `--recording`，发新版本用 `--previous`）。素材的格式、标签、响度、还原度、配音指引的三层、发新版本、设计出来的声音怎么做包（`--no-holdout`）、照一个已有的包做新包（净室和查重），都在 `references/make-pack.md`。命令只管读文件、写文件，正本在 `lib/make-pack.mjs` 的文件头。
+作者交来一批原声，做成一个音色包的角色部分：`node cli.mjs make-pack [<素材>] --output <新目录> --name <名字>`，素材可以省（长录音用 `--recording`，发新版本用 `--previous`）。素材的格式、标签、配音指引的三层、发新版本、设计出来的声音怎么做包（`--no-holdout`），都在 `references/make-pack.md`；响度、还原度、留出录音、增强件、发新版本的其余细则、照一个已有的包做新包（净室和查重），在 `references/make-pack-details.md`。命令只管读文件、写文件，正本在 `lib/make-pack.mjs` 的文件头。
 
 ## 8. 接自己的模型
 

@@ -58,8 +58,9 @@ export function readText(ctx, argument) {
 /**
  * 解析命令的参数：`--名字 值` 形式的选项和位置参数。`-` 单独出现算位置参数（标准输入）。
  * @param {string[]} args
- * @param {Record<string, 'string'|'number'|'boolean'>} [flags] 认识的选项（不带 --）和它的值的类型；boolean 的选项不跟值，出现了就是 true
- * @returns {{ positional: string[], options: Record<string, string|number|boolean> } | { problem: string }} 用法有问题时返回 { problem }
+ * strings 的选项可以给好几次：值是数组，次序就是命令行上的次序（没给就没有这个键）。
+ * @param {Record<string, 'string'|'number'|'boolean'|'strings'>} [flags] 认识的选项（不带 --）和它的值的类型；boolean 的选项不跟值，出现了就是 true
+ * @returns {{ positional: string[], options: Record<string, string|number|boolean|string[]> } | { problem: string }} 用法有问题时返回 { problem }
  */
 export function parseArgs(args, flags = {}) {
   const positional = [];
@@ -74,6 +75,12 @@ export function parseArgs(args, flags = {}) {
     if (!Object.hasOwn(flags, name)) return { problem: `不认识的选项 ${arg}` };
     if (flags[name] === 'boolean') {
       options[name] = true;
+      continue;
+    }
+    if (flags[name] === 'strings') {
+      const value = args[++i];
+      if (value === undefined) return { problem: `选项 ${arg} 后面要跟一个值` };
+      options[name] = [...(options[name] ?? []), value];
       continue;
     }
     const value = args[++i];

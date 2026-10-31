@@ -25,6 +25,9 @@
 //   --adapter, --adapter-option, 官方适配器声明的简写和参数
 //                模型从适配器接进来：官方的给名字，自己的给模块文件，可以给多个，后给的盖过先给的（统一的入口和合并规则只在 cli/adapters.mjs 写）。
 //                适配器给了费用说明（billing）时，合成开始之前会在标准错误里说明要生成几次（--json 时不说，免得弄脏机器读的输出）。
+//   --pack       几个角色：给好几次，每次一个包目录（代替位置上的包目录，给了它位置上就只放台本）。第一个包是台本开头用的声音；
+//                一句用哪个包的声音，看它前面最近的 [voice:名字]（认包名或包 ID，不分大小写）。每句的参考段都从它那个包里挑，短句只在同一个包里并。
+//                dub.json 的每个 unit 记着它的包 ID，顶层 packs 列出全部的包（只给一个包时没有 packs，和原来一样）。
 //   --json       标准输出是一份 JSON（和 dub.json 一样的内容）。
 //   文字输出      不给 --json 时，每一句下面，有停顿或语速要求就写一行括号：前面停顿、后面停顿（毫秒）、语速，和 JSON 里这一句的 pauseBeforeMs、pauseAfterMs、speed 一一对上。
 //
@@ -47,12 +50,12 @@ import { createScriptRuntimes } from '../script-runtimes.mjs';
 import { extensionOfMime } from '../audio-files.mjs';
 
 export const summary = '用音色包给台本配音：每句挑参考，读音词表，配音指引，增强件，包里的脚本';
-export const usage = `dub <包目录> <台本文件|-> --out <目录> ${ADAPTER_USAGE} [--language|--emotion|--style|--energy <标签>] [--instructions <文字>] [--only <序号,序号>] [--max-chars <数>] [--concurrency <1-8>] [--dry-run] [--json]`;
+export const usage = `dub <包目录>|--pack <包目录>... <台本文件|-> --out <目录> ${ADAPTER_USAGE} [--language|--emotion|--style|--energy <标签>] [--instructions <文字>] [--only <序号,序号>] [--max-chars <数>] [--concurrency <1-8>] [--dry-run] [--json]`;
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {
   out: 'string', 'dry-run': 'boolean', only: 'string', 'max-chars': 'number', concurrency: 'number',
-  language: 'string', emotion: 'string', style: 'string', energy: 'string', instructions: 'string',
+  language: 'string', emotion: 'string', style: 'string', energy: 'string', instructions: 'string', pack: 'strings',
 };
 const LABEL_FLAGS = ['language', 'emotion', 'style', 'energy'];
 const REPORT_FILE = 'dub.json';
@@ -93,17 +96,21 @@ function reportUnit(unit) {
   return rest;
 }
 
-function pickLabel(unit) {
+/** 一句用的参考段。几个包时前面写着包 ID：一句用哪个包的声音，要看得出来。 */
+function pickLabel(unit, many) {
   const { pick } = unit;
-  const parts = [pick.segmentId, pick.rule];
+  const parts = [...(many ? [unit.pack] : []), pick.segmentId, pick.rule];
   if (pick.matched.length > 0) parts.push(`匹配 ${pick.matched.join('、')}`);
   if (pick.missed.length > 0) parts.push(`没有对得上的 ${pick.missed.join('、')}`);
   return `[${parts.join(' · ')}]`;
 }
 
-function render(report, { packArgument, scriptArgument, out, planOnly, redo }) {
+function render(report, { packArguments, scriptArgument, out, planOnly, redo }) {
   const lines = [];
-  lines.push(`包：${report.pack.name}（${report.pack.id} ${report.pack.version}）`);
+  const many = report.packs !== undefined;
+  lines.push(many
+    ? `包：${report.packs.map((item) => `${item.name}（${item.id} ${item.version}）`).join('、')}（开头的声音是 ${report.pack.name}）`
+    : `包：${report.pack.name}（${report.pack.id} ${report.pack.version}）`);
   const { lexicon } = report;
   if (lexicon.applied.length > 0 || lexicon.unapplied.length > 0) {
     const applied = lexicon.applied.map((item) => `${item.term} → ${item.say}（${item.count} 处）`).join('；');
@@ -126,8 +133,8 @@ function render(report, { packArgument, scriptArgument, out, planOnly, redo }) {
     else if (report.enhancers.used.length > 0) lines.push(`增强件：用上了 ${report.enhancers.used.join('、')}${report.enhancers.notUsed.length > 0 ? `；没用上 ${describe(report.enhancers.notUsed)}` : ''}`);
     else if (report.enhancers.statement === 'enhancers_not_used') lines.push(`增强件：这次没用增强件（环境没有对应的模型），照常生成。包里有 ${describe(report.enhancers.notUsed)}${report.verification.length > 0 ? `；验证记录见 ${REPORT_FILE}` : ''}`);
   }
-  if (report.scripts.length > 0) lines.push(`脚本：${report.scripts.map((item) => `${item.entry}（${item.runtime}）`).join('、')}`);
-  if (report.missingRuntimes.length > 0) lines.push(`缺运行时：${report.missingRuntimes.map((item) => `${item.runtime}（脚本 ${item.entry}）`).join('、')}；真合成会在开始前报 runtime_missing`);
+  if (report.scripts.length > 0) lines.push(`脚本：${report.scripts.map((item) => `${item.pack === undefined ? '' : `${item.pack} `}${item.entry}（${item.runtime}）`).join('、')}`);
+  if (report.missingRuntimes.length > 0) lines.push(`缺运行时：${report.missingRuntimes.map((item) => `${item.runtime}（脚本 ${item.pack === undefined ? '' : `${item.pack} `}${item.entry}）`).join('、')}；真合成会在开始前报 runtime_missing`);
   if (!report.capabilities['voice-cloning']) lines.push('缺所需能力：voice-cloning；真合成会在开始前报 capability_missing');
   if (report.judge.status === 'used') lines.push(`情绪判断：台本里没有提示的句子，让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}`);
   else if (report.judge.status === 'unavailable') lines.push('情绪判断：台本里有句子没有任何提示，环境没有 text-generation，用了默认参考');
@@ -140,7 +147,7 @@ function render(report, { packArgument, scriptArgument, out, planOnly, redo }) {
   lines.push('', `共 ${report.units.length} 句：`);
   for (const unit of report.units) {
     const where = unit.file !== undefined ? ` → ${path.join(out, unit.file)}` : unit.status === 'failed' ? (unit.error.code === TEXT_TOO_SHORT ? '（没合成：比合成能力的下限短）' : `（失败：${unit.error.code}）`) : unit.status === 'skipped' ? '（这次没做）' : '';
-    lines.push(`  ${unit.number}. ${pickLabel(unit)}${where}`);
+    lines.push(`  ${unit.number}. ${pickLabel(unit, many)}${where}`);
     lines.push(`     ${unit.spoken}`);
     // 停顿和语速：和 --json 里这一句的 pauseBeforeMs、pauseAfterMs、speed 说的是一回事（前面的停顿挂在后一句上，以前文字输出里看不到）
     const timing = [
@@ -154,7 +161,8 @@ function render(report, { packArgument, scriptArgument, out, planOnly, redo }) {
   const failed = report.units.filter((unit) => unit.status === 'failed' && unit.error?.code !== TEXT_TOO_SHORT);
   if (failed.length > 0) {
     // 重做要照着这次的命令行再跑一遍：适配器、标签、说明、切句和并发都要带上（缺了，重做用的就不是同一个环境）
-    const again = [`node cli.mjs dub ${packArgument} ${scriptArgument} --out ${out}`, ...(redo?.adapters ? [redo.adapters] : []), ...(redo?.rest ?? []), `--only ${failed.map((unit) => unit.number).join(',')}`];
+    const packPart = many ? packArguments.map((argument) => `--pack ${argument}`).join(' ') : packArguments[0];
+    const again = [`node cli.mjs dub ${packPart} ${scriptArgument} --out ${out}`, ...(redo?.adapters ? [redo.adapters] : []), ...(redo?.rest ?? []), `--only ${failed.map((unit) => unit.number).join(',')}`];
     lines.push('', `失败 ${failed.length} 句（服务暂时出错，稍后重做）：${again.join(' ')}`);
   }
   const tooShort = report.units.filter((unit) => unit.status === 'failed' && unit.error?.code === TEXT_TOO_SHORT);
@@ -182,13 +190,38 @@ function costNote({ billing, plan, calls }) {
   return `${lines.join('\n')}\n`;
 }
 
+/** 打开每个包目录，并算出它的脚本运行时（和环境的合在一起，环境的盖过脚本的，和原来一样）。返回 { packs, runtimes }，runtimes 按包 ID 取。 */
+async function openPacks(ctx, env, packArguments) {
+  const packs = [];
+  const runtimes = new Map();
+  for (const argument of packArguments) {
+    const { pack, dir } = await openPackDirectory(ctx, argument, { env });
+    const names = pack.scripts('dub').map((entry) => entry.runtime);
+    packs.push(pack);
+    runtimes.set(pack.manifest.id, { ...createScriptRuntimes({ packDir: dir, names, existing: env.runtimes }), ...env.runtimes });
+  }
+  return { packs, runtimes };
+}
+
 export async function run(args, ctx) {
   const taken = takeAdapterArguments(args);
   if (taken.problem) return usageProblem(ctx, usage, taken.problem);
   const parsed = parseArgs(taken.rest, FLAGS);
-  if (parsed.problem || parsed.positional.length !== 2) return usageProblem(ctx, usage, parsed.problem ?? '要给包目录和台本（两个位置参数）');
+  if (parsed.problem) return usageProblem(ctx, usage, parsed.problem);
   const { options } = parsed;
-  const [packArgument, scriptArgument] = parsed.positional;
+  // 包目录：位置上的一个，或者 --pack 给的几个（给了 --pack，位置上就只剩台本）
+  let packArguments;
+  let scriptArgument;
+  if (options.pack !== undefined) {
+    if (parsed.positional.length !== 1) return usageProblem(ctx, usage, '用了 --pack 就不要再把包目录放在位置上：包目录都用 --pack 给（给几个都行），位置上只放台本');
+    [scriptArgument] = parsed.positional;
+    packArguments = options.pack;
+  } else {
+    if (parsed.positional.length !== 2) return usageProblem(ctx, usage, '要给包目录和台本（两个位置参数）');
+    const [packArgument, script] = parsed.positional;
+    packArguments = [packArgument];
+    scriptArgument = script;
+  }
   const dryRun = options['dry-run'] === true;
   if (!dryRun && options.out === undefined) return usageProblem(ctx, usage, '要给 --out <目录>（音频和 dub.json 放这里）；只想看规划用 --dry-run');
   let only;
@@ -201,9 +234,9 @@ export async function run(args, ctx) {
   const { env: adapted, adapters } = await applyAdapters(ctx, ctx.env, taken.requests);
   let env = adapted;
   const billing = billingSentence(adapters);
-  const { pack, dir } = await openPackDirectory(ctx, packArgument, { env });
-  const names = pack.scripts('dub').map((entry) => entry.runtime);
-  env = { ...env, runtimes: { ...createScriptRuntimes({ packDir: dir, names, existing: env.runtimes }), ...env.runtimes } };
+  const { packs, runtimes } = await openPacks(ctx, env, packArguments);
+  // 一个包：脚本的运行时直接放进环境（和原来一样）；几个包：每个包的脚本在它自己的目录里运行，由 runtimesOf 按包取（见 lib/dub.mjs 的 envFor）
+  if (packs.length === 1) env = { ...env, runtimes: runtimes.get(packs[0].manifest.id) };
 
   const script = readScript(ctx, scriptArgument);
   const labels = Object.fromEntries(LABEL_FLAGS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]]));
@@ -216,13 +249,14 @@ export async function run(args, ctx) {
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(options['max-chars'] !== undefined ? { maxChars: options['max-chars'] } : adapterMaxChars !== undefined ? { maxChars: adapterMaxChars } : {}),
     ...(adapterMinChars !== undefined ? { minChars: adapterMinChars } : {}),
+    ...(packs.length > 1 ? { runtimesOf: (pack) => runtimes.get(pack.manifest.id) } : {}),
   };
   // 重做提示用的：这次命令行上给的适配器、标签、说明、切句、并发（和 --out、--only 之外的选项一样，照着原样写回去）
   const redo = { adapters: describeRequests(taken.requests), rest: redoFlags(options) };
-  const render_ = (report, planOnly) => render(report, { packArgument, scriptArgument, out: options.out === undefined ? '' : path.resolve(ctx.cwd, options.out), planOnly, redo });
+  const render_ = (report, planOnly) => render(report, { packArguments, scriptArgument, out: options.out === undefined ? '' : path.resolve(ctx.cwd, options.out), planOnly, redo });
 
   if (dryRun) {
-    const plan = await planDub(env, pack, script, dubOptions);
+    const plan = await planDub(env, packs, script, dubOptions);
     decorate(plan.units);
     ctx.stdout(ctx.json ? `${JSON.stringify(plan, null, 2)}\n` : render_(plan, true));
     return 0;
@@ -242,7 +276,7 @@ export async function run(args, ctx) {
     unit.file = fileNameOf(unit);
     fs.writeFileSync(path.join(out, unit.file), unit.audio.bytes);
   };
-  const dubbed = dubScript(env, pack, script, {
+  const dubbed = dubScript(env, packs, script, {
     ...dubOptions,
     onPlan: (plan, { calls }) => {
       decorate(plan.units);
@@ -272,7 +306,7 @@ export async function run(args, ctx) {
   for (const unit of result.units) {
     if (unit.status !== 'skipped') continue;
     const before = previous?.units?.find((candidate) => candidate.index === unit.index); // 出错停下来的那份报告里只有做完的几句，所以按 index 找，不按位置
-    if (before?.status === 'ok' && before.spoken === unit.spoken && before.pick?.segmentId === unit.pick.segmentId && typeof before.file === 'string' && fs.existsSync(path.join(out, before.file))) {
+    if (before?.status === 'ok' && before.spoken === unit.spoken && before.pack === unit.pack && before.pick?.segmentId === unit.pick.segmentId && typeof before.file === 'string' && fs.existsSync(path.join(out, before.file))) {
       unit.status = 'ok';
       unit.file = before.file;
       unit.carriedOver = true;

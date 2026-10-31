@@ -10,7 +10,11 @@
 //   const plan   = await planDub(env, pack, script, options);   只规划，不合成：每一段话挑了哪一段参考、为什么、读音词表换了什么。不花钱：不调任何要计费的能力，
 //                                                               text-generation 也不调（要判情绪的句子，plan.judge 是 { status: 'planned', capability, lines }，写明正式运行会判几句，这几句现在用默认参考）
 //   const result = await dubScript(env, pack, script, options); 规划，再合成
-// pack 是 lib/voice-pack.mjs 的 openVoicePack 打开的角色部分。库不碰文件系统：合成出来的音频是字节，写成文件是命令行层的事。
+// pack 是 lib/voice-pack.mjs 的 openVoicePack 打开的角色部分，或者几个（数组，第一个是台本开头，即第一个 [voice:] 之前用的声音；见第 1 步）。
+// 库不碰文件系统：合成出来的音频是字节，写成文件是命令行层的事。
+// 几个包：每一句用它那一刻的包（挑参考、读音词表、配音指引、增强件、脚本都照那个包的）；短句并段只在同一个包里并（第 5b 步）；
+//   每个 unit 记着包 ID（unit.pack），plan.packs 列出几个包。只给一个包时，这两样都不出现，输出和以前一字不差。
+//   text-generation 的判断按包分开调（每个包的参考集里有的标签不一样），judge 把它们合在一个对象里（status 取最要紧的一个）。
 //
 // 台本（script）：一个字符串（带台本标记的整段台本），或者一个数组，每项是
 //   { text, labels?, instructions? }   text 是带标记的台本；labels 是调用方给这一项的标签 { language, emotion, style, energy }；
@@ -18,6 +22,8 @@
 // options：labels（给所有项的默认标签，项自己的盖过它）、concurrency（并发数，默认 2，1–8）、maxChars（一次合成最多多少个字，
 //   超过的按句子切开；默认不切）、minChars（合成能力一次至少多少个字，环境声明的；默认没有下限，见第 5b 步）、joinShort（默认 true；
 //   false 就不并短句，只按下限认：试合成用，每条留出录音一段）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped；失败后重做用）、
+//   runtimesOf（几个包时，每个包的脚本运行时：runtimesOf(pack) 返回这个包的 { 运行时名字: 函数 }；命令行层给每个包目录各建一份（cli/script-runtimes.mjs）；
+//   不给就用 env.runtimes。脚本在它自己的包目录里运行，所以要分开）、
 //   guidance（配音指引的正文；不给就用包里的，给 null 就不用）、onUnit（每一段做完，立刻交给它；见下）、
 //   onPlan（花钱之前交给它：规划做好了，花钱之前该核对的都核对过了，一次计费的调用都还没发生。第一个参数是这份规划（判情绪之前的）；
 //   第二个参数 { calls: { count, exact } } 是这次要合成几次：exact 为真就正好是 count 次，为假就是最多 count 次，因为判出来的参考可能让相邻的几句并不成一次。
@@ -25,8 +31,9 @@
 //   重算的内容原地换进交给 onPlan 的这同一个对象：最后返回的就是它，每一段的结果写在它的 units 上。
 //
 // 一句话是怎么变成合成的（顺序就是这样）：
-//   1 解析台本标记（tools/markup.mjs）：章节、停顿、语速、[voice:]。[voice:名字] 的名字必须是这个包（名字或包 ID，不分大小写），
-//     别的名字报 voice_unknown：一个包只有一个声音，换声音的台本需要别的包，不悄悄用这个包去念。
+//   1 解析台本标记（tools/markup.mjs）：章节、停顿、语速、[voice:]。[voice:名字] 对上台本给的几个包中的一个（包名或包 ID，不分大小写）：
+//     对不上报 voice_unknown，对上不止一个包报 voice_ambiguous。第一个 [voice:] 之前（或者 [voice:] 是空的）用第一个包。
+//     只有一个包时，别的名字报 voice_unknown：一个包只有一个声音，换声音的台本需要别的包，不悄悄用这个包去念。
 //   2 读舞台提示（lib/line-hints.mjs）：括号里的（耳语）、*笑* 变成这一段的情绪、风格、停顿、语速，从要说的话里拿掉。
 //     括号里词表认不出的内容（（画外音））配音时也拿掉，不念；如实记在这一段的 pick.directions 里（recognized 为 false）。
 //   3 每一段挑参考（lib/reference-pick.mjs）：调用方的标签、台本里的提示、text-generation 的判断、默认参考。理由放在 units[i].pick 里。
@@ -93,7 +100,10 @@
 //   dub_nothing_to_say       台本里没有可说的话（只有标记和提示）
 //   dub_text_rejected        还没有一句成功、已经有 3 句被服务商拒了（见上面「一段失败了怎么办」）：停下。details: { limit, rejected: [{ unit, line }] }，
 //                            被服务商拒的段（unit，同 only 的编号）和它的句子（line，同 lines[i].index），都从 0 起
-//   voice_unknown            台本里的 [voice:名字] 不是这个包。details: { voices（台本里不认识的名字）, pack: { id, name } }
+//   voice_unknown            台本里的 [voice:名字] 不是给出的包。只给一个包时 details: { voices（台本里不认识的名字）, pack: { id, name } }；
+//                            几个包时 details: { voices, packs: [{ id, name }] }（给了哪些包）
+//   voice_ambiguous          台本里的 [voice:名字] 对上不止一个包（几个包的名字一样）：用包 ID 指定。details: { voices, packs }
+//   dub_input_invalid        同一个包给了两次（details.field 是 pack）
 //   capability_result_invalid  voice-cloning 的返回不合约定（不是 { bytes, mimeType }、enhancers_used 报了没递给它的增强件）。details: { capability, problem }
 //   另外 pick_input_invalid（标签不对）、lexicon_invalid、script_*、file_missing（清单里列了、包里没有）等来自各自的模块。
 //
@@ -161,7 +171,70 @@ function readOptions(options) {
   const minChars = options.minChars ?? null;
   if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars 必须是不小于 1 的整数（合成能力一次至少多少个字），或者不给');
   if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort 必须是 true 或 false');
-  return { concurrency, maxChars, minChars, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only };
+  if (options.runtimesOf !== undefined && typeof options.runtimesOf !== 'function') throw invalid('runtimesOf', 'runtimesOf 必须是函数：runtimesOf(pack) 返回这个包的脚本运行时');
+  return { concurrency, maxChars, minChars, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only, runtimesOf: options.runtimesOf };
+}
+
+// ---------------------------------------------------------------- 几个包
+
+/** 给的包：一个，或者几个（数组）。统一成数组，第一个是台本开头用的声音。同一个包给了两次是输入错误。 */
+function packsOf(input) {
+  const packs = Array.isArray(input) ? input : [input];
+  if (packs.length === 0) throw invalid('pack', '要给至少一个音色包');
+  const seen = new Set();
+  for (const pack of packs) {
+    if (seen.has(pack.manifest.id)) throw new VoicePackError('dub_input_invalid', `包 ${pack.manifest.id} 给了两次：同一个包只给一次`, { details: { field: 'pack' } });
+    seen.add(pack.manifest.id);
+  }
+  return packs;
+}
+
+/** 这个包的脚本要的运行时在哪个环境里：几个包时用 runtimesOf（每个包的脚本在它自己的目录里运行）；不给就是 env。 */
+const envFor = (env, settings, pack) => (settings.runtimesOf === undefined ? env : { ...env, runtimes: settings.runtimesOf(pack) });
+
+/**
+ * 每一句属于哪个包（owners[i] 是第 i 句的包）：[voice:名字] 认包名或包 ID（不分大小写）；没有 [voice:] 的句子用第一个包。
+ * 对不上：voice_unknown；对上不止一个包：voice_ambiguous。只有一个包时，报错和以前一字不差。
+ */
+function ownersOf(packs, lines, voices) {
+  const keyOf = (value) => value.trim().toLowerCase();
+  const matchesOf = (voice) => packs.filter((pack) => [pack.manifest.id, pack.manifest.name].some((name) => keyOf(name) === keyOf(voice)));
+  const described = (pack) => `${pack.manifest.name}，${pack.manifest.id}`;
+  const unknown = [...new Set(voices.filter((voice) => matchesOf(voice).length === 0))];
+  if (unknown.length > 0) {
+    if (packs.length === 1) {
+      const [pack] = packs;
+      throw new VoicePackError('voice_unknown', `台本里的 [voice:${unknown.join('、')}] 不是这个包（${pack.manifest.name}，${pack.manifest.id}）：一个包只有一个声音，换声音的台本需要别的包`, { details: { voices: unknown, pack: { id: pack.manifest.id, name: pack.manifest.name } } });
+    }
+    throw new VoicePackError('voice_unknown', `台本里的 [voice:${unknown.join('、')}] 不是给出的任何一个包（${packs.map((pack) => `${pack.manifest.name}（${pack.manifest.id}）`).join('、')}）：名字或包 ID 对得上才行`, { details: { voices: unknown, packs: packs.map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+  }
+  const ambiguous = [...new Set(voices.filter((voice) => matchesOf(voice).length > 1))];
+  if (ambiguous.length > 0) {
+    throw new VoicePackError('voice_ambiguous', `台本里的 [voice:${ambiguous.join('、')}] 对上不止一个包（${matchesOf(ambiguous[0]).map(described).join('；')}）：用包 ID 指定`, { details: { voices: ambiguous, packs: matchesOf(ambiguous[0]).map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+  }
+  return lines.map((line) => (line.voice === null ? packs[0] : matchesOf(line.voice)[0]));
+}
+
+/**
+ * 几个包各自的 text-generation 判断，合在一个 judge 里（一个包时就是它自己的，不动）：status 取最要紧的一个
+ * （unusable > planned > used > unavailable > not_needed），lines 相加，model、reason、error 取第一个有的。
+ */
+function combineJudges(judges) {
+  if (judges.length === 1) return judges[0];
+  const rank = ['unusable', 'planned', 'used', 'unavailable', 'not_needed'];
+  const status = rank.find((name) => judges.some((judge) => judge.status === name)) ?? 'not_needed';
+  const first = (key) => judges.find((judge) => judge[key] !== undefined)?.[key];
+  const lines = judges.reduce((sum, judge) => sum + (judge.lines ?? 0), 0);
+  const ignored = judges.flatMap((judge) => judge.ignored ?? []);
+  return {
+    status,
+    ...(status === 'not_needed' ? {} : { capability: 'text-generation' }),
+    ...(lines > 0 ? { lines } : {}),
+    ...(first('model') === undefined ? {} : { model: first('model') }),
+    ...(first('reason') === undefined ? {} : { reason: first('reason') }),
+    ...(first('error') === undefined ? {} : { error: first('error') }),
+    ...(ignored.length > 0 ? { ignored } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- 台本 -> 一句一句
@@ -277,7 +350,7 @@ function partsOf(text, max) {
 /** 能不能把 before 和后面的 after 并成一段（规则见文件头第 5b 步）。说明（instructions）和名字（cues）都要一样：并起来的段只有一份。 */
 function canJoin(before, beforeStyle, after, afterStyle, max) {
   if (before.join !== undefined || before.pauseAfterMs !== 0 || after.pauseBeforeMs !== 0) return false;
-  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || JSON.stringify(beforeStyle) !== JSON.stringify(afterStyle)) return false;
+  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || before.pack !== after.pack || JSON.stringify(beforeStyle) !== JSON.stringify(afterStyle)) return false;
   return max === null || count(joinSpoken(before.spoken, after.spoken)) <= max;
 }
 
@@ -393,13 +466,13 @@ const emptyEnhancers = (offers) => ({ offered: offers.map(summarizeOffer), used:
  * 停顿怎么写（<break>、靠标点、整段包 <speak>、转义）是 lib/pause-in-request.mjs 的；这里只决定哪两段能并：
  *   同一章；前一段不是空行（join）接着的；同一个参考段；同一个语速；说明和名字一样（一个请求只有一套，放在前面）；
  *   名字里没有一下子的声音（笑、叹气）：标签要写在各自的字前面，一个请求放不下两套，而且笑、叹气标签在 <speak> 里能不能出声没有测出明确的结论，保守不并。
- * 包里登记了配音脚本的不并：text 钩子要看到每一句的原话。
+ * 包里登记了配音脚本的不并：text 钩子要看到每一句的原话（几个包时，只看这一句所在的包有没有脚本）。
  * 并起来的段：unit.spoken 是原话的词（不带标记），unit.ssml 是发出去的文字（有 <break> 才有）；unit.joined 写明并了哪几句；停顿在它的两头
  * （unit.pauseBeforeMs、unit.pauseAfterMs），中间的已经在文字里，拼接的人不再插静音。
  * @returns {{ units: object[], styles: object[], joins: number }} joins 是并了几处（一句并进前一句算一处）
  */
-function pausesInRequest(env, units, styles, { max, scripts }) {
-  if (!hasCapability(env, 'pause-in-text') || scripts.length > 0) return { units, styles, joins: 0 };
+function pausesInRequest(env, units, styles, { max, hasScripts }) {
+  if (!hasCapability(env, 'pause-in-text') || units.every((unit) => hasScripts(unit))) return { units, styles, joins: 0 };
   const oneShot = (at) => styles[at].cues !== null && ONE_SHOT_STYLES.has(styles[at].cues.style);
   const sameStyle = (a, b) => JSON.stringify(styles[a]) === JSON.stringify(styles[b]);
   // 一个缝的停顿：前一段的后面，加上后一段的前面（buildLines 已经把它封顶在 PAUSE_MAX_MS 以内）
@@ -410,9 +483,9 @@ function pausesInRequest(env, units, styles, { max, scripts }) {
     canJoin: (prev, next) => {
       const a = units[prev.at];
       const b = units[next.at];
-      return a.status === 'planned' && b.status === 'planned' && a.join === undefined && a.chapter === b.chapter
+      return a.status === 'planned' && b.status === 'planned' && a.join === undefined && a.chapter === b.chapter && a.pack === b.pack
         && a.pick.segmentId === b.pick.segmentId && a.speed === b.speed && sameStyle(prev.at, next.at)
-        && !oneShot(prev.at) && !oneShot(next.at);
+        && !oneShot(prev.at) && !oneShot(next.at) && !hasScripts(a) && !hasScripts(b);
     },
   });
   let joins = 0;
@@ -441,50 +514,53 @@ function pausesInRequest(env, units, styles, { max, scripts }) {
 
 
 /**
- * 规划：返回 { plan, styles }。styles[i] 是第 i 段真要传给模型的 { instructions, cues }（环境没有 style-instruction 时 instructions 是 null，没有 style-cues 时 cues 是 null）；
+ * 规划：返回 { plan, styles, unmergedCount }。styles[i] 是第 i 段真要传给模型的 { instructions, cues }（环境没有 style-instruction 时 instructions 是 null，没有 style-cues 时 cues 是 null）；
  * 全文可能很长，不放进每一段的记录里，只有合成的人拿它。askJudge 为假时（planDub，以及 dubScript 的第一遍）不调任何要计费的能力。
- * 返回 { plan, styles, unmergedCount }：unmergedCount 是并段（5b、5c）之前的段数。并段只会把几段并成一段，所以它是合成次数的上限。
+ * unmergedCount 是并段（5b、5c）之前的段数：并段只会把几段并成一段，所以它是合成次数的上限。
  */
-async function buildPlan(env, pack, script, options, { askJudge }) {
+async function buildPlan(env, packInput, script, options, { askJudge }) {
   const settings = readOptions(options);
+  const packs = packsOf(packInput);
+  const many = packs.length > 1;
   const sources = readScript(script);
   const { lines, voices } = buildLines(sources, settings.labels);
-
-  const names = new Set([pack.manifest.id, pack.manifest.name].map((name) => name.trim().toLowerCase()));
-  const strangers = [...new Set(voices.filter((voice) => !names.has(voice.trim().toLowerCase())))];
-  if (strangers.length > 0) {
-    throw new VoicePackError('voice_unknown', `台本里的 [voice:${strangers.join('、')}] 不是这个包（${pack.manifest.name}，${pack.manifest.id}）：一个包只有一个声音，换声音的台本需要别的包`, { details: { voices: strangers, pack: { id: pack.manifest.id, name: pack.manifest.name } } });
-  }
+  const owners = ownersOf(packs, lines, voices);
+  const named = (pack, message) => (many ? `${pack.manifest.name}：${message}` : message); // 几个包时，说明里点名是哪个包
 
   const notes = [];
-  const { picks, judge } = await pickReferences(env, pack.manifest, lines.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY);
-
-  const lexicon = await pack.lexicon();
-  const { rules, unapplied } = lexicon === null ? { rules: [], unapplied: [] } : lexiconRules(lexicon);
-  const applied = new Map();
-
-  const rawGuidance = settings.guidance === undefined ? await pack.guidance() : settings.guidance;
-  // 新式指引（有三个小节中的任何一个）只交演法，没有演法就什么都不交；旧式（三个都没有）整段交（guidanceForModel）。要在拼之前取：下面 instruction 把说明和舞台提示接在指引后面，
-  // 等适配器在拼好的串里取，演法之后的说明会被切掉，或被并进演法。
-  const sentGuidance = guidanceForModel(rawGuidance) ?? rawGuidance;
-  const guidance = fitGuidance(sentGuidance);
-  if (guidance.truncated) notes.push({ code: 'guidance_truncated', message: `配音指引有 ${count(sentGuidance)} 个字，超过 ${GUIDANCE_MAX}，截短以后才传给模型`, details: { chars: count(sentGuidance), max: GUIDANCE_MAX } });
   const styled = hasCapability(env, 'style-instruction');
   const cued = hasCapability(env, 'style-cues');
+  // 每个包各自的：挑参考（text-generation 的判断也在这里；计费的那一次在 askJudge 时才调）、读音词表、配音指引、增强件、脚本
+  const perPack = new Map();
+  for (const pack of packs) {
+    const own = lines.filter((line) => owners[line.index] === pack);
+    const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY);
+    const picks = new Map(own.map((line, k) => [line.index, { ...picked[k], index: line.index }]));
+    const lexicon = await pack.lexicon();
+    const { rules, unapplied } = lexicon === null ? { rules: [], unapplied: [] } : lexiconRules(lexicon);
+    const rawGuidance = settings.guidance === undefined ? await pack.guidance() : settings.guidance;
+    // 新式指引（有三个小节中的任何一个）只交演法，没有演法就什么都不交；旧式（三个都没有）整段交（guidanceForModel）。要在拼之前取：下面 instruction 把说明和舞台提示接在指引后面，
+    // 等适配器在拼好的串里取，演法之后的说明会被切掉，或被并进演法。
+    const sentGuidance = guidanceForModel(rawGuidance) ?? rawGuidance;
+    const guidance = fitGuidance(sentGuidance);
+    if (guidance.truncated) notes.push({ code: 'guidance_truncated', message: named(pack, `配音指引有 ${count(sentGuidance)} 个字，超过 ${GUIDANCE_MAX}，截短以后才传给模型`), details: { chars: count(sentGuidance), max: GUIDANCE_MAX } });
+    perPack.set(pack, { own, judge, picks, rules, unapplied, rawGuidance, guidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
+  }
 
-  const offers = pack.enhancers('voice-cloning');
-  const scripts = pack.scripts(FEATURE);
-
+  const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
   let units = [];
   let styles = []; // 每一段要传给模型的：{ instructions（style-instruction 的说明全文，或 null）, cues（style-cues 的，或 null） }，跟着段走
   for (const line of lines) {
-    const replaced = applyLexicon(line.text, rules);
+    const owner = owners[line.index];
+    const mine = perPack.get(owner);
+    const replaced = applyLexicon(line.text, mine.rules);
     for (const replacement of replaced.replacements) {
-      const seen = applied.get(replacement.term);
-      applied.set(replacement.term, seen === undefined ? { ...replacement } : { ...seen, count: seen.count + replacement.count });
+      const key = `${replacement.term}\u0000${replacement.say}`;
+      const seen = applied.get(key);
+      applied.set(key, seen === undefined ? { ...replacement } : { ...seen, count: seen.count + replacement.count });
     }
     const note = noteOf(line);
-    const instruction = [guidance.text, note].filter((part) => part !== null && part !== '');
+    const instruction = [mine.guidance.text, note].filter((part) => part !== null && part !== '');
     const instructions = instruction.length === 0 ? null : instruction.join('\n\n');
     const parts = partsOf(replaced.text, settings.maxChars);
     parts.forEach((spoken, partIndex) => {
@@ -503,7 +579,7 @@ async function buildPlan(env, pack, script, options, { askJudge }) {
         voice: line.voice,
         text: line.text,
         spoken,
-        pick: picks[line.index],
+        pick: mine.picks.get(line.index),
         instructions: !styled ? { sent: false, reason: 'style_instruction_missing' } : instructions === null ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...(note === null ? {} : { line: note }) },
         cues: !cued ? { sent: false, reason: 'style_cues_missing' } : !cueNames ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...partCues },
         speed: line.speed,
@@ -511,7 +587,8 @@ async function buildPlan(env, pack, script, options, { askJudge }) {
         pauseAfterMs: last ? line.pauseAfterMs : 0,
         ...(last && line.join !== undefined ? { join: line.join } : {}),
         status: 'planned',
-        enhancers: { offered: offers.map((offer) => offer.id), used: [] },
+        enhancers: { offered: mine.offers.map((offer) => offer.id), used: [] },
+        ...(many ? { pack: owner.manifest.id } : {}),
       });
     });
   }
@@ -526,44 +603,52 @@ async function buildPlan(env, pack, script, options, { askJudge }) {
     if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个说明、同一个语速，中间没有停顿）`, details: { min: settings.minChars, units: joined } });
   }
   // 5c：段落内部的停顿并进一次请求（只在环境声明了 pause-in-text 时，见 pausesInRequest）
-  const paused = pausesInRequest(env, units, styles, { max: settings.maxChars ?? Number.POSITIVE_INFINITY, scripts });
+  const hasScripts = (unit) => perPack.get(ownerOfUnit(packs, unit)).scripts.length > 0;
+  const paused = pausesInRequest(env, units, styles, { max: settings.maxChars ?? Number.POSITIVE_INFINITY, hasScripts });
   units = paused.units;
   styles = paused.styles;
   if (paused.joins > 0) notes.push({ code: 'pauses_in_request', message: `有 ${paused.joins} 处停顿并进了一次请求（写在文字里：<speak> 和 <break>，或者标点），这几处的停顿不再交给拼接的人`, details: { joins: paused.joins } });
   // 续接的段（unit.join）照旧两次请求，以「，、；：」结尾的，两段之间停 0.5 秒（这一处的 pauseAfterMs 定成 500；不以标点结尾的是 0）
   for (const unit of units) if (unit.join === 'continue' && unit.pauseAfterMs === 0 && endsMidSentence(unit.spoken)) unit.pauseAfterMs = JOIN_PUNCTUATION_PAUSE_MS;
   if (units.some((unit) => unit.speed !== null)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着台本要求的语速（0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
-  const unregistered = scriptsWithoutFeature(pack.scripts());
-  if (unregistered.length > 0) {
-    notes.push({
-      code: 'scripts_without_feature',
-      message: `包里有 ${unregistered.length} 个脚本没有登记功能（清单里没写 feature）：${unregistered.map((item) => `${item.entry}（${item.runtime}）`).join('、')}；没登记功能的脚本不属于任何功能，配音只运行登记在 ${FEATURE} 名下的脚本，所以这次没有运行它们（要让配音运行，作者要在清单里把它们登记到 ${FEATURE} 名下；也可以照包的配音指引手动运行）`,
-      scripts: unregistered,
-      details: { scripts: unregistered },
-    });
+  // 包里没登记功能的脚本：每个包各自说（几个包时点名是哪个包）
+  for (const pack of packs) {
+    const unregistered = scriptsWithoutFeature(pack.scripts());
+    if (unregistered.length > 0) {
+      notes.push({
+        code: 'scripts_without_feature',
+        message: named(pack, `包里有 ${unregistered.length} 个脚本没有登记功能（清单里没写 feature）：${unregistered.map((item) => `${item.entry}（${item.runtime}）`).join('、')}；没登记功能的脚本不属于任何功能，配音只运行登记在 ${FEATURE} 名下的脚本，所以这次没有运行它们（要让配音运行，作者要在清单里把它们登记到 ${FEATURE} 名下；也可以照包的配音指引手动运行）`),
+        scripts: unregistered,
+        details: { scripts: unregistered },
+      });
+    }
   }
 
+  // 要用到脚本运行时的包：几个包时只看这次真用到的（没有句子的包，不要它的运行时）
+  const inUse = packsInUse(packs, units);
+  const lexiconUnapplied = packs.flatMap((pack) => perPack.get(pack).unapplied);
   const plan = {
-    pack: { id: pack.manifest.id, name: pack.manifest.name, version: pack.manifest.version },
+    pack: packInfo(packs[0]),
     lines: lines.map(({ index, source, chapter, span, voice, text, labels }) => ({ index, source, chapter, span, voice, text, labels })),
     units,
-    judge,
-    lexicon: { applied: [...applied.values()], unapplied },
-    guidance: { present: rawGuidance !== null && rawGuidance !== undefined, chars: rawGuidance ? count(rawGuidance) : 0, truncated: guidance.truncated },
-    enhancers: emptyEnhancers(offers),
-    scripts: scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS] })),
-    missingRuntimes: missingScriptRuntimes(env, scripts, FEATURE),
+    judge: combineJudges(packs.map((pack) => perPack.get(pack).judge)),
+    lexicon: { applied: [...applied.values()], unapplied: many ? uniqueJson(lexiconUnapplied) : lexiconUnapplied },
+    guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, truncated: perPack.get(pack).guidance.truncated }))),
+    enhancers: emptyEnhancers(mergedOffers(packs.map((pack) => perPack.get(pack).offers))),
+    scripts: packs.flatMap((pack) => perPack.get(pack).scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS], ...(many ? { pack: pack.manifest.id } : {}) }))),
+    missingRuntimes: inUse.flatMap((pack) => missingScriptRuntimes(envFor(env, settings, pack), perPack.get(pack).scripts, FEATURE).map((item) => (many ? { ...item, pack: pack.manifest.id } : item))),
     capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), 'text-generation': hasCapability(env, 'text-generation') },
     notes,
-    verification: pack.manifest.verification ?? [],
+    verification: many ? packs.flatMap((pack) => pack.manifest.verification ?? []) : (packs[0].manifest.verification ?? []),
+    ...(many ? { packs: packs.map(packInfo) } : {}),
   };
   return { plan, styles, unmergedCount };
 }
 
 /**
  * 只规划，不合成，也不调任何要计费的能力（text-generation 判情绪是收费的：台本里有没带提示的句子时，judge 是 planned，写明正式运行会判几句）。
- * 规则和返回值见文件头。
- * @returns {Promise<object>} { pack, lines, units, judge, lexicon, guidance, enhancers, scripts, missingRuntimes, capabilities, notes, verification }
+ * 规则和返回值见文件头。pack 可以是一个包，也可以是几个（数组，第一个是台本开头用的声音）。
+ * @returns {Promise<object>} { pack, lines, units, judge, lexicon, guidance, enhancers, scripts, missingRuntimes, capabilities, notes, verification }（几个包时还有 packs）
  */
 export async function planDub(env, pack, script, options = {}) {
   return (await buildPlan(env, pack, script, options, { askJudge: false })).plan;
@@ -578,8 +663,10 @@ export async function planDub(env, pack, script, options = {}) {
  */
 export async function dubScript(env, pack, script, options = {}) {
   const settings = readOptions(options);
+  const packs = packsOf(pack);
+  const ownerOf = (unit) => ownerOfUnit(packs, unit);
   // 第一遍：不调任何计费的能力（判情绪也不调），只为了定规划、交给 onPlan 说费用。判情绪在 onPlan 之后的第二遍里才调
-  const draft = await buildPlan(env, pack, script, options, { askJudge: false });
+  const draft = await buildPlan(env, packs, script, options, { askJudge: false });
   if (draft.plan.units.length === 0) throw new VoicePackError('dub_nothing_to_say', '台本里没有可说的话（只有标记和舞台提示）');
   // 编号是并段之后的（units[i].index，并段会重新编号）。花钱之前按第一遍的段数查；第二遍的并段可能不一样（判出来的参考不同），
   // 所以第二遍之后再按它的段数查一次，还没开始合成
@@ -594,7 +681,7 @@ export async function dubScript(env, pack, script, options = {}) {
 
   // 花钱之前把该有的都核对好：能力、脚本的运行时（判情绪也是花钱的，所以在它之前）
   const clone = requireCapability(env, 'voice-cloning');
-  assertScriptRuntimes(env, pack.scripts(FEATURE), FEATURE);
+  for (const owner of packsInUse(packs, draft.plan.units)) assertScriptRuntimes(envFor(env, settings, owner), owner.scripts(FEATURE), FEATURE);
   // 不做的几段标成 skipped，在 onPlan 之前（onPlan 看到的就是这个状态）
   for (const unit of draft.plan.units) if (unit.status === 'planned' && !chosen(unit.index)) unit.status = 'skipped';
   // 要合成几次。判情绪还没调的时候，并段要等它的结果，只能说上限：每个选中的编号最多选中一段，所以不会多于并段之前的段数，也不会多于选中的编号个数；
@@ -605,19 +692,21 @@ export async function dubScript(env, pack, script, options = {}) {
   await settings.onPlan?.(draft.plan, { calls }); // 花钱之前：该核对的都核对过了，一次计费的调用都还没发生；调用方在这里说明费用、检查输出位置，抛错就停
 
   // 第二遍：判情绪（计费）在这里调，挑参考和并段按它的结果定。交出去的那一份（draft.plan）就是最后返回的：内容整个换成第二遍的，对象不换
-  const second = await buildPlan(env, pack, script, options, { askJudge: true });
+  const second = await buildPlan(env, packs, script, options, { askJudge: true });
   checkOnly(second.plan.units.length);
   const plan = Object.assign(draft.plan, second.plan);
   const { styles } = second;
   // 规划里已经记成 failed 的（比下限短、并不了的）不调用能力：不进要做的，也不标成 skipped
   const todo = plan.units.filter((unit) => unit.status === 'planned' && chosen(unit.index));
   for (const unit of plan.units) if (unit.status === 'planned' && !todo.includes(unit)) unit.status = 'skipped';
+  // 参考按（哪个包，哪一段）取一次：几个包的参考段 id 可能一样，所以带上包 ID
+  const referenceKey = (unit) => `${unit.pack ?? ''}\u0000${unit.pick.segmentId}`;
   const references = new Map();
-  for (const segmentId of new Set(todo.map((unit) => unit.pick.segmentId))) references.set(segmentId, await pack.referenceClip(segmentId));
+  for (const unit of todo) {
+    if (!references.has(referenceKey(unit))) references.set(referenceKey(unit), await ownerOf(unit).referenceClip(unit.pick.segmentId));
+  }
   for (const unit of plan.units) if (unit.status === 'failed') await settings.onUnit?.(unit); // 规划时就做完的（比下限短）：交出去，和别的段一样
 
-  const offers = pack.enhancers('voice-cloning');
-  const scripts = pack.scripts(FEATURE);
   const hookUnit = (unit, spoken) => ({
     index: unit.index, line: unit.line, part: unit.part, parts: unit.parts, chapter: unit.chapter, text: spoken,
     language: unit.pick.wanted.language, emotion: unit.pick.wanted.emotion, style: unit.pick.wanted.style, segment: unit.pick.segmentId,
@@ -629,9 +718,13 @@ export async function dubScript(env, pack, script, options = {}) {
   let stopped = false;
   async function runUnit(unit) {
     if (stopped) return;
+    const owner = ownerOf(unit); // 这一句的包：它的脚本、增强件、运行时都是这个包的
+    const runtimes = envFor(env, settings, owner);
+    const scripts = owner.scripts(FEATURE);
+    const offers = owner.enhancers('voice-cloning');
     let spoken = unit.spoken;
     for (const entry of scripts) {
-      const output = await runScript(env, pack, entry, { feature: FEATURE, hook: 'text', unit: hookUnit(unit, spoken) });
+      const output = await runScript(runtimes, owner, entry, { feature: FEATURE, hook: 'text', unit: hookUnit(unit, spoken) });
       if (output.text !== undefined) spoken = output.text;
     }
     // 脚本的 text 钩子可能把要说的话改短了：比下限短的，不调用能力（和规划时一样，记成 failed）
@@ -642,7 +735,7 @@ export async function dubScript(env, pack, script, options = {}) {
       await settings.onUnit?.(unit);
       return;
     }
-    const { segment, clip } = references.get(unit.pick.segmentId);
+    const { segment, clip } = references.get(referenceKey(unit));
     const call = { text: unit.ssml ?? spoken, ref_audio: clip, ref_text: segment.text };
     if (unit.join === 'continue') call.continues = true; // 续接的段：能力补字时补「，」
     if (unit.instructions.sent) call.instructions = styles[unit.index].instructions;
@@ -669,7 +762,7 @@ export async function dubScript(env, pack, script, options = {}) {
     const used = readAudioResult('voice-cloning', result, offers);
     let audio = { bytes: result.bytes, mimeType: result.mimeType };
     for (const entry of scripts) {
-      const output = await runScript(env, pack, entry, { feature: FEATURE, hook: 'audio', unit: { ...hookUnit(unit, spoken), ...audioForScript(audio) } });
+      const output = await runScript(runtimes, owner, entry, { feature: FEATURE, hook: 'audio', unit: { ...hookUnit(unit, spoken), ...audioForScript(audio) } });
       if (output.audio !== undefined) audio = { bytes: fromBase64(output.audio), mimeType: output.mimeType ?? audio.mimeType };
     }
     unit.status = 'ok';
@@ -684,5 +777,56 @@ export async function dubScript(env, pack, script, options = {}) {
   await pool(todo, settings.concurrency, runUnit);
   if (stopped) throw textRejectedStop(rejected); // 在做的几段都做完了（pool 等它们），再抛
 
-  return { ok: plan.units.every((unit) => unit.status !== 'failed'), ...plan, enhancers: summarizeUse(offers, plan.units.filter((unit) => unit.status === 'ok'), plan.verification) };
+  const finished = plan.units.filter((unit) => unit.status === 'ok');
+  return { ok: plan.units.every((unit) => unit.status !== 'failed'), ...plan, enhancers: summarizeUse(mergedOffers(packs.map((pack) => pack.enhancers('voice-cloning'))), finished, plan.verification) };
+}
+
+// ---------------------------------------------------------------- 几个包：小工具（一个包时各自都是原来的样子）
+
+/** 段属于哪个包：unit.pack 只在几个包时才有；没有就是给的那一个（第一个）。 */
+function ownerOfUnit(packs, unit) {
+  if (unit.pack === undefined) return packs[0];
+  const owner = packs.find((pack) => pack.manifest.id === unit.pack);
+  if (owner === undefined) throw new Error(`段 ${unit.index} 记着的包 ${unit.pack} 不在这次给的包里`);
+  return owner;
+}
+
+/** 用到的包：一个包时就是它；几个包时只要有句子在它里面的（没有句子的包，不要它的运行时）。 */
+function packsInUse(packs, units) {
+  if (packs.length === 1) return packs;
+  return packs.filter((pack) => units.some((unit) => ownerOfUnit(packs, unit) === pack));
+}
+
+/** 一个包的身份（plan.pack，几个包时还有 plan.packs 里的每一项）。 */
+const packInfo = (pack) => ({ id: pack.manifest.id, name: pack.manifest.name, version: pack.manifest.version });
+
+/** 去掉按 JSON 完全一样的项，保留第一次出现的次序。 */
+function uniqueJson(list) {
+  const seen = new Set();
+  return list.filter((item) => {
+    const key = JSON.stringify(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * 配音指引的概况（plan.guidance）。entries 是每个包一项 { rawGuidance, truncated }：一个包时就是原来的 { present, chars, truncated }；
+ * 几个包时 present 和 truncated 取任一个有的，chars 相加。
+ */
+function guidanceSummary(entries) {
+  return {
+    present: entries.some((entry) => entry.rawGuidance !== null && entry.rawGuidance !== undefined),
+    chars: entries.reduce((sum, entry) => sum + (entry.rawGuidance ? count(entry.rawGuidance) : 0), 0),
+    truncated: entries.some((entry) => entry.truncated),
+  };
+}
+
+/** 几个包各自声明的增强件合在一起，按 id 去重（同一个 id 只留第一个）；一个包时原样返回它的那一份。 */
+function mergedOffers(lists) {
+  if (lists.length === 1) return lists[0];
+  const seen = new Map();
+  for (const list of lists) for (const offer of list) if (!seen.has(offer.id)) seen.set(offer.id, offer);
+  return [...seen.values()];
 }
