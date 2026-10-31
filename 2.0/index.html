@@ -66,7 +66,11 @@
 
         <div class="slip">
           <span class="die-label" aria-hidden="true">沿虚线剪下 CUT</span>
-          <p class="slip__more"><span data-l="zh">这个 skill 正在从零重做（2026-10-30），旧版的安装入口已经撤下。已发布的签名包和各版标签都还在，已有的音色包照常能用。</span><span data-l="en">This skill is being rebuilt from scratch (2026-10-30), and the install entry for the old version has been withdrawn. The signed releases and the version tags are still there, and existing voice packs keep working.</span></p>
+          <div class="slip__row">
+            <a class="go" href="../#install"><span data-l="zh">现在就装</span><span data-l="en">Install now</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+            <div class="cmd"><code id="cmd-slip">npx skills add <span class="w">LingXuanYin/voice-pack</span></code><button class="copy" type="button" data-copy="npx skills add LingXuanYin/voice-pack" aria-describedby="cmd-slip"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+          </div>
+          <p class="slip__more"><span data-l="zh">用 Claude Code？它的两条命令在<a href="#install">下面「装上」那一节</a>。</span><span data-l="en">On Claude Code? Its two commands are <a href="#install">under Install, below</a>.</span></p>
         </div>
 
         <h2 id="new"><span data-l="zh">这一版带来什么</span><span data-l="en">What this release brings</span></h2>
@@ -132,7 +136,18 @@
         <audio id="clip-b" preload="none" src="../assets/audio/cloned.mp3" data-seconds="11.28"></audio>
 
         <h2 id="install"><span data-l="zh">装上</span><span data-l="en">Install</span></h2>
-        <p class="small"><span data-l="zh">这个 skill 正在从零重做（2026-10-30），旧版的安装入口已经撤下。已发布的签名包和各版标签都还在，已有的音色包照常能用。</span><span data-l="en">This skill is being rebuilt from scratch (2026-10-30), and the install entry for the old version has been withdrawn. The signed releases and the version tags are still there, and existing voice packs keep working.</span></p>
+        <div class="route">
+          <p class="route__name"><span data-l="zh">skills 命令行</span><span data-l="en">The skills CLI</span></p>
+          <p class="route__hint"><span data-l="zh">装进当前项目，给读 Agent Skill 的 agent 用</span><span data-l="en">Installs into the current project, for agents that read Agent Skills</span></p>
+          <div class="cmd"><code id="cmd-skills">npx skills add <span class="w">LingXuanYin/voice-pack</span></code><button class="copy" type="button" data-copy="npx skills add LingXuanYin/voice-pack" aria-describedby="cmd-skills"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+        </div>
+        <div class="route">
+          <p class="route__name">Claude Code</p>
+          <p class="route__hint"><span data-l="zh">在 Claude Code 里依次输入这两条</span><span data-l="en">Type these two in Claude Code, in order</span></p>
+          <div class="cmd"><code id="cmd-market"><span class="w">/plugin</span> marketplace add <span class="w">LingXuanYin/voice-pack</span></code><button class="copy" type="button" data-copy="/plugin marketplace add LingXuanYin/voice-pack" aria-describedby="cmd-market"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+          <div class="cmd"><code id="cmd-plugin"><span class="w">/plugin</span> install <span class="w">voice-pack@voice-pack</span></code><button class="copy" type="button" data-copy="/plugin install voice-pack@voice-pack" aria-describedby="cmd-plugin"><span class="copy__idle"><span data-l="zh">复制</span><span data-l="en">Copy</span></span><span class="copy__done"><span data-l="zh">已复制</span><span data-l="en">Copied</span></span><span class="copy__failed"><span data-l="zh">没复制上</span><span data-l="en">Not copied</span></span></button></div>
+        </div>
+        <p class="small"><span data-l="zh">装好以后对 agent 说什么、命令行跑什么，在<a href="../#start">首页的「开始」</a>。</span><span data-l="en">What to tell your agent and what to run once it's in: <a href="../#start">Get started, on the home page</a>.</span></p>
 
         <h2 id="about"><span data-l="zh">关于 voice-pack</span><span data-l="en">About voice-pack</span></h2>
         <p class="boiler"><span data-l="zh">voice-pack 是给 agent 用的 skill：音色包的格式，和造声音、配音、做包、验包的一整套工具。一个声音的参考集和配音指引装成一个包，谁拿到都能用。流程按所需能力写，模型经适配器接进来。许可是 Apache-2.0，官方发布带 Ed25519 签名。</span><span data-l="en">voice-pack is a skill for your agent: the voice pack format, plus the tools to make voices, dub scripts, and build and check packs. A voice's reference clips and dubbing guidance go into one pack that anyone can use. Flows are written by the capability they need, and models come in through adapters. It is licensed under Apache-2.0, and official releases carry an Ed25519 signature.</span></p>
