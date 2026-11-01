@@ -26,6 +26,9 @@
 //                       值是 null 表示「明确没有」，不去判断（例如 style: null 就是没有风格标签）。language 不能是 null
 //         source?,      这段是从哪来的 { recording?: 来源录音的名字, startSec?, endSec? }（切段那一步留下的）。只放进报告，不进包
 //         externalUrl?  明确选了外部资源：这段音频不放进包，清单里只记这个 https:// 网址、大小和哈希（资源默认放进包里）
+//         synthetic?    true 表示这段是合成的（克隆出来的），不是这个人录的：清单里标 synthetic: true。它不当留出录音，不进真人基线，报告的真录音段数不数它；
+//                       不给就是真录音。上一版的段沿用上一版清单里的标记
+//         sentence?     只有长录音的句子模式给：{ bodySec, pauseSec }（句子的秒数，和它后面的原停顿，没有就是 null）。做包按情绪把句子并成段（lib/make-pack-sentences.mjs）；别的调用方不给
 //       }
 //     ],
 //     labels?,          给所有片段的默认标签（片段自己的 labels 盖过它），写法同上；常用的是 { language: 'en' }
@@ -40,7 +43,7 @@
 //     notes?,           前面几步（分离、切段、转写）留下的说明 [{ code, message, details? }]，原样放进报告，例如「这次没做分离，输入要是干净的人声」。details 是这条说明说的那些事实
 //                       （message 里的数和名字），没有就不给；库自己给的说明都带着（lib/long-recording.mjs、lib/make-pack-loudness.mjs 的文件头写了每个 code 的 details）
 //     environment?,     验证记录里「在哪个环境测的」写什么；不给就用 options.environment
-//     defaultSegment?   明说哪一段当默认参考段（必须是参考集里的一段）；不给就按 lib/pack-material.mjs 的规则挑，发新版本时沿用上一版的
+//     defaultSegment?   明说哪一段当默认参考段（必须是参考集里的一段）；不给就按 lib/pack-material.mjs 的规则 5 挑，发新版本时沿用上一版的（沿用的条件也在规则 5）
 //
 //     发新版本（给了 previous）时，另外这几项；规则的正本在 lib/pack-version.mjs 的文件头：
 //     previous?,        上一版的角色部分文件 Map<路径, Uint8Array>。给了就是发新版本：包 ID 不变，版本号往上加，上一版的参考和留出录音原样带过来（保持原来的
@@ -81,7 +84,7 @@
 //
 //   { pack: { id, manifest, files }, report }
 //   pack      packRolePart 的结果（protocol/lib/pack.mjs）：files 是包目录里的全部文件，含清单、SKILL.md、protocol/，给了 base 还有 voice-pack/
-//   report    { segments, counts, plan, steps, trial, fidelity, redo?, verification, hints, notes, version?, defaultSegment }
+//   report    { segments, counts（references、holdouts、unused；realRecordings 是参考和留出录音里真录音的段数）, plan, steps, trial, fidelity, redo?, verification, hints, notes, version?, defaultSegment }
 //             defaultSegment { id, rule, typicality?, tied?, unmeasured? }：默认参考段和挑它的规则（'author' | 'previous' | 'typical' | 'priority' | 'only'，规则 5）；
 //             rule 是 'typical' 时 typicality 是每段候选和其余参考的平均相似度，tied 是和最典型的那段差不多的几段（按优先级）；
 //             unmeasured 是量相似度时抛了错、这一次退回按优先级的：{ capability, error: 错误的摘要（summarizeError：code、message、details） }，没有这种情况就没有这个字段
@@ -128,6 +131,7 @@
 //   试装、规划（不花钱） lib/make-pack-assemble.mjs、lib/make-pack-plan.mjs   试装一遍；算各项能力最多调几次（plan）；onPlan 和 dryRun 在这里
 //   转写             lib/make-pack-transcribe.mjs  没有文本的片段转写成文本
 //   打标签           lib/make-pack-tags.mjs        语言、情绪、风格、能量
+//   句子合段         lib/make-pack-sentences.mjs   长录音的句子按情绪并成段（不花钱，在打标签之后；没有句子就不做）
 //   挑参考           lib/make-pack-pick.mjs        参考集、留出录音、默认参考段（挑的规则在 lib/pack-material.mjs）
 //   发新版本          lib/pack-version.mjs          读上一版、版本号、和上一版比、变更说明
 //   调响度           lib/make-pack-loudness.mjs    写进包里的参考和留出录音统一到同一个响度（「调响度」的规则在它的文件头）
@@ -143,6 +147,7 @@ import { assertInput, readInput, readOptions, materialOptionsOf } from './make-p
 import { screen } from './make-pack-screen.mjs';
 import { transcribe, settleText } from './make-pack-transcribe.mjs';
 import { resolveLanguages, tagAll, assembleTags } from './make-pack-tags.mjs';
+import { mergeSentences } from './make-pack-sentences.mjs';
 import { assertDefaultUsable, pickMaterial } from './make-pack-pick.mjs';
 import { adjustLoudness } from './make-pack-loudness.mjs';
 import { preflight, placeMaterial, assembler } from './make-pack-assemble.mjs';
@@ -161,7 +166,8 @@ export async function makePack(env, input, options = {}) {
   assertInput(input);
   const settings = readOptions(options);
   const previous = input.previous === undefined ? null : await readPreviousVersion(env, input.previous);
-  const { items, version, direction } = readInput(input, previous);
+  const { items: entries, version, direction } = readInput(input, previous);
+  let items = entries; // 句子模式：打完标签以后，句子换成合好的段（见下）
   // 版本号先定下来：明说的不对，在花钱之前就报
   const versionNumber = previous === null ? version.version : nextVersion(previous.version, { version: version.version, bump: version.bump });
   const effective = effectiveOf(input, direction, previous);
@@ -186,6 +192,15 @@ export async function makePack(env, input, options = {}) {
   settleText(items);
   resolveLanguages(items);
   steps.tagging = await tagAll(env, items, { concurrency, maxErrorRate, wait: settings.retryWait });
+  // 句子模式（长录音）：每句已经听过情绪，这里按情绪并成段（不花钱）。合成的段和别的段一样量音质、定标签（规则在 lib/make-pack-sentences.mjs）
+  const sentences = mergeSentences(items);
+  if (sentences.step.sentences > 0) {
+    items = sentences.items;
+    await screen(env, sentences.merged, { thresholds: settings.thresholds, loudness: settings.loudness });
+    steps.sentences = sentences.step;
+    if (version.defaultSegment !== undefined && sentences.aliases.has(version.defaultSegment)) version.defaultSegment = sentences.aliases.get(version.defaultSegment);
+    assertDefaultUsable(items, version.defaultSegment, materialOptions); // 点名的默认段是句子，它所在的段没用上，这里报（同上面的检查）
+  }
   assembleTags(items);
 
   const { chosen, roleOf } = await pickMaterial(env, items, { previous, version, materialOptions });

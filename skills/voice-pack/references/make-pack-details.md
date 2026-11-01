@@ -1,6 +1,6 @@
 # 做音色包：主路用不到的细则
 
-这一份是 `references/make-pack.md` 挪出来的细则：下面几节是挪过来的正文（「参考集和留出录音」里一处指针改成了文件名，那一节末尾加了「长录音的默认段」），原处留了一行指针。还原度的量法和报告、增强件、响度、参考集和留出录音、发新版本的细则、读音词表、骨架的语言、完整包、分享文件都在这里。照一个已有的包做新包（净室和查重）在 `references/clean-room.md`。设计出来的声音、借来的声音和录音、用包配台本这三条主路不用读它，要查这些细则时再读（借来的参考音频或录音超过 20 秒的，截法要读「长录音的默认段」）。
+这一份是 `references/make-pack.md` 挪出来的细则：下面几节是挪过来的正文（「参考集和留出录音」里一处指针改成了文件名，那一节末尾加了「长原声的截法」），原处留了一行指针。还原度的量法和报告、增强件、响度、参考集和留出录音、发新版本的细则、读音词表、骨架的语言、完整包、分享文件都在这里。照一个已有的包做新包（净室和查重）在 `references/clean-room.md`。设计出来的声音、借来的声音和录音、用包配台本这三条主路不用读它，要查这些细则时再读（借来的参考音频超过 20 秒的，截法要读「长原声的截法」）。
 
 ## 还原度
 
@@ -16,21 +16,22 @@
 
 ## 参考集和留出录音
 
-**参考集和留出录音**：规则只有一份，在 `lib/pack-material.mjs` 的文件头；留出录音从不当参考，数值是起始值，没拿真实的包校准过。音质检查用 `tools/` 里的阈值，不合格的片段不进包，报告点名原因。同样的音频字节只留一份（`duplicate_audio`）；发新版本时，上一版里的段是调过响度存的，新补的同一段录音也认得出来。`--default-segment <段名>` 明说默认参考段，新包和发新版本都能给：段名是这次素材里的一段（或上一版的参考），它不会被挑成留出录音，也不会被参考上限裁掉（规则和理由在那个文件头）。没给 `--default-segment` 时，默认段从参考里挑：语言最多的那种里，情绪是 calm 或没有标签、又没有风格标签的段是候选；有相似度时取和其余参考平均相似度最高的一段，没有就按音质、时长、次序排第一。留出录音：不到 3 段可用时不留，否则留总数的 20%（至少 1 段，最多 6 段，不超过总数减 1）；按「语言加情绪」分组，一组一组轮着取，取文字不少于 10 个词、优先级最低的那段，每组至少留一段做参考。作者明说的默认段不留出。`--no-holdout` 不留出录音：能用的段都进参考集（超过上限的照常裁掉），报告不给 `no_holdout`、`holdouts_few`，规划里没有试合成。设计出来的声音、库里借来的声音和使用者给的录音做包时加它（见 `make-pack.md`「设计出来的声音怎么做包」）。发新版本时，上一版已有的留出录音照旧带过来，要去掉用 `--drop`。
+**参考集和留出录音**：规则只有一份，在 `lib/pack-material.mjs` 的文件头；留出录音从不当参考，数值是起始值，没拿真实的包校准过。音质检查用 `tools/` 里的阈值，不合格的片段不进包，报告点名原因。同样的音频字节只留一份（`duplicate_audio`）；发新版本时，上一版里的段是调过响度存的，新补的同一段录音也认得出来。`--default-segment <段名>` 明说默认参考段，新包和发新版本都能给：段名是这次素材里的一段（或上一版的参考），它不会被挑成留出录音，也不会被参考上限裁掉（规则和理由在那个文件头）。没给 `--default-segment` 时，默认段按 `lib/pack-material.mjs` 的规则 5 挑（规则和理由在那个文件头；参考集里有真录音，就只从真录音里挑，标了合成的不挑）。留出录音：不到 3 段可用的真录音时不留（标了 `synthetic` 的克隆不算），否则留真录音数的 20%（至少 1 段，最多 6 段，不超过真录音数减 1）；按「语言加情绪」分组，一组一组轮着取，取文字不少于 10 个词、优先级最低的那段，每组至少留一段做参考。作者明说的默认段不留出。`--no-holdout` 不留出录音：能用的段都进参考集（超过上限的照常裁掉），报告不给 `no_holdout`、`holdouts_few`，规划里没有试合成。设计出来的声音、库里借来的声音做包时加它（见 `make-pack.md`「设计出来的声音怎么做包」）。发新版本时，上一版已有的留出录音照旧带过来，要去掉用 `--drop`。
 
-**长录音的默认段**：库里借来的参考音频、使用者给的录音长于 20 秒时，`intro` 要 10 到 20 秒（`references/character-voice.md`「默认段」），整段不用。截哪一段照切段的结果定，不靠听：
+**长原声的截法**：库里借来的参考音频长于 20 秒时，截下来的那一截当克隆的参考，不进素材，不进包（`intro` 是克隆出来的，不截）。截哪一段照切段的结果定，不靠听：
 
 1. `node cli.mjs make-pack --recording <录音> --name <名字> --dry-run --json`：不花钱，不调能力，不写文件。读 `recordings[0].segments`：每段有 `startSec`、`endSec`、`durationSec`；`cut.start`、`cut.end` 是 `pause`（停顿）、`edge`（录音的头或尾）或 `forced`（硬切，切在说话中间）。这里只用它的秒数，截的是原录音。
-2. 从前往后找第一截 10 到 20 秒的：可以是一段，也可以是相邻几段连起来（从前一段的 `startSec` 到后一段的 `endSec`，中间的停顿照留）。截的两头和中间都不能是 `forced`；连起来的每处停顿（前段的 `endSec` 到后段的 `startSec`）不超过 1.5 秒（`tools/silence-split.mjs` 的 `joinGapSeconds`，更长的停顿切段时已经切开了）。
+2. 从前往后找第一截 10 到 20 秒的：可以是一段，也可以是相邻几段连起来（从前一段的 `startSec` 到后一段的 `endSec`，中间的停顿照留）。截的两头和中间都不能是 `forced`；连起来的每处停顿（前段的 `endSec` 到后段的 `startSec`）不超过 1.5 秒，超过的不连。
 3. 一截都找不到的，问使用者用哪一段（哪一秒到哪一秒，或者他截一段交来），不自己猜。
-4. 截下来。录音是 WAV 的，在基础部分的目录里跑（只用 `tools/wav.mjs`，不要 ffmpeg）：
+4. 截下来，写到 `audio/<段名>.wav`（只在备素材时用）。录音是 WAV 的，在基础部分的目录里跑（只用 `tools/wav.mjs`，不要 ffmpeg）。录音和输出都写绝对路径（素材目录就是素材里 `audio/` 所在的那一层）：命令里的相对路径按当前目录算，会落进基础部分的目录里。`writeFileSync` 不建目录，先建好 `audio/`：
 
    ```
-   node -e "const fs = require('node:fs'); const [from, to, start, end] = process.argv.slice(1); import('./tools/wav.mjs').then(({ parseWav, encodeWav }) => { const wav = parseWav(new Uint8Array(fs.readFileSync(from))); const [a, b] = [start, end].map((sec) => Math.round(Number(sec) * wav.sampleRate)); fs.writeFileSync(to, encodeWav({ sampleRate: wav.sampleRate, samples: wav.samples.map((c) => c.slice(a, b)) })); });" <录音.wav> <audio/intro.wav> <开始秒> <结束秒>
+   mkdir -p <素材目录的绝对路径>/audio
+   node -e "const fs = require('node:fs'); const [from, to, start, end] = process.argv.slice(1); import('./tools/wav.mjs').then(({ parseWav, encodeWav }) => { const wav = parseWav(new Uint8Array(fs.readFileSync(from))); const [a, b] = [start, end].map((sec) => Math.round(Number(sec) * wav.sampleRate)); fs.writeFileSync(to, encodeWav({ sampleRate: wav.sampleRate, samples: wav.samples.map((c) => c.slice(a, b)) })); });" <录音的绝对路径> <素材目录的绝对路径>/audio/<段名>.wav <开始秒> <结束秒>
    ```
 
-   不是 WAV 的，要环境里有 ffmpeg：`ffmpeg -i <录音> -ss <开始秒> -to <结束秒> -c:a pcm_s16le <audio/intro.wav>`。
-5. 素材的 `intro` 指向它，`source` 写 `{ "recording": "<录音名>", "startSec": <开始>, "endSec": <结束> }`（只进报告），然后照「设计出来的声音怎么做包」做。
+   不是 WAV 的，要环境里有 ffmpeg：`ffmpeg -i <录音的绝对路径> -ss <开始秒> -to <结束秒> -c:a pcm_s16le <素材目录的绝对路径>/audio/<段名>.wav`。
+5. 这一截不写进素材，照「库里借来的声音」克隆。
 
 ## 发新版本的细则
 

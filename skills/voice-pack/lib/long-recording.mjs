@@ -26,6 +26,7 @@
 //     concurrency  转写的并发数，1–8，默认 2
 //     retryWait    (毫秒) => Promise：转写暂时出错、再试之前等多久（规则同 makePack 的同名选项，正本是 lib/call-attempts.mjs）；不给就真的等。不是函数就抛 long_recording_input_invalid
 //     split        传给切段函数的选项（minSeconds、maxSeconds……，见 tools/silence-split.mjs 文件头）
+//     sentences    true：句子模式，录音切成句子（每句一段，不转写、不听），做包时再按情绪并成段。默认 false：切成 5–20 秒的段。见下面「句子模式」
 //     onPlan       (plan) => void：切好段、第一次转写之前交给它；plan 是 { recording, separation, cutting, transcription }，
 //                  transcription.calls 是要转写几次、extraCalls 是暂时出错时最多再多转写几次（每段最多再 2 次，lib/call-attempts.mjs）、seconds 是共多少秒。
 //                  它抛错就停，什么都不转写（命令行用它报费用）。
@@ -55,8 +56,21 @@
 // 音质检查里已经没有随整体增益变的线，不再受这个影响。
 // 能量标签也要没动过的响度（拿各段的响度和这一批的中位数比），所以这里切出来的段要保持原电平交给 makePack。
 //
+// ---------------------------------------------------------------- 句子模式（options.sentences: true）
+//   做包的句子合段用（lib/make-pack.mjs 的 makePack 把句子按情绪并成段，规则在 lib/make-pack-sentences.mjs）。录音不按能量或 VAD 切成 5–20 秒的段，
+//   而是切成句子：每句一段音频，不转写、不听。转写和打标签都在做包里做（每句一次，费用由做包的 onPlan 说明；句子模式不调这里的 onPlan）。
+//   流程 1 到 3 不变（解码、分离、VAD 或按能量找停顿），切的参数不同：停顿不短于 0.5 秒就切，不论句子多短；不到 0.1 秒的零头丢掉。
+//   一口气说、超过 maxSeconds 没有停顿的，硬切（tools/silence-split.mjs 第 5 条）：切出来的每段不短于下限 min(REFERENCE_THRESHOLDS.duration.warnBelow,
+//   (maxSeconds - 2 * paddingSeconds) / 2)。默认 maxSeconds 20 时下限是 5 秒（按段切的下限）；maxSeconds 更小时下限随它变，理由见 silence-split 第 5 条（sentenceCutOf）。
+//   停顿处的切不看这个下限，短句照切。
+//   options.split 里的 maxSeconds、paddingSeconds、minPauseSeconds、thresholdDbfs 照用；上面这些切段参数（停顿、零头、硬切的下限）由这里定。
+//   每句的音频：句子（前后各留的那一点也算在内）加上它后面的原停顿（和下一句之间的房间底噪，不是静音）；中间夹着丢掉的零头、或者是一段录音的最后一句，就只到句尾。
+//   每段多一个 sentence: { bodySec（句子的秒数）, pauseSec（后面的原停顿，秒；没有就是 null） }，source 照旧。
+//   report.transcription 是 { status: 'deferred' }，report.segments 每段的 transcription 也是 'deferred'。
+//
 // ---------------------------------------------------------------- 返回
 //   segments   [{ id, audio: { bytes, mimeType: 'audio/wav' }, text?, labels?, source: { recording?, startSec, endSec } }]
+//              句子模式（见上）每段多一个 sentence，不转写时没有 text。
 //              就是 makePack 的 input.segments 的形状。text 是转写出来的（没转写、转写失败、转写出来是空的，就没有这个字段）；
 //              labels 只有在知道语言的时候才有（{ language }）；source 的秒数对着原录音的时间轴（分离出来的人声和原录音等长、对齐）。
 //   notes      [{ code, message, details }]，原样放进 makePack 的 input.notes，进做包的报告。message 是给人看的中文；details 是这一条说的那些事实（message 里的数和名字），
@@ -95,6 +109,7 @@ import { assertAudioClip, isAudioClip } from '../protocol/lib/audio-clip.mjs';
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
 import { DEFAULTS as SPLIT_DEFAULTS, segmentSpeechRegions, splitBySilence } from '../tools/silence-split.mjs';
+import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
 import { normalizeLanguage } from './line-hints.mjs';
 import { MAX_LANGUAGE_TAG } from './language-tag.mjs';
 import { summarizeError, badResult, pool } from './capability-calls.mjs';
@@ -107,8 +122,23 @@ const PREFIX_MAX = 56;
 const ID_PREFIX = /^[a-z0-9][a-z0-9_-]*$/;
 /** VAD 给的区间末尾可以比录音长这么多秒（舍入、帧边界造成的误差）。 */
 const SPEECH_TOLERANCE_SECONDS = 0.05;
-const OPTION_NAMES = ['separate', 'transcribe', 'language', 'idPrefix', 'concurrency', 'split', 'onPlan', 'retryWait'];
+const OPTION_NAMES = ['separate', 'transcribe', 'language', 'idPrefix', 'concurrency', 'split', 'onPlan', 'retryWait', 'sentences'];
 const RECORDING_KEYS = ['audio', 'name'];
+/**
+ * 句子模式的切段参数（文件头「句子模式」）：停顿不短于 0.5 秒就切，不论句子多短（minSeconds 是 0.1：只挡住几乎没有声音的零头，不让「够不够长」拦住切点）；
+ * 不到 0.1 秒的零头丢掉。段的长短是做包时定的，这里只管句子。硬切的下限不在这里：它随 maxSeconds 变，见 sentenceCutOf。
+ */
+const SENTENCE_CUT = Object.freeze({ minSeconds: 0.1, shortestSeconds: 0.1, sentencePauseSeconds: 0.5, joinGapSeconds: 0.5 });
+
+/**
+ * 句子模式的切段参数：SENTENCE_CUT 加上硬切的下限 min(REFERENCE_THRESHOLDS.duration.warnBelow, (maxSeconds - 2 * paddingSeconds) / 2)。
+ * 默认 maxSeconds（20）时是 5 秒；maxSeconds 更小时是 (maxSeconds - 2 * paddingSeconds) / 2，它是两段都够长的最大下限（理由见 tools/silence-split.mjs 第 5 条）。
+ */
+function sentenceCutOf(split) {
+  const maxSeconds = split.maxSeconds ?? SPLIT_DEFAULTS.maxSeconds;
+  const paddingSeconds = split.paddingSeconds ?? SPLIT_DEFAULTS.paddingSeconds;
+  return { ...SENTENCE_CUT, forcedMinSeconds: Math.min(REFERENCE_THRESHOLDS.duration.warnBelow, (maxSeconds - 2 * paddingSeconds) / 2) };
+}
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const invalid = (field, problem) => new VoicePackError('long_recording_input_invalid', `长录音的输入不合约定（${field}）：${problem}`, { details: { field, problem } });
@@ -129,11 +159,15 @@ function readRecording(recording) {
   return { audio: recording.audio, name: recording.name };
 }
 
-/** 切段选项合不合格，交给切段函数自己判断：拿一段 0 帧的音频试一下，它先读选项，写错了抛 TypeError，这里换成点名 split 的错。 */
-function checkSplitOptions(split) {
+/**
+ * 切段选项合不合格，交给切段函数自己判断：拿一段 0 帧的音频试一下，它先读选项，写错了抛 TypeError，这里换成点名 split 的错。
+ * 句子模式按它实际用的选项查（sentenceCutOf 盖上去以后的）：普通模式的默认最短段（5 秒）不适用于句子，拿它来查会挡住 5 秒以下的 maxSeconds。
+ */
+function checkSplitOptions(split, sentences) {
   if (!isPlainObject(split)) throw invalid('split', '必须是对象，例如 { maxSeconds: 15 }');
+  const used = sentences ? { ...split, ...sentenceCutOf(split) } : split;
   try {
-    splitBySilence({ sampleRate: 16000, samples: [new Float32Array(0)] }, split);
+    splitBySilence({ sampleRate: 16000, samples: [new Float32Array(0)] }, used);
   } catch (error) {
     if (error instanceof TypeError) throw invalid('split', error.message);
     throw error;
@@ -145,7 +179,7 @@ function readOptions(options) {
   for (const key of Object.keys(options)) {
     if (!OPTION_NAMES.includes(key)) throw invalid(`options.${key}`, `不认识的选项 ${JSON.stringify(key)}（有：${OPTION_NAMES.join('、')}）`);
   }
-  for (const key of ['separate', 'transcribe']) {
+  for (const key of ['separate', 'transcribe', 'sentences']) {
     if (options[key] !== undefined && typeof options[key] !== 'boolean') throw invalid(key, '必须是 true 或 false');
   }
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -155,7 +189,7 @@ function readOptions(options) {
   }
   const language = options.language === undefined ? undefined : normalizeLanguage(options.language);
   if (language === null) throw invalid('language', `必须是语言标签，例如 en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）`);
-  if (options.split !== undefined) checkSplitOptions(options.split);
+  if (options.split !== undefined) checkSplitOptions(options.split, options.sentences === true);
   if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', '必须是函数');
   if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写暂时出错、再试之前等多久');
   return {
@@ -167,6 +201,7 @@ function readOptions(options) {
     split: options.split ?? {},
     onPlan: options.onPlan,
     retryWait: options.retryWait,
+    sentences: options.sentences ?? false,
   };
 }
 
@@ -268,6 +303,66 @@ function transcriptionNotes(step, items) {
   return notes;
 }
 
+// ---------------------------------------------------------------- 句子模式（sentences: true）
+
+/**
+ * 句子模式的切段：按句间停顿切成句子，每句一段音频（句子加它后面的原停顿，见 item.sentence），不转写、不听。
+ * 句子的听和并（按情绪并成段）在做包里做（lib/make-pack-sentences.mjs）。规则见文件头「句子模式」。
+ */
+async function sentencesOf(env, { work, mono, sampleRate, input, settings, canDetect, report }) {
+  const cutSettings = { ...settings.split, ...sentenceCutOf(settings.split) };
+  const audio = { sampleRate, samples: [mono] };
+  let method = 'energy';
+  let model;
+  let cut;
+  let busySince;
+  if (canDetect) {
+    const result = await requireCapability(env, 'voice-activity-detection')({ audio: work.clip });
+    const regions = readSpeech(result, work.decoded.frames / sampleRate);
+    busySince = nowMs();
+    cut = segmentSpeechRegions(audio, regions, cutSettings);
+    method = 'voice-activity-detection';
+    if (typeof result.model === 'string') model = result.model;
+  } else {
+    busySince = nowMs();
+    cut = splitBySilence(audio, cutSettings);
+  }
+  const pieces = cut.segments;
+  const prefix = settings.idPrefix ?? prefixOf(input.name);
+  const width = Math.max(3, String(pieces.length).length);
+  const items = [];
+  for (const [index, seg] of pieces.entries()) {
+    if (nowMs() - busySince >= YIELD_AFTER_MS) {
+      await turnEventLoop();
+      busySince = nowMs();
+    }
+    // 句子后面的原停顿：下一句是紧跟着的，中间没有丢掉的零头（零头里的声音不能当停顿），才留着；最后一句没有
+    const next = pieces[index + 1];
+    const pauseOk = next !== undefined && !cut.dropped.some((d) => d.startSec >= seg.endSec - 1e-9 && d.endSec <= next.startSec + 1e-9);
+    const to = pauseOk ? next.startSample : seg.endSample;
+    items.push({
+      id: `${prefix}-${String(index + 1).padStart(width, '0')}`,
+      seg,
+      audio: { bytes: encodeWav({ sampleRate, samples: [mono.subarray(seg.startSample, to)] }), mimeType: 'audio/wav' },
+      sentence: { bodySec: (seg.endSample - seg.startSample) / sampleRate, pauseSec: pauseOk ? (next.startSample - seg.endSample) / sampleRate : null },
+    });
+  }
+  report.cutting = { method, ...(model === undefined ? {} : { model }), segments: items.length, dropped: cut.dropped, analysis: cut.analysis };
+  report.transcription = { status: 'deferred' };
+  report.segments = items.map((item) => ({ id: item.id, startSec: item.seg.startSec, endSec: item.seg.endSec, durationSec: item.seg.durationSec, short: item.seg.short, cut: item.seg.cut, transcription: 'deferred' }));
+  const segments = items.map((item) => ({
+    id: item.id,
+    audio: item.audio,
+    sentence: item.sentence,
+    ...(settings.language === undefined ? {} : { labels: { language: settings.language } }),
+    source: { ...(input.name === undefined ? {} : { recording: input.name }), startSec: item.seg.startSec, endSec: item.seg.endSec },
+  }));
+  const notes = [];
+  if (report.separation.status === 'skipped') notes.push({ code: 'separation_skipped', message: '这次没做分离，输入要是干净的人声', details: { reason: report.separation.reason } });
+  notes.push(...cuttingNotes({ method, cut, items: pieces, shortestSeconds: SENTENCE_CUT.shortestSeconds }));
+  return { segments, notes, report };
+}
+
 // ---------------------------------------------------------------- 主流程
 
 /**
@@ -305,6 +400,7 @@ export async function prepareLongRecording(env, recording, options = {}) {
   // 3 切段
   const { sampleRate } = work.decoded;
   const mono = toMono(work.decoded.samples);
+  if (settings.sentences) return sentencesOf(env, { work, mono, sampleRate, input, settings, canDetect, report });
   const audio = { sampleRate, samples: [mono] };
   let method = 'energy';
   let model;

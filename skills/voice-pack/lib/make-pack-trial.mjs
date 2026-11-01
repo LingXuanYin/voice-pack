@@ -193,7 +193,7 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   // 进比值的：合成出来、又没有作废的（没查到的照旧进）
   const measuredAt = (index) => dubbed.units[index].status === 'ok' && checks[index].status !== 'voided';
   const evaluation = {
-    references: manifest.reference.segments.map((entry) => ({ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags })),
+    references: manifest.reference.segments.map((entry) => ({ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, ...(entry.synthetic === true ? { synthetic: true } : {}) })),
     holdouts: holdouts.flatMap((entry, index) => (measuredAt(index) ? [{ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, generated: dubbed.units[index].audio }] : [])),
   };
   if (evaluation.holdouts.length === 0) {

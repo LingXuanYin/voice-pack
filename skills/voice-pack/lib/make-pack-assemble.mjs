@@ -75,7 +75,7 @@ export function placeMaterial({ chosen, byId, effective }) {
     if (files.has(path) || externals.some((entry) => entry.path === path)) throw invalid('segments', `${JSON.stringify(item.id)} 的音频文件 ${path} 和另一段的撞上了`);
     if (item.externalUrl === null) files.set(path, item.audio.bytes);
     else externals.push({ path, url: item.externalUrl, data: item.audio.bytes });
-    return { id: item.id, audio: path, text: item.text, tags: manifestTags(item.tags) };
+    return { id: item.id, audio: path, text: item.text, tags: manifestTags(item.tags), ...(item.synthetic === true ? { synthetic: true } : {}) };
   };
   const reference = { defaultSegment: chosen.defaultSegment, segments: chosen.references.map((id) => place(byId.get(id), 'reference')) };
   const holdout = chosen.holdouts.map((id) => place(byId.get(id), 'holdout'));

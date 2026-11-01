@@ -25,6 +25,7 @@ function reportSegment(item, role) {
     id: item.id,
     role,
     ...(item.previous === undefined ? {} : { previous: item.previous }),
+    ...(item.synthetic === true ? { synthetic: true } : {}),
     ...(item.unused === undefined ? {} : { reason: item.unused.reason, ...(item.unused.details === undefined ? {} : { details: item.unused.details }) }),
     hasText: hasWords(item.text),
     ...(item.textSource === undefined ? {} : { textSource: item.textSource }),
@@ -47,9 +48,15 @@ export function dryRunOf({ plan, items, fresh, previous, versionNumber, steps, n
 export function resultOf({ made, evaluated, verification, items, fresh, chosen, roleOf, previous, version, changes, effective, byId, plan, steps, inputNotes, loudnessNotes, noHoldout = false }) {
   const dropped = previous === null ? [] : previous.segments.filter((segment) => version.drop.includes(segment.id)).map((segment) => ({ id: segment.id, role: 'dropped', previous: segment.role }));
   const segments = [...items.map((item) => reportSegment(item, roleOf.get(item.id) ?? 'unused')), ...dropped];
+  const realCount = (ids) => ids.filter((id) => byId.get(id).synthetic !== true).length; // 真录音：不是合成的（克隆出来的不算）
+  // 标了合成的（synthetic）段是克隆出来的，不算真录音（lib/material-hints.mjs 的 holdouts_few）
+  const segmentEntry = (entry) => ({ id: entry.id, tags: entry.tags, ...(byId.get(entry.id).synthetic === true ? { synthetic: true } : {}) });
   const hints = suggestMaterial({
-    references: made.manifest.reference.segments.map((entry) => ({ id: entry.id, tags: entry.tags, durationSec: byId.get(entry.id).quality?.metrics?.durationSec })).map((entry) => (entry.durationSec === undefined || entry.durationSec === null ? { id: entry.id, tags: entry.tags } : entry)),
-    holdouts: (made.manifest.holdout ?? []).map((entry) => ({ id: entry.id, tags: entry.tags })),
+    references: made.manifest.reference.segments.map((entry) => {
+      const durationSec = byId.get(entry.id).quality?.metrics?.durationSec;
+      return durationSec === undefined || durationSec === null ? segmentEntry(entry) : { ...segmentEntry(entry), durationSec };
+    }),
+    holdouts: (made.manifest.holdout ?? []).map(segmentEntry),
     unused: items.filter((item) => item.unused !== undefined).map((item) => ({ id: item.id, reason: item.unused.reason, details: item.unused.details })),
     guidance: effective.guidance !== undefined && effective.guidance.trim() !== '',
     direction: (made.manifest.direction?.tags ?? []).length > 0,
@@ -62,9 +69,10 @@ export function resultOf({ made, evaluated, verification, items, fresh, chosen, 
       segments,
       counts: {
         input: fresh.length,
-        ...(previous === null ? {} : { carried: items.length - fresh.length, dropped: dropped.length }),
+        ...(previous === null ? {} : { carried: items.filter((item) => item.previous !== undefined).length, dropped: dropped.length }), // 句子合段以后 items 比 fresh 少，不能相减
         references: chosen.references.length,
         holdouts: chosen.holdouts.length,
+        realRecordings: realCount(chosen.references) + realCount(chosen.holdouts),
         unused: segments.filter((segment) => segment.role === 'unused').length,
       },
       ...(previous === null

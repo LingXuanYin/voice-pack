@@ -7,8 +7,8 @@
 //   suggestMaterial(material) -> hints
 //
 // material：
-//   references  参考集 [{ id, tags: { language, emotion?, style?, energy? }, durationSec? }]（durationSec 不知道就不给）
-//   holdouts    留出录音 [{ id, tags }]，没有就是 []
+//   references  参考集 [{ id, tags: { language, emotion?, style?, energy? }, durationSec?, synthetic? }]（durationSec 不知道就不给；synthetic 为 true 的是克隆出来的，不算真录音）
+//   holdouts    留出录音 [{ id, tags, synthetic? }]，没有就是 []
 //   unused      没用上的片段 [{ id, reason, details? }]，没有就是 []；reason 是做包报告里的那些原因（每一种写在产生它的那一步的文件头：lib/make-pack-screen.mjs、
 //               lib/make-pack-transcribe.mjs、lib/make-pack-tags.mjs、lib/pack-material.mjs）
 //   guidance    有没有写配音指引（布尔值，默认 true：不知道就不提示）
@@ -22,7 +22,8 @@
 //
 // 规则（数值是起步值，没有拿真实的包标定过；改数值改 THRESHOLDS，别处不写数）：
 //   no_holdout                  没有留出录音：还原度量不了。details: { references }。设计来源的包和 noHoldout 的包不给（见 designSource、noHoldout）
-//   holdouts_few                留出录音有，但不到 5 条：读还原度要有效的留出录音至少 5 条才下结论（lib/fidelity.mjs 文件头「怎么读这份报告」第 1 点）。details: { count, needed }。设计来源的包和 noHoldout 的包不给
+//   holdouts_few                留出录音有，但不到 5 条：读还原度要有效的留出录音至少 5 条才下结论（lib/fidelity.mjs 文件头「怎么读这份报告」第 1 点）。details: { count, needed, missing }：
+//                               missing 是按规则 2（lib/pack-material.mjs 的 plannedHoldouts）还差几段真录音才留得出 needed 条（标了 synthetic 的不算，见下面的输入）。设计来源的包和 noHoldout 的包不给
 //   few_references              参考不到 3 段。details: { count, needed }
 //   short_reference_total       参考加起来不到 30 秒（只在每段都有时长时判断）。details: { seconds, needed }
 //   language_single_reference   某种语言的参考只有一段（例如「英语只有一段」）。每种这样的语言一条。details: { language, count: 1 }
@@ -36,6 +37,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
+import { DEFAULTS, plannedHoldouts } from './pack-material.mjs';
 
 /** 建议的参考段长度（秒）：音质检查的提醒线（tools/audio-quality.mjs 的 REFERENCE_THRESHOLDS.duration），提示里说的长度就是它，不另写一份。 */
 const { warnBelow: REFERENCE_MIN_SECONDS, warnAbove: REFERENCE_MAX_SECONDS } = REFERENCE_THRESHOLDS.duration;
@@ -66,6 +68,27 @@ const UNUSED_ADVICE = Object.freeze({
 });
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** 真录音：没有标 synthetic 的段（克隆出来的不算，规则 2 只数真录音，见 lib/pack-material.mjs）。 */
+const isReal = (entry) => entry.synthetic !== true;
+
+/**
+ * 按规则 2（lib/pack-material.mjs 的 plannedHoldouts，用它的默认比例和上限）：留出 wanted 条要几段真录音；现在有 realNow 段，还差几段。
+ * 从现在的段数往上数，数到 plannedHoldouts 够 wanted 为止。比例是 0，或者 wanted 超过上限，就永远够不着：直接报错，不往下数。
+ */
+function realMissingFor(wanted, realNow) {
+  if (DEFAULTS.holdoutRatio === 0 || wanted > DEFAULTS.maxHoldout) throw new RangeError(`留出 ${wanted} 条够不着（holdoutRatio ${DEFAULTS.holdoutRatio}，maxHoldout ${DEFAULTS.maxHoldout}）`);
+  let total = realNow;
+  while (plannedHoldouts(total) < wanted) total += 1;
+  return total - realNow;
+}
+
+/** holdouts_few 的文字：按现在的比例还差几段真录音。已经够了（差 0 段），留出的少就不是真录音数量的问题。 */
+function fewHoldoutsMessage(count, missing) {
+  const head = `留出录音只有 ${count} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论。`;
+  return missing > 0
+    ? `${head}按现在的比例，还差 ${missing} 段真录音才留得出 ${THRESHOLDS.holdoutsToRead} 条（标了合成的不算）。`
+    : `${head}真录音的数量已经够按现在的比例留出 ${THRESHOLDS.holdoutsToRead} 条，留出的少不是真录音数量的问题。`;
+}
 
 function readMaterial(material) {
   if (!isPlainObject(material)) throw new TypeError('material 必须是对象 { references, holdouts?, unused?, guidance?, direction? }');
@@ -97,7 +120,9 @@ export function suggestMaterial(material) {
     if (holdouts.length === 0) {
       add('no_holdout', '没有留出录音，还原度量不了：再补一些素材（至少 3 段可用的），做包时才会留出几条来量。', { references: references.length });
     } else if (holdouts.length < THRESHOLDS.holdoutsToRead) {
-      add('holdouts_few', `留出录音只有 ${holdouts.length} 条：读还原度要有效的留出录音至少 ${THRESHOLDS.holdoutsToRead} 条才下结论，再补一些素材。`, { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead });
+      const realNow = references.filter(isReal).length + holdouts.filter(isReal).length;
+      const missing = realMissingFor(THRESHOLDS.holdoutsToRead, realNow);
+      add('holdouts_few', fewHoldoutsMessage(holdouts.length, missing), { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead, missing });
     }
   }
   if (references.length < THRESHOLDS.minReferences) {

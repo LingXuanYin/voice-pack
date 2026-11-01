@@ -17,8 +17,9 @@
 //                       "generated": "audio/gen-h-1.mp3",   // 用这个包把 text 合成出来的录音；不给就用 voice-cloning 合成一条
 //                       "reference": "ref-1" } ]            // 合成时用哪段参考；省略用第一段
 //   }
+//   参考里 "synthetic": true 的是克隆出来的，不是这个人录的：不进真人基线，也不数进真录音段数（不写就是真录音，和清单里的 synthetic 一样）。
 //   id 在参考和留出录音之间不能重名（读进来以后由 lib/fidelity.mjs 核对）；留出录音的 text 必须有（收音校验要拿它核对模型的转写）。
-//   读出来每一条是 { id, audio, text?, labels?, reference?, generated? }：audio 和 generated 是 { bytes, mimeType }。
+//   读出来每一条是 { id, audio, text?, labels?, reference?, generated?, synthetic? }：audio 和 generated 是 { bytes, mimeType }。
 //
 // 抛出的错误（VoicePackError；code 小写下划线）：
 //   evaluation_set_unreadable  评测集或音频文件读不了（不存在、没有权限）。details.file（音频文件还有 details.field）
@@ -93,6 +94,10 @@ export function readEvaluationSet(file) {
       if (!isPlainObject(raw)) throw invalid(where, `${where} 必须是一个对象`);
       if (typeof raw.id !== 'string' || raw.id === '') throw invalid(`${where}.id`, `${where}.id 必须是非空字符串`);
       const track = { id: raw.id, audio: pathField(raw, 'audio', where), labels: raw.labels };
+      if (raw.synthetic !== undefined) {
+        if (typeof raw.synthetic !== 'boolean') throw invalid(`${where}.synthetic`, `${where}.synthetic 必须是 true 或 false（这段是不是合成的，克隆出来的）`);
+        if (raw.synthetic) track.synthetic = true;
+      }
       if (raw.text !== undefined) {
         if (typeof raw.text !== 'string') throw invalid(`${where}.text`, `${where}.text 必须是字符串（这段音频里说的话）`);
         track.text = raw.text;
@@ -156,7 +161,7 @@ export function evaluationSetFiles(result) {
     return file;
   };
   const picks = new Map(result.report.trial.items.map((item) => [item.id, item.pick.segmentId]));
-  const references = result.evaluation.references.map((entry) => ({ id: entry.id, audio: put(`reference-${entry.id}`, entry.audio), text: entry.text, labels: entry.labels }));
+  const references = result.evaluation.references.map((entry) => ({ id: entry.id, audio: put(`reference-${entry.id}`, entry.audio), text: entry.text, labels: entry.labels, ...(entry.synthetic === true ? { synthetic: true } : {}) }));
   const holdouts = result.evaluation.holdouts.map((entry) => ({ id: entry.id, audio: put(`holdout-${entry.id}`, entry.audio), text: entry.text, labels: entry.labels, generated: put(`generated-${entry.id}`, entry.generated), reference: picks.get(entry.id) }));
   const json = (value) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
   files.set(EVALUATION_FILE, json({ references, holdouts, ...(result.pack?.manifest?.designSource === undefined ? {} : { designSource: true }) }));

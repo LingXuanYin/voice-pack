@@ -16,7 +16,9 @@
 //   invalid(field, problem)        造一个 make_pack_input_invalid。别的步骤模块报输入的问题也用它，不各造一个
 //
 // 条目（item）：做包的每一步读、写的是同一组对象，每个步骤模块的文件头写自己读哪些字段、写哪些字段。这里整理出来的字段：
-//   index（在输入里的次序，上一版带来的排在前面）、id、audio、text、labels（调用方给的标签：值是 undefined 没给，null 明确没有）、source、externalUrl；
+//   index（在输入里的次序，上一版带来的排在前面）、id、audio、text、labels（调用方给的标签：值是 undefined 没给，null 明确没有）、source、externalUrl、
+//   synthetic（布尔值：true 是合成的，克隆出来的，不是这个人录的；没标是 false）；
+//   sentence（只有长录音的句子模式给：{ bodySec, pauseSec }，做包的句子合段用，见 lib/make-pack-sentences.mjs；别的调用方不给，就没有这个字段）；
 //   上一版带过来的段还有 previous（'reference' 或 'holdout'）和 path（在上一版里的路径）。
 //
 // 抛出的错误：
@@ -83,7 +85,23 @@ function readSource(source, where) {
   return out;
 }
 
+/** 句子模式的句子（lib/long-recording.mjs 的 sentences: true 给的）：句子的秒数（含留边），和它后面的原停顿（秒；没有就是 null）。 */
+function readSentence(sentence, where) {
+  if (!isPlainObject(sentence)) throw invalid(where, '必须是 { bodySec, pauseSec } 对象（句子的秒数，和它后面的原停顿）');
+  const { bodySec, pauseSec } = sentence;
+  if (typeof bodySec !== 'number' || !Number.isFinite(bodySec) || bodySec < 0) throw invalid(`${where}.bodySec`, '必须是不小于 0 的数（秒）');
+  if (pauseSec !== null && (typeof pauseSec !== 'number' || !Number.isFinite(pauseSec) || pauseSec < 0)) throw invalid(`${where}.pauseSec`, '必须是不小于 0 的数（秒），或者 null（后面没有原停顿）');
+  return { bodySec, pauseSec };
+}
+
 /** 读片段列表，整理成内部的条目。 */
+/** 片段的 synthetic：不给或 false 是真录音，true 是合成的（克隆出来的），别的值报错。 */
+function readSynthetic(synthetic, where) {
+  if (synthetic === undefined) return false;
+  if (typeof synthetic !== 'boolean') throw invalid(where, '必须是 true 或 false：true 表示这段是合成的（克隆出来的），不是这个人录的');
+  return synthetic;
+}
+
 function readSegments(segments, defaults, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
   if (!Array.isArray(segments)) throw invalid('segments', '必须是数组：每一项是一段切好的录音');
   if (segments.length === 0 && !allowEmpty) throw invalid('segments', '至少要有一段');
@@ -119,6 +137,8 @@ function readSegments(segments, defaults, { taken = new Set(), offset = 0, allow
       labels: { ...defaults, ...readLabels(segment.labels, `${where}.labels`) },
       source: readSource(segment.source, `${where}.source`),
       externalUrl: segment.externalUrl ?? null,
+      synthetic: readSynthetic(segment.synthetic, `${where}.synthetic`),
+      ...(segment.sentence === undefined ? {} : { sentence: readSentence(segment.sentence, `${where}.sentence`) }),
     };
   });
 }
@@ -187,6 +207,7 @@ export function readInput(input, previous) {
     labels: { language: segment.tags.language, emotion: segment.tags.emotion ?? null, style: segment.tags.style ?? null, energy: segment.tags.energy ?? null },
     source: null,
     externalUrl: segment.externalUrl,
+    synthetic: segment.synthetic, // 上一版清单里标的：克隆出来的，跟着段走
     previous: segment.role,
     path: segment.path,
   }));

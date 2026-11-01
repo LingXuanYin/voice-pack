@@ -6,24 +6,26 @@
 //
 //   chooseMaterial(candidates, options) -> { references, holdouts, unused, defaultSegment, defaultRule, typicality?, tied? }
 //   defaultRule 写明默认段是按哪条规则挑的（规则 5）：'kept' | 'typical' | 'priority' | 'only'，没有参考时是 null。
-//     'kept' 是沿用：上一版的默认段，或者作者明说的（lib/make-pack-pick.mjs 报告时分成 'previous' 和 'author'）。
+//     'kept' 是沿用：上一版的默认段（条件见规则 5），或者作者明说的（lib/make-pack-pick.mjs 报告时分成 'previous' 和 'author'）。
 //   options.similarities（可选）：{ [段名]: 数的数组 }，每段候选和其余参考的说话人相似度（只量参考之间的，留出录音一条都不算；由调用方量，见 lib/make-pack-pick.mjs）。
 //
 // 候选（candidates，每个是一个已经能用的片段：音质没被拒绝、有文本）：
-//   { id, order, verdict: 'ok' | 'warn' | 'unchecked', durationSec: number | null, tokens: number, textChars: number, plain?: boolean, tags: { language, emotion?, style?, energy? } }
+//   { id, order, verdict: 'ok' | 'warn' | 'unchecked', durationSec: number | null, tokens: number, textChars: number, plain?: boolean, synthetic?: boolean, tags: { language, emotion?, style?, energy? } }
 //   order 是它在输入里的次序（从 0 起，不重复）；tokens 是文本的词数（lib/fidelity.mjs 的 tokenizeTranscript：中文按字、英文按词）；
-//   plain 是 false 表示文本里有台本标记或舞台提示（不给就当没有）；verdict 是音质检查的结论（unchecked：环境解不了这种格式，没量过，按 warn 看）。
+//   plain 是 false 表示文本里有台本标记或舞台提示（不给就当没有）；synthetic 是 true 表示这段是合成的（克隆出来的），不是这个人录的（不给就是真录音）；
+//   verdict 是音质检查的结论（unchecked：环境解不了这种格式，没量过，按 warn 看）。
 //
 // 规则（数值都是这份实现定的，不是实测的；改数值改 DEFAULTS 和 TYPICAL_TIE，别处不写数）：
 //   1 优先级（越靠前越适合当参考）：音质结论（ok 在 warn 和 unchecked 前面）；时长离建议的参考段长度越近越好（建议的长度是音质检查的提醒线，
 //     tools/audio-quality.mjs 的 REFERENCE_THRESHOLDS.duration 的 warnBelow 到 warnAbove；在区间里都算 0，区间外按差几秒算）；
 //     最后看输入次序。同样的输入永远得到同样的结果，没有随机。
-//   2 留出几条：不到 3 段可用时不留（参考集要有两段以上才像样，原声只有两段时都当参考）；否则 max(1, 四舍五入(总数 × holdoutRatio))，不超过
-//     maxHoldout，也不超过总数减 1；holdoutRatio 是 0 就不留。新版本里，已有的留出录音算在里面：已经够了就不再留。
+//   2 留出几条：只数真录音（synthetic 不是 true 的段）。真录音不到 3 段时不留（参考集要有两段以上才像样，原声只有两段时都当参考）；否则
+//     max(1, 四舍五入(真录音数 × holdoutRatio))，不超过 maxHoldout，也不超过真录音数减 1；holdoutRatio 是 0 就不留。
+//     新版本里，已有的留出录音算在里面：已经够了就不再留。
 //   3 留出录音取哪几段：标签组 = 语言 + 情绪（没有情绪标签的算一组）。一段能当留出录音，要文本不少于 minHoldoutTokens 个词
 //     （盲听的收音校验拿开头的 OPENING_WORDS 个词和已知文本的开头比；文本比这个数还短时，开头就是它的全部，短句错两个词错误率就超线，
 //     见 lib/fidelity.mjs 的 openingErrorRate 和 DEFAULT_MAX_ERROR_RATE 的说明），
-//     并且文本不超过 maxSynthesisChars 个字（给了才查：试合成一次装不下的，留出了也没法按原文合成）。
+//     并且文本不超过 maxSynthesisChars 个字（给了才查：试合成一次装不下的，留出了也没法按原文合成），并且是真录音（synthetic 不是 true：克隆出来的没有人的录音可以量）。
 //     从最大的标签组开始，一组一组地轮着取，每组每一轮取一段，取这一组里优先级最低的那段能当留出录音的；一个组至少留一段做参考，
 //     所以只剩一段的组不取。取够了或者所有的组都取不动了就停。
 //     每个组都取不动、而一段都还没留出来时（标签打得碎，每个组都只有一段），放宽一次：只守「这种语言至少还留一段参考」，
@@ -34,9 +36,12 @@
 //     再按优先级补满，多出来的不要（over_limit）。明说的段不因为音质是 warn 或者优先级靠后被裁掉；上一版的参考已经占满上限、它进不了参考集的，
 //     在花钱之前就报（lib/make-pack-pick.mjs 的 assertDefaultUsable）。
 //     参考在清单里的次序：新做的包按优先级（好的在前，配音时同样合适的几段里取在前面的）；发新版本时，已有的在前、次序不变，新的接在后面。
-//   5 默认参考段（「平常说话」，不带舞台提示的台词都用它）。候选：最常见的语言里（一样多取先出现的）、情绪是 calm 或没有标签、又没有风格标签的参考；
-//     没有这样的，候选就是全部参考（defaultCandidatesOf）。发新版本时，上一版的默认段还在参考集里就沿用（'kept'）；作者明说的，也沿用（'kept'），
-//     它在参考集里是规则 3、4 保证的（音质 warn 也照样当，音质结论照常写在报告里）。
+//   5 默认参考段（「平常说话」，不带舞台提示的台词都用它；卡片试听放的也是它，所以要是这个人自己的声音）。
+//     一池：参考集里标了 synthetic 的段（克隆出来的，不是这个人录的）不在池里，池是没标的段（真录音）；参考集里没有真录音，池就是全部参考。
+//     设计出来的、借来的声音的段不标（它们的默认段照作者点名，见 references/make-pack.md），所以照旧。
+//     候选：池里最常见的语言里（一样多取先出现的）、情绪是 calm 或没有标签、又没有风格标签的那些（defaultCandidatesOf）；没有这样的，候选就是池的全部。
+//     沿用（'kept'，报告里分成 'author' 和 'previous'）：作者这次明说的（options.namedDefault），照点名，标了合成的也照；上一版的默认段还在参考集里，就沿用，
+//     但它是合成的、参考集里又有真录音时不沿用，照下面重挑。沿用的段在参考集里是规则 3、4 保证的（音质 warn 也照样当，音质结论照常写在报告里）。
 //     候选只有一段：就是它（'only'）。候选有几段，而且调用方给了相似度（options.similarities）：挑平均相似度最高的一段，也就是和其余参考平均最像的一段（'typical'）；
 //     和它相差不到 TYPICAL_TIE 的几段算差不多，在这几段里按优先级排第一的那段是默认段（tied 记下这几段）。
 //     量不到的候选（一段相似度都没有）不参与；一段都量不到，或者没给相似度（环境没有说话人相似度），或者量的时候出错（调用方退回，见 lib/make-pack-pick.mjs）：按优先级排第一的那段（'priority'）。
@@ -99,6 +104,7 @@ export function materialOptionProblems(options) {
   }
   if (Number.isInteger(options.maxReferences) && options.maxReferences === 0) add('maxReferences', '必须不小于 1（参考集至少要有一段）');
   if (given('maxSynthesisChars') && options.maxSynthesisChars !== null && !(Number.isInteger(options.maxSynthesisChars) && options.maxSynthesisChars >= 1)) add('maxSynthesisChars', '必须是正整数（或 null：不限）');
+  if (given('namedDefault') && typeof options.namedDefault !== 'boolean') add('namedDefault', '必须是 true 或 false（defaultSegment 是作者这次明说的吗）');
   return problems;
 }
 
@@ -124,9 +130,12 @@ function readCandidates(candidates) {
   }
 }
 
-/** 这一段能不能当留出录音（规则 3）。plain 是 false 的（文本里有台本标记，配音时会被当成要求，念出来的和原话对不上）不行。 */
+/**
+ * 这一段能不能当留出录音（规则 3）。plain 是 false 的（文本里有台本标记，配音时会被当成要求，念出来的和原话对不上）不行；
+ * synthetic 是 true 的（克隆出来的，不是这个人录的）也不行：留出录音是拿来和这个人的真录音比的。
+ */
 const canBeHoldout = (candidate, settings) =>
-  candidate.plain !== false && candidate.tokens >= settings.minHoldoutTokens && (settings.maxSynthesisChars === undefined || settings.maxSynthesisChars === null || candidate.textChars <= settings.maxSynthesisChars);
+  candidate.synthetic !== true && candidate.plain !== false && candidate.tokens >= settings.minHoldoutTokens && (settings.maxSynthesisChars === undefined || settings.maxSynthesisChars === null || candidate.textChars <= settings.maxSynthesisChars);
 
 /** 标签组：按组的大小从大到小，一样大的先出现的在前。每个组里的成员按优先级从好到坏排。 */
 function groupsOf(ranked) {
@@ -202,30 +211,35 @@ function capReferences(references, groups, { cap, fixedIds, named }) {
 }
 
 /**
- * 规则 5 的候选：最常见的语言里（一样多取先出现的）、平静（或没有情绪标签）、又没有风格的参考；没有这样的，就是全部参考。
+ * 规则 5 的候选：池里（有真录音就是真录音，没有就是全部参考，见文件头）最常见的语言里（一样多取先出现的）、平静（或没有情绪标签）、又没有风格的；没有这样的，就是池的全部。
  * references 是候选对象，按次序；返回的是新的数组（调用方可以排它，不碰 references）。
  */
 export function defaultCandidatesOf(references) {
-  if (references.length === 0) return [];
+  const real = references.filter((candidate) => candidate.synthetic !== true);
+  const candidatePool = real.length > 0 ? real : references;
+  if (candidatePool.length === 0) return [];
   const languageOf = (candidate) => candidate.tags.language ?? 'und';
   const counts = new Map();
-  for (const candidate of references) counts.set(languageOf(candidate), (counts.get(languageOf(candidate)) ?? 0) + 1);
+  for (const candidate of candidatePool) counts.set(languageOf(candidate), (counts.get(languageOf(candidate)) ?? 0) + 1);
   let dominant = null;
   for (const [language, count] of counts) if (dominant === null || count > dominant.count) dominant = { language, count };
   const plain = (candidate) => (candidate.tags.emotion === undefined || candidate.tags.emotion === 'calm') && candidate.tags.style === undefined;
-  const plainInDominant = references.filter((candidate) => plain(candidate) && languageOf(candidate) === dominant.language);
-  return plainInDominant.length > 0 ? plainInDominant : [...references];
+  const plainInDominant = candidatePool.filter((candidate) => plain(candidate) && languageOf(candidate) === dominant.language);
+  return plainInDominant.length > 0 ? plainInDominant : [...candidatePool];
 }
 
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 
 /**
- * 规则 5：默认参考段。references 是参考集的候选对象（按次序）；similarities 给了，就按平均相似度挑（见文件头）。
+ * 规则 5：默认参考段。references 是参考集的候选对象（按次序）；similarities 给了，就按平均相似度挑（见文件头）；
+ * namedDefault 是 true 时 previousDefault 是作者这次明说的（照点名），否则是上一版的（见文件头「沿用」）。
  * 返回 { defaultSegment, defaultRule, typicality?, tied? }：typicality 是量得到的每段候选的平均相似度，tied 是和最典型的那段差不多的几段（按优先级）。
  */
-function chooseDefault(references, previousDefault, similarities) {
+function chooseDefault(references, previousDefault, similarities, namedDefault) {
   if (references.length === 0) return { defaultSegment: null, defaultRule: null };
-  if (previousDefault !== undefined && references.some((candidate) => candidate.id === previousDefault)) return { defaultSegment: previousDefault, defaultRule: 'kept' };
+  const hasReal = references.some((candidate) => candidate.synthetic !== true);
+  const kept = previousDefault === undefined ? undefined : references.find((candidate) => candidate.id === previousDefault && (namedDefault || !hasReal || candidate.synthetic !== true));
+  if (kept !== undefined) return { defaultSegment: kept.id, defaultRule: 'kept' };
   const candidates = defaultCandidatesOf(references).sort(byPriority);
   if (candidates.length === 1) return { defaultSegment: candidates[0].id, defaultRule: 'only' };
   const measured = similarities === undefined ? [] : candidates.flatMap((candidate) => (similarities[candidate.id] === undefined || similarities[candidate.id].length === 0 ? [] : [{ candidate, mean: mean(similarities[candidate.id]) }]));
@@ -252,8 +266,8 @@ function readSimilarities(similarities) {
  * 挑素材。规则见文件头。
  * @param {object[]} candidates 可用的片段
  * @param {{ holdoutRatio?: number, maxHoldout?: number, maxReferences?: number, minHoldoutTokens?: number, maxSynthesisChars?: number | null,
- *           fixed?: Record<string, 'reference' | 'holdout'>, defaultSegment?: string, similarities?: Record<string, number[]> }} [options]
- *   fixed：发新版本时，已有的片段保持原来的角色（id -> 角色）；defaultSegment：上一版的默认段（或作者明说的）。作者明说的，要是这次新补的（不在 fixed 里），
+ *           fixed?: Record<string, 'reference' | 'holdout'>, defaultSegment?: string, namedDefault?: boolean, similarities?: Record<string, number[]> }} [options]
+ *   fixed：发新版本时，已有的片段保持原来的角色（id -> 角色）；defaultSegment：上一版的默认段（或作者明说的，这时 namedDefault 是 true）。作者明说的，要是这次新补的（不在 fixed 里），
  *   规则 3、4 不挑它做留出录音，参考上限也不裁它（上一版的默认段本来就在 fixed 里，不受影响）；
  *   similarities：每段候选和其余参考的说话人相似度（段名 -> 数的数组，只量参考之间的）。它只影响默认段，参考和留出录音不因此改变
  * @returns {{ references: string[], holdouts: string[], unused: { id: string, reason: 'over_limit' }[], defaultSegment: string | null,
@@ -271,7 +285,7 @@ export function chooseMaterial(candidates, options = {}) {
   const named = candidates.find((candidate) => candidate.id === settings.defaultSegment && isNew(candidate))?.id;
   const ranked = [...candidates].sort(byPriority);
   const groups = groupsOf(ranked);
-  const total = candidates.length;
+  const total = candidates.filter((candidate) => candidate.synthetic !== true).length; // 「够不够留出」只数真录音（规则 2）
 
   const wanted = plannedHoldouts(total, settings);
   const alreadyHeldOut = new Set(candidates.filter((candidate) => roleOf(candidate) === 'holdout').map((candidate) => candidate.id));
@@ -291,6 +305,6 @@ export function chooseMaterial(candidates, options = {}) {
     references: ordered.map((candidate) => candidate.id),
     holdouts: candidates.filter((candidate) => holdoutIds.has(candidate.id)).sort(byOrder).map((candidate) => candidate.id),
     unused: references.filter((candidate) => !keep.has(candidate.id)).sort(byOrder).map((candidate) => ({ id: candidate.id, reason: 'over_limit' })),
-    ...chooseDefault(ordered, settings.defaultSegment, settings.similarities),
+    ...chooseDefault(ordered, settings.defaultSegment, settings.similarities, settings.namedDefault === true),
   };
 }

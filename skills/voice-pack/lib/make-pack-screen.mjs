@@ -14,6 +14,7 @@
 //   audio_undecodable   解不了。details: { code }
 // 上一版带过来的段（item.previous）只量一遍音质（给优先级和能量的基准用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考。
 // 它们排在前面，新补的和它们字节一样就是重复（sameAs 是上一版里的那一段）。
+// 句子（长录音的句子模式，lib/make-pack-sentences.mjs）只认格式：一到三秒的句子过不了音质检查的线，也不查重；句子的音质在它合成的段上量（那一段也过这里）。
 // 发新版本查重：上一版里的段是调过响度存进包的（lib/make-pack-loudness.mjs），新补的要是同一段录音，原始字节对不上它，所以新补的再按这次的调响度设置调一遍，
 // 调出来的字节也拿去比（调的结果是确定的）；这次关了调响度，就按默认的目标比：上一版多半是默认目标调的。
 //
@@ -31,6 +32,7 @@ import { decodeFailureKind } from '../tools/audio-decode.mjs';
 import { loudnessOptions } from '../tools/loudness-normalize.mjs';
 import { adjustedClip } from './make-pack-loudness.mjs';
 import { YIELD_AFTER_MS, nowMs, turnEventLoop } from './event-loop.mjs';
+import { isSentence } from './make-pack-sentences.mjs';
 
 /** 音质检查报告里留下的那几个量（不带整个 metrics 的细枝末节），够人看、够回头查。 */
 const KEPT_METRICS = ['durationSec', 'sampleRate', 'channels', 'peakDbfs', 'silenceRatio', 'noiseFloorDbfs', 'loudnessLufs', 'snrDb'];
@@ -67,6 +69,7 @@ export async function screen(env, items, { thresholds, loudness }) {
       continue;
     }
     item.format = sniffed.format;
+    if (isSentence(item)) continue; // 句子只认格式（见文件头）
     item.sha256 = await sha256Hex(item.audio.bytes);
     if (seen.has(item.sha256) && !carried) {
       item.unused = { reason: 'duplicate_audio', details: { sameAs: seen.get(item.sha256) } };

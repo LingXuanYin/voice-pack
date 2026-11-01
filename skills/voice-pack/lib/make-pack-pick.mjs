@@ -16,7 +16,7 @@
 // 照旧往上抛；其余的一律退回按优先级挑这一次的默认段，报告的 defaultSegment.unmeasured 写明能力和错误的摘要（summarizeError），做包接着做。
 // 理由：挑最典型的一段只是让默认段更好，不是做包必须的；这一步在花钱的打标签之后，抛出去就是钱花了、包没做成。留出录音从不量，挑默认段不看它们。
 //
-// 发新版本（previous 不是 null）时，上一版的段保持原来的角色（fixed），默认参考段沿用（作者明说换的除外）。上一版带过来的段按现在的阈值可能是 reject：
+// 发新版本（previous 不是 null）时，上一版的段保持原来的角色（fixed），默认参考段沿用的条件见 lib/pack-material.mjs 的规则 5（作者这次明说的照点名）。上一版带过来的段按现在的阈值可能是 reject：
 // 它们不淘汰（lib/make-pack-screen.mjs），排优先级时按 warn 看；报告里的 quality 还是真实的结论。
 //
 // 读条目的：id、index、unused、quality、text、tags、previous、audio（相似度用）；写条目的：unused（chooseMaterial 淘汰的：reason 是 over_limit 等，details 是 {}）。
@@ -134,13 +134,15 @@ export async function pickMaterial(env, items, { previous, version, materialOpti
     tokens: tokenizeTranscript(item.text).length,
     textChars: [...item.text].length,
     plain: isPlainSpeech(item.text),
+    synthetic: item.synthetic === true,
     tags: item.tags,
   }));
   const options = {
     ...materialOptions,
-    // 发新版本：上一版的段保持原来的角色，默认参考段沿用（明说换的除外）
+    // 发新版本：上一版的段保持原来的角色；默认参考段沿用的条件见 pack-material 的规则 5（namedDefault 说明它是不是作者明说的）
     ...(previous === null ? {} : { fixed: Object.fromEntries(usable.filter((item) => item.previous !== undefined).map((item) => [item.id, item.previous])) }),
     defaultSegment: version.defaultSegment ?? previous?.manifest.reference.defaultSegment,
+    namedDefault: version.defaultSegment !== undefined, // 作者这次明说的：照点名；没说就是上一版的（规则 5）
   };
   let chosen = chooseMaterial(candidates, options);
   let unmeasured = null;

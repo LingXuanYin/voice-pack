@@ -30,12 +30,15 @@
 //               所以一句话够长就自己一段，几句短话合成一段，逗号那样的短停顿（minPauseSeconds 到 sentencePauseSeconds）只在「还没够长」时跨过去。
 //               最后一段（或者因为「再并就超长」而剩下的短段）不够 minSeconds，能并进上一段（停顿不长于 joinGapSeconds、并起来不超过 maxSeconds）就并进去。
 //   5 硬切      一个说话区间长于 maxSeconds，里面没有停顿（说话一口气不停，或者分不出停顿）：在允许的长度范围里找最安静的地方切
-//               （电平平滑 0.1 秒以后的最小值，有几个一样低取最前面的），每段不超过 maxSeconds、不短于 minSeconds。这样的边界标成 forced。
+//               （电平平滑 0.1 秒以后的最小值，有几个一样低取最前面的），每段不超过 maxSeconds、不短于 forcedMinSeconds（不给就同 minSeconds；句子模式给的是 min(REFERENCE_THRESHOLDS.duration.warnBelow, (maxSeconds - 2 * paddingSeconds) / 2)，见 lib/long-recording.mjs 文件头「句子模式」）。这样的边界标成 forced。
+//               下限的上界是 (maxSeconds - 2 * paddingSeconds) / 2，不是 maxSeconds / 2：切段时，一段剩下的长度超过 maxSeconds - 2 * paddingSeconds 才要切（留边占去的那部分不算），
+//               切开以后剩下的两截都要不短于下限，所以剩下的至少是下限的两倍。两段都够长的最大下限就是这个数（留边为零时才是 maxSeconds / 2）。
 //   6 留边      每段前后各留 paddingSeconds（0.15 秒）的静音；两段之间的停顿不够留，就各留一半；录音的头尾夹在录音里。硬切的边界没有留边（两段首尾相接）。
 //   7 零头      没够 minSeconds、也并不进上一段的：够 shortestSeconds（3 秒，音质检查的「拒绝」线）留着，标 short: true；不够就丢掉，写进 dropped（too_short）。
 //
 // ---------------------------------------------------------------- 选项（都可选，单位秒；写错名字抛 TypeError）
 //   minSeconds            一段至少多长，默认 5（REFERENCE_THRESHOLDS.duration.warnBelow）
+//   forcedMinSeconds      硬切出来的每段至少多长，不给就同 minSeconds（只管硬切，停顿处的切不看它）；给了不能超过 (maxSeconds - 2 * paddingSeconds) / 2（第 5 条）
 //   maxSeconds            一段至多多长，默认 20（…warnAbove）
 //   shortestSeconds       短于 minSeconds 的零头最短留多长，默认 3（…rejectBelow）
 //   paddingSeconds        前后各留多长的静音，默认 0.15
@@ -87,7 +90,7 @@ const round = (x, digits) => {
 
 function readOptions(options) {
   if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options 必须是对象，例如 { minSeconds: 4 }');
-  const known = [...Object.keys(DEFAULTS), 'thresholdDbfs'];
+  const known = [...Object.keys(DEFAULTS), 'forcedMinSeconds', 'thresholdDbfs'];
   for (const key of Object.keys(options)) {
     if (!known.includes(key)) throw new TypeError(`不认识的选项 ${key}（有：${known.join('、')}）`);
   }
@@ -100,6 +103,14 @@ function readOptions(options) {
   if (options.thresholdDbfs !== undefined) {
     if (typeof options.thresholdDbfs !== 'number' || !Number.isFinite(options.thresholdDbfs)) throw new TypeError(`thresholdDbfs 必须是有限数（dBFS），收到 ${JSON.stringify(options.thresholdDbfs)}`);
     merged.thresholdDbfs = options.thresholdDbfs;
+  }
+  if (options.forcedMinSeconds !== undefined && !(typeof options.forcedMinSeconds === 'number' && Number.isFinite(options.forcedMinSeconds) && options.forcedMinSeconds > 0)) {
+    throw new TypeError(`forcedMinSeconds 必须是大于 0 的有限数（秒），收到 ${JSON.stringify(options.forcedMinSeconds)}`);
+  }
+  merged.forcedMinSeconds = options.forcedMinSeconds ?? merged.minSeconds;
+  const forcedBound = (merged.maxSeconds - 2 * merged.paddingSeconds) / 2; // 第 5 条：两段都够长的最大下限
+  if (options.forcedMinSeconds !== undefined && merged.forcedMinSeconds > forcedBound) {
+    throw new TypeError(`forcedMinSeconds（${merged.forcedMinSeconds}）不能超过 (maxSeconds - 2 * paddingSeconds) 的一半（${forcedBound}）：超长的说话区间切不成每段都够长的`);
   }
   if (!(merged.minSeconds > 0)) throw new TypeError('minSeconds 必须大于 0');
   if (!(merged.maxSeconds > merged.minSeconds)) throw new TypeError(`maxSeconds（${merged.maxSeconds}）必须大于 minSeconds（${merged.minSeconds}）`);
@@ -190,8 +201,8 @@ function plan({ regions, levels, activeFrames, frames, rate, frameSamples, o }) 
   const want = Math.max(1, Math.ceil((o.minSeconds - 2 * o.paddingSeconds) / fs)); // 至少多少帧，才算够长
   const prefix = prefixOf(levels);
 
-  // 5 硬切：太长的区间在最安静的地方切开。硬切的边界不留边，所以这里的上下限按整个 minSeconds、maxSeconds 算（区间的头尾还要留边，所以第一段少算一份）
-  const forcedMin = Math.max(1, Math.ceil(o.minSeconds / fs));
+  // 5 硬切：太长的区间在最安静的地方切开。硬切的边界不留边，所以这里的上下限按整个 forcedMinSeconds、maxSeconds 算（区间的头尾还要留边，所以第一段少算一份）
+  const forcedMin = Math.max(1, Math.ceil(o.forcedMinSeconds / fs));
   let forcedCuts = 0;
   const pieces = [];
   for (const region of regions) {

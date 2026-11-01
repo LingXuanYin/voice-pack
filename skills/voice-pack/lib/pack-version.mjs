@@ -61,7 +61,7 @@ const previousInvalid = (reason, message, details = {}, cause) => new VoicePackE
  * @param {object} env 注入的运行环境：上一版有外部资源时，用它的 fetch 取回来核对
  * @param {Map<string, Uint8Array>} files 上一版角色部分的文件集（路径相对角色部分的目录；带着 protocol/、voice-pack/ 也行，不用）
  * @returns {Promise<{ manifest: object, id: string, version: string, name: string, guidance: string | null,
- *   segments: { id: string, role: 'reference' | 'holdout', audio: { bytes: Uint8Array, mimeType: string }, format: string, path: string, text: string, tags: object, externalUrl: string | null }[],
+ *   segments: { id: string, role: 'reference' | 'holdout', audio: { bytes: Uint8Array, mimeType: string }, format: string, path: string, text: string, tags: object, externalUrl: string | null, synthetic: boolean }[],
  *   carried: Map<string, Uint8Array> }>} segments 是先参考后留出录音，各按清单里的次序；carried 是要跟着走的其他文件
  */
 export async function readPreviousVersion(env, files) {
@@ -86,7 +86,7 @@ export async function readPreviousVersion(env, files) {
     const sniffed = sniffAudio(bytes);
     if (sniffed === null) throw previousInvalid('audio_unrecognized', `上一版的 ${entry.audio} 认不出是什么音频`, { id: entry.id, path: entry.audio });
     audioPaths.add(entry.audio);
-    segments.push({ id: entry.id, role, audio: { bytes, mimeType: MIME_OF_FORMAT[sniffed.format] }, format: sniffed.format, path: entry.audio, text: entry.text, tags: entry.tags, externalUrl: externals.get(entry.audio) ?? null });
+    segments.push({ id: entry.id, role, audio: { bytes, mimeType: MIME_OF_FORMAT[sniffed.format] }, format: sniffed.format, path: entry.audio, text: entry.text, tags: entry.tags, externalUrl: externals.get(entry.audio) ?? null, synthetic: entry.synthetic === true });
   }
   const carried = new Map();
   for (const [path, data] of files) {

@@ -72,10 +72,9 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
   const blind = view.overall.blindListening;
   if (blind.status === 'measured') {
     lines.push(`  有效 ${blind.trials} 条，${voidedWords(blind)}${blind.notHeard > 0 ? `，没听成 ${blind.notHeard} 条` : ''}；每条问两遍，共 ${blind.asks} 次`);
-    lines.push(`  认出合成的那一段：${blind.identified.count}/${blind.identified.of} = ${fixed2(blind.identified.rate)}${blind.identified.isScore ? '' : '（不是分数，怎么读见 lib/fidelity.mjs 文件头「怎么读这份报告」）'}`);
     lines.push(`  判成同一个人：${blind.sameSpeaker.count}/${blind.sameSpeaker.of} = ${fixed2(blind.sameSpeaker.rate)}（${blind.trials} 条有效：${blind.sameSpeaker.label}）`);
     if (view.designSource) lines.push('  设计来源：「判成同一个人」的比例只列次数和条数，三档读法不适用，不读成结论（见 lib/fidelity.mjs 文件头第 10 点）');
-    lines.push(`  换序后指的还是同一段：${blind.consistent.count}/${blind.consistent.of} = ${fixed2(blind.consistent.rate)}`);
+    lines.push(`  两问判断相同（换序后仍说同一人或都说不是）：${blind.consistent.count}/${blind.consistent.of} = ${fixed2(blind.consistent.rate)}（不是分数，怎么读见 lib/fidelity.mjs 文件头「怎么读这份报告」）`);
   } else if (blind.status === 'voided') {
     lines.push(`  全部作废（${blind.voided} 条${blind.blocked > 0 ? `，${blockedWords(blind)}` : ''}），没有比例可报`);
   } else if (blind.status === 'not_heard') {
@@ -85,7 +84,7 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
   }
   for (const item of view.items) {
     const one = item.blindListening;
-    if (one?.status === 'measured') lines.push(`    ${item.id}：认出 ${one.identified}/${one.asks}，判成同一人 ${one.sameSpeaker}/${one.asks}，换序后指的是同一段：${one.consistent ? '是' : '否'}`);
+    if (one?.status === 'measured') lines.push(`    ${item.id}：判成同一人 ${one.sameSpeaker}/${one.asks}，两问判断相同：${one.consistent ? '是' : '否'}`);
     else if (one?.status === 'voided') lines.push(`    ${item.id}：作废（${one.error.code}）`);
     else if (one?.status === 'not_heard') lines.push(`    ${item.id}：没听成，${reasonOf(one.httpStatus)}`);
   }
@@ -112,7 +111,8 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
 
   if (view.differences.length > 0) {
     lines.push('', '模型说出来的区别（原话）');
-    lines.push(...view.differences.slice(0, 20).map((entry) => `  ${entry.id} 第 ${entry.order} 次：${entry.text}`));
+    // 早先存下的报告没有分开记哪里像（whereAlike 是 null），照实写成没分开记，原话照样在哪里不像那边
+    lines.push(...view.differences.slice(0, 20).map((entry) => `  ${entry.id} 第 ${entry.order} 次：哪里像：${entry.whereAlike ?? '（旧报告没有分开记）'}；哪里不像：${entry.whereUnlike ?? '（旧报告没有分开记）'}`));
     if (view.differences.length > 20) lines.push(`  （还有 ${view.differences.length - 20} 条，用 --json 看全部）`);
   }
 
@@ -134,7 +134,7 @@ export function renderFidelityReport(report, { redone = null, redoHint = null } 
       let sounds = `盲听${UNMEASURABLE_LABEL}`;
       if (heard.status === 'measured') {
         const counted = `${heard.trials} 条有效${heard.notHeard > 0 ? `、${heard.notHeard} 条没听成` : ''}`;
-        sounds = `认出合成 ${fixed2(heard.identified.rate)}，判成同一人 ${fixed2(heard.sameSpeaker.rate)}（${counted}：${heard.sameSpeaker.label}）`;
+        sounds = `判成同一人 ${fixed2(heard.sameSpeaker.rate)}（${counted}：${heard.sameSpeaker.label}）`;
       } else if (heard.status === 'voided') {
         sounds = `盲听全作废（${heard.voided} 条${heard.blocked > 0 ? `，${blockedWords(heard)}` : ''}）`;
       } else if (heard.status === 'not_heard') {

@@ -13,13 +13,13 @@
 //                          [--dry-run] [--no-evaluate] [--no-loudness] [--no-limiter] [--no-holdout] [--seed <整数>] [--max-error-rate <数>] [--concurrency <1-8>] [--save-evaluation <新目录>] [--share-file <分享文件>] [--json]
 //
 // 素材（片段列表）：
-//   目录：里面的每个音频文件是一段。同名的 <名字>.json 记这一段的 { id?, text?, labels?, source?, externalUrl? }（字段的意思见 lib/make-pack.mjs 文件头「输入」）；
+//   目录：里面的每个音频文件是一段。同名的 <名字>.json 记这一段的 { id?, text?, labels?, source?, externalUrl?, synthetic? }（字段的意思见 lib/make-pack.mjs 文件头「输入」）；
 //     没有 .json 但有同名的 <名字>.txt，里面的文字就是这段的逐字文本。两样都没有就是「没有文本」（环境有转写就转写，没有这一段用不上）。
 //     段名：.json 里写了 id 就用它，没写就用文件名（小写字母、数字、连字符、下划线；别的字符换成连字符，换不出合格的名字就让库按次序起 seg-001……）。按文件名排序。
-//   素材.json：{ "segments": [ { "id"?, "audio": "audio/a.wav", "text"?, "labels"?, "source"?, "externalUrl"? } ] }（也可以直接是这个数组）；audio 是路径，相对这个 JSON 所在的目录。
+//   素材.json：{ "segments": [ { "id"?, "audio": "audio/a.wav", "text"?, "labels"?, "source"?, "externalUrl"?, "synthetic"? } ] }（也可以直接是这个数组）；audio 是路径，相对这个 JSON 所在的目录。
 //     前面几步（分离、切段、转写）留下的说明可以写在 { "notes": [ { "code", "message", "details"? } ] } 里，原样进报告。
 //   发新版本时可以不给素材（只改指引、只换参考也行）。
-//   长录音和设计试听（--recording、--audition）：不用先自己切。命令把每段录音（分离）、切成 5–20 秒的段、转写，交给 makePack；切段的规矩在 lib/long-recording.mjs 的文件头。
+//   长录音和设计试听（--recording、--audition）：不用先自己切。命令把每段录音（分离）切开、转写，交给 makePack：长录音切成句子，makePack 每句听一次情绪，再按情绪并成 5–20 秒的段（lib/make-pack-sentences.mjs）；设计试听直接切成 5–20 秒的段。切段的规矩在 lib/long-recording.mjs 的文件头。
 //     --recording <文件|目录>  一个音频文件，或一个目录（里面每个音频文件是一段长录音，按文件名排）。环境有 audio-source-separation 就先分离出人声（--no-separate 不分离：输入已经是干净的人声）；
 //                              环境有 voice-activity-detection 就用它给的说话区间切，没有按能量切。段名是「录音名-三位序号」（talk.wav → talk-001……），名字转成同一个前缀的第二个起加 -2、-3。
 //     --audition <文件|目录>   设计、默认音色、融合出来的试听（锁定的那一段）：同样切开、转写，一部分当参考、一部分当留出录音（makePack 照规则挑），不分离（合成出来的本来就是干净的人声）。
@@ -177,7 +177,7 @@ function readDirectorySegments(ctx, directory) {
     let meta = {};
     if (fs.existsSync(sidecar)) {
       meta = readJson(ctx, sidecar, name);
-      if (!isPlainObject(meta)) throw invalid(name, `${sidecar} 必须是一个对象：{ id?, text?, labels?, source?, externalUrl? }`);
+      if (!isPlainObject(meta)) throw invalid(name, `${sidecar} 必须是一个对象：{ id?, text?, labels?, source?, externalUrl?, synthetic? }`);
     }
     if (meta.text === undefined && fs.existsSync(transcript)) meta = { ...meta, text: readText(ctx, transcript) };
     return { ...(meta.id === undefined ? (slugOf(stem) === undefined ? {} : { id: slugOf(stem) }) : {}), ...meta, audio };
@@ -192,7 +192,7 @@ function readListSegments(ctx, file) {
   const root = path.dirname(file);
   const segments = list.map((raw, index) => {
     const field = `segments[${index}]`;
-    if (!isPlainObject(raw)) throw invalid(field, '必须是对象 { id?, audio, text?, labels?, source?, externalUrl? }');
+    if (!isPlainObject(raw)) throw invalid(field, '必须是对象 { id?, audio, text?, labels?, source?, externalUrl?, synthetic? }');
     if (typeof raw.audio !== 'string' || raw.audio === '') throw invalid(`${field}.audio`, '必须是音频文件的路径（相对素材.json 所在的目录）');
     return { ...raw, audio: readAudioFile(ctx, path.resolve(root, raw.audio)) };
   });
@@ -258,7 +258,8 @@ async function cutRecordings(env, recordings, { separate, dryRun }) {
   const cutEnv = dryRun ? { ...env, capabilities: {} } : env;
   const cut = [];
   for (const recording of recordings) {
-    const prepared = await prepareLongRecording(cutEnv, { audio: recording.audio, name: recording.name }, { transcribe: false, separate: separate && recording.kind === 'recording', idPrefix: recording.idPrefix });
+    // 长录音（--recording）切成句子，每句听一次，之后在做包里按情绪并成段（lib/make-pack-sentences.mjs）；设计试听照旧切成段
+    const prepared = await prepareLongRecording(cutEnv, { audio: recording.audio, name: recording.name }, { transcribe: false, separate: separate && recording.kind === 'recording', sentences: recording.kind === 'recording', idPrefix: recording.idPrefix });
     cut.push({ recording, ...prepared });
   }
   return cut;
@@ -275,7 +276,7 @@ function cutNotes(cut, { dryRun, designSourceGiven }) {
       notes.push(several ? { ...note, message: `${entry.recording.name}：${note.message}` } : note);
     }
   }
-  if (dryRun && cut.length > 0) notes.push({ code: 'dry_run_energy_cut', message: 'dry-run 没调分离和 VAD，段数是按能量切的结果；真做时环境有 VAD 就用它切，段数可能不同', details: {} });
+  if (dryRun && cut.length > 0) notes.push({ code: 'dry_run_energy_cut', message: 'dry-run 没调分离和 VAD，切出来的数是按能量切的结果；真做时环境有 VAD 就用它切，数可能不同', details: {} });
   if (!designSourceGiven && cut.some((entry) => entry.recording.kind === 'audition')) {
     notes.push({ code: 'design_source_missing', message: '这是设计（默认音色、融合）出来的试听，做包时要写设计来源（--design-source <文件.json>：描述、模型、日期）；这次没给，包里没有设计来源', details: {} });
   }
@@ -287,7 +288,8 @@ function describeCut({ recording, report }) {
   const separation = report.separation.status === 'done' ? `分离做了${report.separation.model === undefined ? '' : `（${report.separation.model}）`}` : '没分离';
   const method = report.cutting.method === 'voice-activity-detection' ? `按 VAD${report.cutting.model === undefined ? '' : `（${report.cutting.model}）`}` : '按能量';
   const dropped = report.cutting.dropped.length > 0 ? `，丢掉 ${report.cutting.dropped.length} 块零头` : '';
-  return `${recording.kind === 'audition' ? '设计试听' : '长录音'} ${recording.name}：${report.recording.durationSec} 秒，${separation}，${method}切成 ${report.cutting.segments} 段${dropped}`;
+  const unit = recording.kind === 'recording' ? '句' : '段'; // 长录音切成句子（见 cutRecordings）
+  return `${recording.kind === 'audition' ? '设计试听' : '长录音'} ${recording.name}：${report.recording.durationSec} 秒，${separation}，${method}切成 ${report.cutting.segments} ${unit}${dropped}`;
 }
 
 /** 读一个目录（上一版、协议核心、基础部分）成文件集。有问题（符号链接、特殊文件、超过上限）就不用。 */
@@ -537,7 +539,7 @@ function render(result, { output, evaluation, share, adapterArguments, cut, dupl
   }
   lines.push(...cut.map(describeCut));
   const { counts } = report;
-  lines.push(`素材：输入 ${counts.input} 段${counts.carried === undefined ? '' : `，上一版带来 ${counts.carried} 段，去掉 ${counts.dropped} 段`}；参考 ${counts.references} 段，留出录音 ${counts.holdouts} 条，没用上 ${counts.unused} 段；默认参考段 ${manifest.reference.defaultSegment}${report.defaultSegment === undefined ? '' : describeDefaultRule(report.defaultSegment)}`);
+  lines.push(`素材：输入 ${counts.input} 段${counts.carried === undefined ? '' : `，上一版带来 ${counts.carried} 段，去掉 ${counts.dropped} 段`}；参考 ${counts.references} 段，留出录音 ${counts.holdouts} 条，真录音 ${counts.realRecordings} 段，没用上 ${counts.unused} 段；默认参考段 ${manifest.reference.defaultSegment}${report.defaultSegment === undefined ? '' : describeDefaultRule(report.defaultSegment)}`);
   if (duplicateCheck !== null) lines.push(...describeDuplicateCheck(duplicateCheck));
   for (const note of report.notes) lines.push(`注意：${note.message}`);
   lines.push(...describeSteps(report.steps));

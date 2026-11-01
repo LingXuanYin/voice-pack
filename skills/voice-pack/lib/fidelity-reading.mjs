@@ -15,6 +15,18 @@ import { planRedo } from './fidelity.mjs';
  */
 export const READING = Object.freeze({ minTrials: 5, same: 0.7, notSame: 0.3 });
 
+/**
+ * 问法的标定结果：这一版问法在已知答案的样本上是不是分得开（2026-11-01 的 K 组，两遍）。
+ * 分得开才能用三档读「判成同一人的比例」；分不开就只列次数和条数，不下结论（读法第 1 点）。
+ * failedCriteria 是没过的判据的编号：Q1 同一人的问判成同一人的比例 ≥ 0.7；Q2 不同人的问判成同一人的比例 ≤ 0.3；Q3 每个试次得分的 AUC ≥ 0.80；Q4 两遍一致的问 ≥ 0.8；Q5 两问换序一致（只报，不卡）。换了问法、换了听者，要重新标定，这里跟着改。
+ */
+export const QUESTION_CALIBRATION = Object.freeze({
+  separable: false,
+  date: '2026-11-01',
+  record: '2026-11-01 的 K 组：已知答案的真录音（同一人 12 对、同语言同性别的不同人 12 对），每对问两次，跑两遍',
+  failedCriteria: Object.freeze(['Q2', 'Q3']),
+});
+
 /** 判成同一人的比例落在哪一档，每一档的名字（中文，命令行直接用；app 按档的键翻译）。 */
 export const SAME_SPEAKER_TIERS = Object.freeze({
   not_enough: '条数不够，不下结论',
@@ -22,6 +34,7 @@ export const SAME_SPEAKER_TIERS = Object.freeze({
   not_same: '判成不是同一人',
   unsure: '说不准',
   not_applicable: '三档读法不适用',
+  not_separable: '问法没有分得开，只列次数和条数，不下结论',
 });
 
 /**
@@ -37,11 +50,15 @@ export const READING_NOTES = Object.freeze({
     point: 1,
     zh: '「判成同一人」的比例，一组留出录音一起读：有效的不到 {minTrials} 条，只列比例和条数，不下结论；比例 ≥ {same} 读作「判成同一人」，≤ {notSame} 读作「判成不是同一人」，之间读作「说不准」。显示时带上次数和条数。',
   },
+  not_separable: {
+    point: 1,
+    zh: '问法没有分得开（2026-11-01 的标定：已知答案的样本上，不同人的录音判成同一人的比例超过 {notSame}，两遍都是）：「判成同一人」的比例只列次数和条数，不读成「判成同一人」「判成不是同一人」「说不准」，也不下结论。三档的线（{same}、{notSame}；有效的不到 {minTrials} 条不下结论）留着，问法分得开的标定之后再用。',
+  },
   same_speaker_meaning: { point: 1, zh: '「判成同一人」是「没发现不是本人」，不是「证明是本人」：声音很接近的两个人，模型也会判成同一人，说话人相似度也分不开。' },
   unsure: { point: 1, zh: '「说不准」不当成好，也不当成坏，和说话人相似度的比值、模型说出来的区别（原话）一起看。' },
-  identified_not_score: { point: 2, zh: '认出合成的比例不是分数：标定里模型指对合成那一段的次数没有高于随机，所以 0.5 左右既可能是克隆得好，也可能只是模型分辨不出来，这个数分不开这两种。' },
-  consistent_not_score: { point: 3, zh: '换序后指的还是同一段，只说明「认出合成的」那个数有多少是跟着声音答的、多少是跟着位置答的，不当分数读，低也不扣分。' },
-  differences_verbatim: { point: 4, zh: '模型说出来的区别是原话，给人看，不计数、不打分；「合成感」「机械」这类词，模型对两段真录音也常写，不能当成被听出来的证据。' },
+  identified_gone: { point: 2, zh: '报告里没有「认出合成的比例」：问法不问哪段是合成的（只问是不是同一个人，哪里像、哪里不像），所以这个数不算。' },
+  consistent_not_score: { point: 3, zh: '换序后两问的「判成同一人」相同的比例，只说明判断是跟着声音走还是跟着位置走（两问都说是、或都说不是，才算相同），不当分数读，低也不扣分。' },
+  differences_verbatim: { point: 4, zh: '模型说出来的区别是原话，给人看，不计数、不打分；「合成感」「机械」这类词，模型对两段真录音也会写，不能当成被听出来的证据。' },
   voided_separate: { point: 5, zh: '作废的盲听（模型的转写和已知文本对不上，说明它没听到）单独报，不进以上任何比例。' },
   not_heard_separate: {
     point: 6,
@@ -65,17 +82,19 @@ export const fillReading = (text) => Object.entries(READING).reduce((out, [name,
 
 /**
  * 读法第 1 点：一组留出录音的「判成同一人的比例」读成哪一档。
+ * 问法没有分得开（QUESTION_CALIBRATION.separable 不是 true）时不分档：档是 not_separable，只列次数和条数，不下结论。
  * 设计来源的包（读法第 10 点）不读成档：基线是设计声音自己的一致程度，不是像不像某个真人，三档对它不适用，档是 not_applicable，不下结论。
  * @param {{ trials: number, rate: number }} one trials 是有效的条数（不含作废的、没听成的），rate 是判成同一人的比例
- * @param {{ designSource?: boolean }} [options] designSource 是 true 时不分档
- * @returns {{ tier: 'not_enough' | 'same' | 'not_same' | 'unsure' | 'not_applicable', label: string, canConclude: boolean }}
+ * @param {{ designSource?: boolean, separable?: boolean }} [options] designSource 是 true 时不分档；separable 默认用 QUESTION_CALIBRATION 的结果
+ * @returns {{ tier: 'not_enough' | 'same' | 'not_same' | 'unsure' | 'not_applicable' | 'not_separable', label: string, canConclude: boolean }}
  */
-export function readSameSpeaker({ trials, rate }, { designSource = false } = {}) {
+export function readSameSpeaker({ trials, rate }, { designSource = false, separable = QUESTION_CALIBRATION.separable } = {}) {
   if (trials < READING.minTrials) {
     const tier = 'not_enough';
     return { tier, label: SAME_SPEAKER_TIERS[tier], canConclude: false };
   }
   if (designSource) return { tier: 'not_applicable', label: SAME_SPEAKER_TIERS.not_applicable, canConclude: false };
+  if (separable !== true) return { tier: 'not_separable', label: SAME_SPEAKER_TIERS.not_separable, canConclude: false };
   const tier = rate >= READING.same ? 'same' : rate <= READING.notSame ? 'not_same' : 'unsure';
   return { tier, label: SAME_SPEAKER_TIERS[tier], canConclude: true };
 }
@@ -99,12 +118,11 @@ const headOf = ({ status, label, reason, capability, message }) => ({
  * 作废里被模型的服务商拦下的另外数（blocked，是 voided 的一部分；早先存下的报告没有这个数，按 0 算）。
  * 一条有效的都没有（全部作废、全部没听成、量不了）时没有比例可读，三个结果都是 null。
  *   sameSpeaker  判成同一人：读法第 1 点，读成一档（tier、label、canConclude）。这是盲听里唯一能读的
- *   identified   认出合成的：读法第 2 点，不是分数（isScore: false）
- *   consistent   换序后指的还是同一段：读法第 3 点，不是分数（isScore: false）
+ *   consistent   两问「判成同一人」相同：读法第 3 点，不是分数（isScore: false）。认出合成的（读法第 2 点）问法里没有，报告里不列
  */
 function blindListeningView(blind, { designSource = false } = {}) {
   const head = headOf(blind);
-  const none = { sameSpeaker: null, identified: null, consistent: null };
+  const none = { sameSpeaker: null, consistent: null };
   if (blind.status === 'unmeasurable') return { ...head, ...none };
   const counts = { trials: blind.trials, voided: blind.voided, blocked: blind.blocked ?? 0, notHeard: blind.notHeard, asks: blind.asks };
   if (blind.status !== 'measured') return { ...head, ...counts, ...none };
@@ -112,14 +130,24 @@ function blindListeningView(blind, { designSource = false } = {}) {
     ...head,
     ...counts,
     sameSpeaker: { count: blind.sameSpeaker, of: blind.asks, rate: blind.sameSpeakerRate, ...readSameSpeaker({ trials: blind.trials, rate: blind.sameSpeakerRate }, { designSource }) },
-    identified: { count: blind.identified, of: blind.asks, rate: blind.identifiedRate, isScore: false },
     consistent: { count: blind.consistent, of: blind.trials, rate: blind.consistentRate, isScore: false },
   };
 }
 
-/** 模型说出来的区别（读法第 4 点）：原话，按留出录音的先后、每条按问的先后，一个字不改。给人看，不计数、不打分。 */
+/**
+ * 一问里模型说的哪里像、哪里不像（原话，一字不改）。问法分成哪里像、哪里不像之前存下的报告，每问只有一段 differences，那是模型说的区别的原话：照原样放在「哪里不像」那一边，
+ * 「哪里像」为 null（那时没有分开问）。
+ */
+const whereOf = (ask) =>
+  ask.whereAlike === undefined && ask.whereUnlike === undefined && ask.differences !== undefined
+    ? { whereAlike: null, whereUnlike: ask.differences }
+    : { whereAlike: ask.whereAlike ?? null, whereUnlike: ask.whereUnlike ?? null };
+
+/** 模型说出来的哪里像、哪里不像（读法第 4 点）：原话，按留出录音的先后、每条按问的先后，一个字不改。给人看，不计数、不打分。 */
 const differencesOf = (items) =>
-  items.flatMap((item) => (item.blindListening?.status === 'measured' ? item.blindListening.asks.map((ask) => ({ id: item.id, order: ask.order, text: ask.differences })) : []));
+  items.flatMap((item) =>
+    item.blindListening?.status === 'measured' ? item.blindListening.asks.map((ask) => ({ id: item.id, order: ask.order, ...whereOf(ask) })) : [],
+  );
 
 /**
  * 一组（总体或某个标签取值）的说话人相似度：量到几条、没听成几条、量不到几条，平均相似度和比值。
@@ -180,10 +208,10 @@ function speakerItemView(one) {
   return { status: 'not_heard', label: one.label, attempts: one.attempts, httpStatus: statusOf(one.error), error: errorOf(one.error) };
 }
 
-/** 一条留出录音的盲听：量到了给两次的结果（认出合成、判成同一人各几次，换序后指的还是不是同一段）；作废、没听成写明错误。 */
+/** 一条留出录音的盲听：量到了给两次的结果（判成同一人几次，两问判断是否相同）；作废、没听成写明错误。 */
 function blindItemView(one) {
   if (one === null || one === undefined) return null;
-  if (one.status === 'measured') return { status: 'measured', asks: one.asks.length, identified: one.identified, sameSpeaker: one.sameSpeaker, consistent: one.consistent };
+  if (one.status === 'measured') return { status: 'measured', asks: one.asks.length, sameSpeaker: one.sameSpeaker, consistent: one.consistent };
   if (one.status === 'voided') return { status: 'voided', label: one.label, error: errorOf(one.error) };
   return { status: 'not_heard', label: one.label, attempts: one.attempts, httpStatus: statusOf(one.error), error: errorOf(one.error) };
 }
@@ -214,14 +242,16 @@ function listsOf(report, items) {
  */
 function notesOf({ overall, groups, baseline, differences, voided, notHeard, noSpeech, designSource }) {
   const blindViews = [overall, ...groups].map((one) => one.blindListening).filter((one) => one.status === 'measured');
-  // 设计来源的包：三档读法（点 1 的三条说明）和「说不准」都不适用；点 10 适用
-  const tiered = !designSource && blindViews.length > 0;
+  // 设计来源的包：三档读法（点 1 的三条说明）和「说不准」都不适用；点 10 适用。问法没分得开的，点 1 只放 not_separable 那一条
+  const shown = !designSource && blindViews.length > 0;
+  const separable = QUESTION_CALIBRATION.separable === true;
   const applies = {
     no_threshold: true,
-    same_speaker_tiers: tiered,
-    same_speaker_meaning: tiered,
-    unsure: !designSource && blindViews.some((one) => one.sameSpeaker.tier === 'unsure'),
-    identified_not_score: blindViews.length > 0,
+    same_speaker_tiers: shown && separable,
+    not_separable: shown && !separable,
+    same_speaker_meaning: shown,
+    unsure: shown && separable && blindViews.some((one) => one.sameSpeaker.tier === 'unsure'),
+    identified_gone: blindViews.length > 0,
     consistent_not_score: blindViews.length > 0,
     differences_verbatim: differences.length > 0,
     voided_separate: voided.length > 0,

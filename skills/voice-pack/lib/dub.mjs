@@ -57,7 +57,7 @@
 //      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
 //      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
-//      返回值里说明没传和原因。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
+//      返回值里说明没传和原因；plan.guidance.sent 写明交出去的那段指引这次有没有传（只有每句自己的说明传了，不算）。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
 //      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
 //      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一句分段时，一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在第一段带，情绪、风格每段都带。
 //      返回值的 units[i].cues 写明没传和原因（style_cues_missing、nothing_to_send）。
@@ -554,6 +554,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
   const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
   let units = [];
   let styles = []; // 每一段要传给模型的：{ instructions（style-instruction 的说明全文，或 null）, cues（style-cues 的，或 null） }，跟着段走
+  const carried = new Set(); // 带着指引正文（演法一节，或旧式整段）交出去的段属于哪个包：plan.guidance.sent 用
   for (const line of lines) {
     const owner = owners[line.index];
     const mine = perPack.get(owner);
@@ -572,6 +573,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       const last = partIndex === parts.length - 1;
       const partCues = cuesOf(line, partIndex + 1);
       const cueNames = partCues.emotion !== null || partCues.style !== null;
+      if (styled && mine.guidance.text) carried.add(owner);
       styles.push({ instructions: styled ? instructions : null, cues: cued && cueNames ? partCues : null });
       units.push({
         index: units.length,
@@ -656,7 +658,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     units,
     judge: combineJudges(packs.map((pack) => perPack.get(pack).judge)),
     lexicon: { applied: [...applied.values()], unapplied: many ? uniqueJson(lexiconUnapplied) : lexiconUnapplied, ...(usedPhonemes.size > 0 ? { phonemes: [...usedPhonemes.values()] } : {}) },
-    guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, truncated: perPack.get(pack).guidance.truncated }))),
+    guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, truncated: perPack.get(pack).guidance.truncated, sent: carried.has(pack) }))),
     enhancers: emptyEnhancers(mergedOffers(packs.map((pack) => perPack.get(pack).offers))),
     scripts: packs.flatMap((pack) => perPack.get(pack).scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS], ...(many ? { pack: pack.manifest.id } : {}) }))),
     missingRuntimes: inUse.flatMap((pack) => missingScriptRuntimes(envFor(env, settings, pack), perPack.get(pack).scripts, FEATURE).map((item) => (many ? { ...item, pack: pack.manifest.id } : item))),
@@ -838,14 +840,15 @@ function uniqueJson(list) {
 }
 
 /**
- * 配音指引的概况（plan.guidance）。entries 是每个包一项 { rawGuidance, truncated }：一个包时就是原来的 { present, chars, truncated }；
- * 几个包时 present 和 truncated 取任一个有的，chars 相加。
+ * 配音指引的概况（plan.guidance）。entries 是每个包一项 { rawGuidance, truncated, sent }：一个包时就是 { present, chars, truncated, sent }；
+ * 几个包时 present、truncated、sent 取任一个有的，chars 相加。sent：交出去的那段指引（演法一节，或旧式整段）有没有跟着某一句的 instructions 传出去。
  */
 function guidanceSummary(entries) {
   return {
     present: entries.some((entry) => entry.rawGuidance !== null && entry.rawGuidance !== undefined),
     chars: entries.reduce((sum, entry) => sum + (entry.rawGuidance ? count(entry.rawGuidance) : 0), 0),
     truncated: entries.some((entry) => entry.truncated),
+    sent: entries.some((entry) => entry.sent),
   };
 }
 

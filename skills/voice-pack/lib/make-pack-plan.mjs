@@ -45,7 +45,8 @@ export function buildPlan(env, items, settings, materialOptions) {
   const taggable = usable.filter((item) => item.labels.emotion === undefined || item.labels.style === undefined);
   // 发新版本：上一版的留出录音都带着，评测要把它们都重新合成一遍，所以最少是它们的条数
   const carriedHoldouts = candidates.filter((item) => item.previous === 'holdout').length;
-  const holdouts = Math.max(plannedHoldouts(usable.length, materialOptions), carriedHoldouts);
+  // 留出录音只从真录音里挑（挑素材的规则 2 只数真录音，见 lib/pack-material.mjs），所以估计也只数真录音
+  const holdouts = Math.max(plannedHoldouts(usable.filter((item) => item.synthetic !== true).length, materialOptions), carriedHoldouts);
   const evaluating = settings.evaluate !== false && holdouts > 0;
   // 留出录音里能合成的（文字够字数下限的，见文件头；没有下限就是全部）：合成、盲听、相似度只对这几条做
   const minChars = settings.minChars ?? null;

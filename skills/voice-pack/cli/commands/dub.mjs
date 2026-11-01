@@ -127,9 +127,13 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
     lines.push(`读音词表：${applied === '' ? '这份台本里没有用到' : `换了 ${applied}`}${marked === '' ? '' : `；标了音素 ${marked}`}${unapplied === '' ? '' : `；做不到的：${unapplied}`}`);
   }
   if (report.guidance.present) {
-    const sent = report.units.some((unit) => unit.instructions.sent);
+    // 说的是指引的演法（或旧式整段）有没有交给模型。每句自己的说明（舞台提示等）也可能随句传了，那是另一回事，不说成指引交了
+    const perLine = report.units.some((unit) => unit.instructions.sent);
+    const fate = report.guidance.sent
+      ? '随每句通过 instructions 传给了模型'
+      : `演法没有交给模型（指引里没有演法，或演法是空的）${perLine ? '，只有每句自己的说明（舞台提示等）随句传了' : '，这次没有可传的内容'}`;
     lines.push(report.capabilities['style-instruction']
-      ? `配音指引：环境有 style-instruction，${sent ? '随每句通过 instructions 传给了模型' : '这次没有可传的内容'}${report.guidance.truncated ? '（过长，截短了）' : ''}`
+      ? `配音指引：环境有 style-instruction，${fate}${report.guidance.truncated ? '（过长，截短了）' : ''}`
       : '配音指引：环境没有 style-instruction，没传 instructions（照指引写的话、选的参考，仍然生效）');
   }
   if (report.capabilities['style-cues']) {

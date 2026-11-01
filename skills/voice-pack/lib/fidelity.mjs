@@ -3,11 +3,11 @@
 // 还原度（流程层）：用两种方法量「用音色包生成的声音像不像角色本人」，按参考集的标签分组出报告。
 //
 //   说话人相似度  生成的录音和对应的留出录音之间的相似度，除以真人基线。
-//                真人基线 = 同一个评测模型下，同一个人的真录音（参考和留出录音）两两之间相似度的平均。
+//                真人基线 = 同一个评测模型下，同一个人的真录音（参考和留出录音，标了 synthetic 的克隆不算）两两之间相似度的平均。
 //   盲听         把真人录音和生成的录音打乱成 X、Y 交给能听音频的模型，不告诉它哪段是真人；
 //                先让它把两段话开头的 OPENING_WORDS 个词写出来，和已知文本的开头对不上就作废（只比开头：要整段原话，现成文章会被模型的服务商拦下，见 OPENING_WORDS）；
-//                再问三件事（是不是同一个人、哪段是合成的、有什么区别）；
-//                换序再问一遍：同一对录音 X、Y 对调再问，模型偏向某个位置，也不会把「认出合成的比例」推向一边。
+//                再问两件事（是不是同一个人；哪里像、哪里不像）；
+//                换序再问一遍：同一对录音 X、Y 对调再问，模型偏向某个位置，也不会把「判成同一人的比例」推向一边。
 //                这个比例能不能当分数，见下面「怎么读这份报告」。
 //
 // 需要的所需能力（调用签名都写在 vocab/capability-signatures.md，这里只标注用到哪几项）：
@@ -23,7 +23,7 @@
 //   （这一组的说话人相似度一条也没量出来，有没听成的）、{ status: 'no_speech', label: '量不到', n: 0, notHeard: 0, noSpeech }
 //   （这一组的每一条都量不到）或「量不了」；baseline 是 { status: 'measured', value, pairs, excluded?, model? }，excluded 是没用上的真录音
 //   （嵌不出声纹的，见读法第 9 点）：[{ id, role: 'reference' | 'holdout', error }]，没有这样的就没有这一项；
-//   blindListening 是 { status: 'measured', trials, voided, blocked, notHeard, asks, identifiedRate, sameSpeakerRate, consistentRate, differences, ... }、
+//   blindListening 是 { status: 'measured', trials, voided, blocked, notHeard, asks, sameSpeakerRate, consistentRate, differences, ... }、
 //   { status: 'voided', ... }（这一组的盲听全作废了）、{ status: 'not_heard', ... }（这一组的盲听一条有效的都没有，又有没听成的）或「量不了」。
 //   voided 是作废的总条数；blocked 是其中被模型的服务商拦下的条数（voided 的一部分，不是另外的；读法第 5 点）。有效、作废、没听成加起来是这一组的留出录音条数。
 //   「量不了」是 { status: 'unmeasurable', label: '量不了', reason, capability?, message }：缺能力时 reason 是 capability_missing，
@@ -44,43 +44,52 @@
 //   读法的规则只在那里程序化一次：命令行（cli/fidelity-report.mjs 的 renderFidelityReport）和 app 都从它显示，不各写一份阈值。
 //
 // 怎么读这份报告（读法只在这里写一份，显示报告的地方——命令行、app——照它写，规则的程序在 lib/fidelity-reading.mjs。读法用公开语料标定过，标定的记录不随基础部分发布，下面写的是记录里的数；
-//   盲听的数用现在的提示（每段音频只写开头 OPENING_WORDS 个词）重收过（2026-10-19），下面的盲听数字以这一次为准；
-//   整段转写的旧提示在 2026-10-14 收过一次，留作对照，说话人相似度的数也是 2026-10-14 收的）：
+//   第 1、5、7、8 点的数是 2026-11-01 这一次收的：盲听用现在的问法（BLIND_PROMPT），K 组两遍，M 组一遍，克隆一遍；
+//   更早的数（2026-10-14、2026-10-19，旧问法和旧提示）只在写明「旧记录」的地方带着）：
 //   读法不设门槛：分数低的包照样能发布，分数不隐藏。下面的三档只是读法，不挡任何事。
-//   盲听的三个结果里，只有「判成同一人的比例」能读，另外两个不是分数。
+//   盲听的结果有三样：「判成同一人的比例」这一版问法没有分得开，只列次数和条数，不读成分数，也不读成档（第 1 点）；「两问判断相同的比例」不是分数（第 3 点）；「哪里像、哪里不像」的原话不计数、不打分（第 4 点）。
 //   1. 判成同一人的比例（sameSpeakerRate）。一组留出录音一起读（报告里按标签分的每一组，和总体，各是一组）：
 //        有效的留出录音不到 5 条：只列比例和条数，写明「条数不够，不下结论」。
-//        比例 >= 0.7：「判成同一人」；比例 <= 0.3：「判成不是同一人」；两者之间：「说不准」。
+//        三档的线：比例 >= 0.7 是「判成同一人」；比例 <= 0.3 是「判成不是同一人」；两者之间是「说不准」。
 //        「说不准」不当成好，也不当成坏，和说话人相似度的比值、模型说出来的区别（原话）一起看。
 //        显示时带上次数和条数（例如「9/10 次，5 条」），不只给比例或一个词。
-//      它分得开声音差得远的（不同的人、不带参考的默认声音）；对同语言同性别的另一个人只部分分得开。声音很接近的两个人，
-//      模型会判成同一人，说话人相似度也分不开。所以「判成同一人」是「没发现不是本人」，不是「证明是本人」。
-//      数（现在的记录，按次数）：同一个人的两段真录音 14/14 次判成同一人，用本人声音克隆的 23/24；两个人的真录音 1/16，
-//      不带参考的默认声音 1/8（另用 127 对默认声音量过，123 对有效，每对问两次：判成同一人的比例 16%，95% 区间 11% 到 21%）；
-//      克隆成别人声音的 14/24（95% 区间 38% 到 79%）。每组只有 12 条，换一批克隆再问，这个比例能差十几个点（旧记录 7/18，39%），
-//      所以一个五条的包，这一组读成「判成同一人」的可能在 34% 上下（照这 12 条算，三、五、八条分别 20%、34%、13%；旧记录五条 7%）。
-//   2. 认出合成的比例（identifiedRate）不是分数，不要按「越接近 0.5 越好」读。标定里把三种合成（用本人声音克隆的、克隆成别人声音的、
-//      不带参考的默认声音）合起来，模型指对合成那一段的次数没有高于随机（32/56，Wilson 95% 区间 0.44 到 0.69，包着 0.5），所以 0.5 左右既可能是克隆得好，也可能只是模型
-//      分辨不出来，这个数分不开这两种。报告照常列出，旁边写明「不是分数」。
-//   3. 换序后指的还是同一段（consistentRate）只说明第 2 个数有多少是跟着声音答的、多少是跟着位置答的。不当分数读，低也不扣分。
-//   4. 模型说出来的区别是原话，给人看，不计数、不打分。「合成感」「机械」这类词，模型对两段真录音也常写，不能当成被听出来的证据。
-//   5. 作废：收音校验的上限 DEFAULT_MAX_ERROR_RATE（0.3）不变，依据（有音频时转写错误率的分布，没给音频时的错误率）在上面说的记录里。
-//      校验只比每段音频开头的 OPENING_WORDS 个词。现在的记录（2026-10-19，就是这个提示收的）：
-//      176 段转写，159 段逐字对上，错误率均值 0.02、最大 0.43，超过 0.3 的 1 段；没给音频时错误率 1.00，作废。整段转写的旧记录（2026-10-14）
-//      是 124 段、均值 0.04、最大 0.25，没给音频时 0.96。换了音频和静音时的错误率另量过，量法和数不随基础部分发布。
+//      但这一版问法没有分得开，三档现在不用（lib/fidelity-reading.mjs 的 QUESTION_CALIBRATION 记着结果，separable 是 false）：
+//        2026-11-01 的 K 组是已知答案的真录音：同一人 12 对，同语言同性别的不同人（硬负例）12 对，每对问两次，跑两遍。
+//        Q1（同一人的问，判成同一人的比例 >= 0.7）两遍都过：答出的 22/22 次、24/24 次都判成同一人；
+//        Q2（不同人的问，判成同一人的比例 <= 0.3）两遍都没过：10/23 次（0.43）、11/24 次（0.46）；
+//        Q3（每个试次得分的 AUC >= 0.80）第一遍过（0.83），第二遍没过（0.79）；Q4（两遍一致的问 >= 0.8）过（0.98）；
+//        Q5（两问换序后答案一致，只报不卡）0.90 和 0.96。硬负例分得很不一样：同为中文女声的不同人（两遍共 12 次）全判成同一人（每遍 6/6），
+//        中文男声 5/12，英文女声 4/12，英文男声 0/11。
+//        所以这一项只列次数和条数，写明「问法没有分得开，只列次数和条数，不下结论」，不读成三档里的任何一档。
+//        三档的线（0.7、0.3，有效的不到 5 条）这一次没有核对：核对只在问法分得开时才做，线保持原值，等问法分得开的标定之后再用。
+//      数（这一次，按次数）：同一个人的两段真录音（M 组）23/24 次判成同一人；同语言同性别的不同人（M 组，硬负例）8/22 次；
+//        用本人的参考录音克隆、对着本人的真录音问（M 组）19/23 次；用别人的参考录音克隆、对着本人的真录音问（M 组）7/24 次。
+//        每组有效的 11 或 12 条（每条两问），每组只有 22 到 24 次答出的回答，差一次就是 4 到 5 个百分点，别当精确的分数读。
+//      同一个人的留出录音，答出的几乎全判成同一人（K 组 46 次中 46 次，M 组 24 次中 23 次）；同语言同性别的不同人也常判成同一人（K 组 47 次中 21 次，M 组 22 次中 8 次），所以两组在这一版问法下分不开。「判成同一人」是「没发现不是本人」，不是「证明是本人」：声音很接近的两个人，模型会判成同一人，说话人相似度也分不开。
+//      「分开声音差得远的」（不同的人、不带参考的默认声音）是旧问法的记录（2026-10-14、2026-10-19），这一版没有重测。
+//   2. 没有「认出合成的比例」了：问法不问哪段是合成的（只问是不是同一个人，哪里像、哪里不像）。旧问法的这个数不是分数，不要按「越接近 0.5 越好」读：
+//      旧问法的标定记录（2026-10-14）里，模型指对合成那一段的次数没有高于随机（32/56，Wilson 95% 区间 0.44 到 0.69，包着 0.5），0.5 左右分不开克隆得好和模型分辨不出来。这一版问法不问这一项，报告里不列。
+//   3. 两问「判成同一人」相同的比例（consistentRate）只说明判断是跟着声音走还是跟着位置走（两问都说是、或都说不是，才算相同）。不当分数读，低也不扣分。
+//   4. 模型说出来的区别是原话，给人看，不计数、不打分。「合成感」「机械」这类词，模型对两段真录音也会写（这一次，两段都是真录音、有效的 139 次里有 4 次含这类词；一段是克隆、一段是真录音、有效的 47 次里有 1 次），不能当成被听出来的证据。
+//   5. 作废：收音校验的上限 DEFAULT_MAX_ERROR_RATE（0.3）不变，依据在上面说的记录里。
+//      校验只比每段音频开头的 OPENING_WORDS 个词。这一次（2026-11-01，就是这个提示收的）：380 段转写（另有 2 问没有转写：一问回答格式不对，一问被模型的服务商拦下），开头的词 335 段逐字对上，
+//      错误率均值 0.026、最大 0.57，超过 0.3 的 4 段正是 4 问收音校验没过的（K 组第一遍 2 问，M 组 2 问），其余 186 问两段都在 0.3 以下。
+//      没给音频时的错误率这一次没有重量（旧记录，2026-10-19：1.00，作废）。换了音频和静音时的错误率另量过，量法和数不随基础部分发布。
 //      作废的条数单独报，不进以上任何比例。作废有三种原因，error.code 里分得开：收音校验没过（listening_check_failed）、
 //      回答不是固定格式（blind_answer_invalid）、回答被模型的服务商拦下（provider_blocked）。被拦下的另外报条数（blocked，是作废的一部分），
-//      写明是被拦下，不写成「不是 JSON」：服务商拦的是这一段录音的这次问答，再问多半还是被拦（实测，整段转写的旧提示：同一批录音再问一遍，
+//      写明是被拦下，不写成「不是 JSON」：服务商拦的是这一段录音的这次问答，再问多半还是被拦（旧记录，整段转写的旧提示 2026-10-14：同一批录音再问一遍，
 //      上一次被拦的 49 次里 46 次又被拦；上一次问成的 261 次里 9 次这次被拦），所以记成作废，不记成没听成，补做多半没有用。
 //   6. 没听成：某条的盲听或说话人相似度碰到服务出错（上游 5xx、网关超时、网络错误、超时），那一项记成「没听成」，单独报：
 //      和作废是两回事（作废是模型听了、没听到；没听成是根本没问成），两者都不进任何比例，也不算分数低。
 //      显示时写条数，例如「5 条里 2 条没听成，可以补做」，再列是哪几条、什么错、试了几次；有效的不到 5 条，照第 1 点只列比例和条数，
 //      写「条数不够，不下结论」，补做完再读。没听成可以补做：库不自动重试（建任务和补全可能已经计费），
 //      由调用方明确地要（redoNotHeard，命令行是 --redo），只重新调用没听成的那几项，调用几次事先写明（planRedo）。
-//   7. 说话人相似度的比值本身就是分数，照数显示（1 表示和这个人自己的真录音之间一样像）。
+//   7. 说话人相似度的比值本身就是分数，照数显示（1 表示和这个人自己的真录音之间一样像）。这一次（2026-11-01）每组 12 条的比值，中位数（最小到最大）：
+//      同一个人的两段真录音（M 组）1.09（0.87 到 1.22）；同语言同性别的不同人（M 组）0.32（0.01 到 0.59）；
+//      用本人的参考录音克隆（M 组）0.95（0.70 到 1.16）；用别人的参考录音克隆（M 组）0.21（0.05 到 0.74）。
 //      两种方法不合成一个总分；两个对不上时，两个都照实列出，不替人选一个。
-//   8. 适用范围：标定用的是朗读语料（AISHELL-1、LibriSpeech）、一个克隆模型（单段参考）、一个听者模型，用的是哪两个写在记录里；
-//      每组有效的只有 4 到 12 条（盲听，按条数，现在的记录）。换了合成模型、听者或语料类型，要重新标定，这几条读法不能照搬。
+//   8. 适用范围：标定用的是朗读语料（中文 AISHELL-1 测试集、英文 LibriSpeech clean 验证集，各 6 人、每人 8 段）、一个克隆模型（单段参考）、一个听者模型，用的是哪两个写在记录里；
+//      这一次每组有效的 11 或 12 条（盲听，按条数）。换了合成模型、听者或语料类型，要重新标定，这几条读法不能照搬。
 //   9. 量不到：某一条的说话人相似度，生成的或留出的那一段录音里没有能嵌出声纹的语音（短到嵌不出、近乎静音；说话人验证报
 //      capability_input_invalid、details.problem 是 no_speech，写法见 vocab/capability-signatures.md）。这是那一段录音自己的事，
 //      不是环境坏了，也不是服务出错：那一条的说话人相似度记成「量不到」，写明是生成的还是留出的那一段、能力报的原话，单独报，
@@ -239,25 +248,23 @@ export function openingErrorRate(reference, hypothesis) {
  * 为什么先定 0.3：听到了的模型，对干净的几秒到几十秒语音，转写错误率通常在个位数百分点到一成多（人名、数字、同音字最容易错）；
  * 没听到的模型凭提示编出来的话，和已知文本几乎全不一样，错误率接近 1 甚至更高。0.3 离前者有余量，离后者很远。
  * 短句要小心：文本比 OPENING_WORDS 个词还短时，开头就是它的全部，错两个词（6 个词里错 2 个，0.33）就超过 0.3，所以留出录音的文本不宜太短。
- * 用公开语料标定过，2026-10-19 用现在的提示（只比开头）重收了一遍，取值不变（依据见文件头「怎么读这份报告」第 5 点）。
+ * 用公开语料标定过，2026-10-19 用现在的提示（只比开头）重收了一遍，2026-11-01 又收了一遍，取值不变（依据见文件头「怎么读这份报告」第 5 点）。
  */
 export const DEFAULT_MAX_ERROR_RATE = 0.3;
 
 /**
- * 问盲听三个问题用的提示：先让模型写出每段音频开头的 OPENING_WORDS 个词（收音校验用；要整段原话会被模型的服务商拦下，见 OPENING_WORDS 的说明），再问三件事。
- * 不写任何关于哪段是真人的信息，也不写已知文本。
+ * 问盲听用的提示：先让模型写出每段音频开头的 OPENING_WORDS 个词（收音校验用；要整段原话会被模型的服务商拦下，见 OPENING_WORDS 的说明），再问两件事：
+ * 两段是不是同一个人，哪里像、哪里不像（后两个是原话，只存、不计数、不打分）。问法直接，不给选项、不列要比的维度、不提合成，也不写任何关于哪段是真人的信息，也不写已知文本。
+ * 问法在 2026-11-01 定下，只定这一版；怎么读它的结果见文件头「怎么读这份报告」第 1、3、4 点。
  */
 export const BLIND_PROMPT = [
   '你会听到两段音频，依次标为 X 和 Y。请只根据你听到的内容回答。',
   '',
   `先写出每段音频开头的 ${OPENING_WORDS} 个词，只写听到的字，不要改写、不要补充；中文、日文每个字算一个词，别的语言按空格分词；没有听到某段音频，就把它的转写留空。`,
-  '然后回答三个问题：',
-  '1. 两段是不是同一个人在说话？',
-  '2. 哪一段更像是合成的（AI 生成的声音）？必须在 X 和 Y 里选一个。',
-  '3. 两段在音色、口音、情绪、节奏、读音上有什么区别？用一段话说明；没有明显区别就写「没有明显区别」。',
+  '然后回答：两段是不是同一个人？哪里像，哪里不像？',
   '',
-  '只输出一个 JSON 对象，不要输出别的文字。格式如下（same_speaker 是 true 或 false，synthetic 是 "X" 或 "Y"）：',
-  '{"transcript_x": "…", "transcript_y": "…", "same_speaker": true, "synthetic": "X", "differences": "…"}',
+  '只输出一个 JSON 对象，不要输出别的文字。格式如下（same_speaker 是 true 或 false）：',
+  '{"transcript_x": "…", "transcript_y": "…", "same_speaker": true, "where_alike": "…", "where_unlike": "…"}',
 ].join('\n');
 
 // 整段回答就是一个 ``` 代码块
@@ -268,7 +275,7 @@ const FENCED = /^```[A-Za-z0-9_-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/;
  * 对不上就报错，不猜。
  * @param {string} reply 模型回答的文字
  * @param {number} [order] 这是第几次问，写进报错里
- * @returns {{ transcriptX: string, transcriptY: string, sameSpeaker: boolean, synthetic: 'X'|'Y', differences: string }}
+ * @returns {{ transcriptX: string, transcriptY: string, sameSpeaker: boolean, whereAlike: string, whereUnlike: string }}
  * @throws {VoicePackError} blind_answer_invalid：回答不符合固定格式，这次盲听作废。details.reason 说哪里不对，details.reply 是原话的前 300 个字符，details.order 是第几次问
  */
 export function parseBlindAnswer(reply, order) {
@@ -288,13 +295,11 @@ export function parseBlindAnswer(reply, order) {
     throw fail('不是 JSON');
   }
   if (!isPlainObject(data)) throw fail('不是 JSON 对象');
-  for (const key of ['transcript_x', 'transcript_y', 'differences']) {
+  for (const key of ['transcript_x', 'transcript_y', 'where_alike', 'where_unlike']) {
     if (typeof data[key] !== 'string') throw fail(`${key} 必须是字符串`);
   }
   if (typeof data.same_speaker !== 'boolean') throw fail('same_speaker 必须是 true 或 false');
-  const slot = typeof data.synthetic === 'string' ? data.synthetic.trim().toUpperCase() : '';
-  if (slot !== 'X' && slot !== 'Y') throw fail('synthetic 必须是 "X" 或 "Y"');
-  return { transcriptX: data.transcript_x, transcriptY: data.transcript_y, sameSpeaker: data.same_speaker, synthetic: slot, differences: data.differences };
+  return { transcriptX: data.transcript_x, transcriptY: data.transcript_y, sameSpeaker: data.same_speaker, whereAlike: data.where_alike, whereUnlike: data.where_unlike };
 }
 
 function assertBlindClip(clip, name) {
@@ -325,15 +330,14 @@ function drawFirstX(random) {
 }
 
 /**
- * 一次盲听：把一段真人录音和一段生成的录音（也可以是别的两段，见 kind）打乱成 X、Y 交给 audio-text-to-text，
- * 不告诉它哪段是真人；先让它写出两段开头的话做收音校验（只比开头 OPENING_WORDS 个词，见 openingErrorRate），再问三件事；换序再问一遍。
+ * 一次盲听：把两段录音（kind 只是调用方记的，问的时候不告诉模型）打乱成 X、Y 交给 audio-text-to-text，不说哪段是真人、哪段是生成的；
+ * 先让它写出两段开头的话做收音校验（只比开头 OPENING_WORDS 个词，见 openingErrorRate），再问两件事（同一个人吗；哪里像、哪里不像）；换序再问一遍。
  *
  * 结果：
  *   asks[]            每次问的记录：order（第几次）、x 和 y（是 a 还是 b）、transcripts、errorRates、sameSpeaker、
- *                     syntheticSlot（模型说哪个位置是合成的）、picked（它指的是 a 还是 b）、differences（它说出来的区别）、model
- *   identified        两次问里认出合成那一段的次数（0–2）；两段不是「一真一假」时没有这回事，是 null
+ *                     whereAlike、whereUnlike（模型说的哪里像、哪里不像，原话，不计数、不打分）、model
  *   sameSpeaker       两次问里判成同一个人的次数（0–2）
- *   consistent        两次指向的是同一段录音（换了位置，答案还跟着那一段走）
+ *   consistent        两问的「同一人」判断相同（都说是，或都说不是）：换了位置，判断还跟着声音走（读法第 3 点）
  *   models            用到的模型名（能力返回里带的），给验证记录用
  *
  * @capability audio-text-to-text 签名见 vocab/capability-signatures.md：({ parts: [{ text } | { audio }], ... }) -> { text, model? }
@@ -383,21 +387,17 @@ export async function blindListen(env, trial, options = {}) {
       transcripts: { x: answer.transcriptX, y: answer.transcriptY },
       errorRates,
       sameSpeaker: answer.sameSpeaker,
-      syntheticSlot: answer.synthetic,
-      picked: answer.synthetic === 'X' ? x : y,
-      differences: answer.differences,
+      whereAlike: answer.whereAlike,
+      whereUnlike: answer.whereUnlike,
       ...(reply.model === undefined ? {} : { model: reply.model }),
     });
   }
-  const gradable = [trial.a.kind, trial.b.kind].filter((kind) => kind === 'synthetic').length === 1;
-  for (const ask of asks) ask.identified = gradable ? clips[ask.picked].kind === 'synthetic' : null;
   const models = new Set(asks.map((ask) => ask.model).filter((model) => model !== undefined));
   assertSingleModel('audio-text-to-text', models);
   return {
     asks,
-    identified: gradable ? asks.filter((ask) => ask.identified).length : null,
     sameSpeaker: asks.filter((ask) => ask.sameSpeaker).length,
-    consistent: asks[0].picked === asks[1].picked,
+    consistent: asks[0].sameSpeaker === asks[1].sameSpeaker,
     models: [...models],
   };
 }
@@ -537,7 +537,7 @@ function normalizeFidelityInput(input, { only } = {}) {
         throw new VoicePackError('fidelity_text_empty', `${where}.text 里一个词也没有（空的，或者只有标点），没法拿它核对转写`, { details: { field: `${where}.text` } });
       }
     }
-    return { id: item.id, audio: item.audio, text: item.text, labels: normalizeLabels(item.labels, where) };
+    return { id: item.id, audio: item.audio, text: item.text, labels: normalizeLabels(item.labels, where), ...(item.synthetic === true ? { synthetic: true } : {}) };
   };
   const wanted = (item) => only === undefined || (isPlainObject(item) && only.has(item.id));
   return {
@@ -637,7 +637,7 @@ async function measureBlindItem(env, holdout, { firstX, maxErrorRate }, attempts
   try {
     const result = await blindListen(env, trial, { maxErrorRate, firstX });
     return {
-      blindListening: { status: 'measured', identified: result.identified, sameSpeaker: result.sameSpeaker, consistent: result.consistent, models: result.models, asks: result.asks },
+      blindListening: { status: 'measured', sameSpeaker: result.sameSpeaker, consistent: result.consistent, models: result.models, asks: result.asks },
       models: result.models,
     };
   } catch (error) {
@@ -666,8 +666,8 @@ function aggregateSpeaker(members, baseline) {
 
 /**
  * 把若干条留出录音的盲听结果合成一个总的或一组的结果。
- * 认出合成的比例 = 认出合成的那一次数 / 问过的次数（每条问两次；它不是分数，别按「越接近 0.5 越好」读，见文件头「怎么读这份报告」）；
- * 判成同一人的比例 = 判成同一人的次数 / 问过的次数；前后一致的比例 = 两次指向同一段录音的条数 / 有效条数。
+ * 判成同一人的比例 = 判成同一人的次数 / 问过的次数；前后一致的比例 = 两问判断相同的条数 / 有效条数（读法第 3 点）。
+ * differences 是模型说的哪里像、哪里不像的原话（每问一条），只给人看，不计数、不打分（读法第 4 点）。
  * 作废的条数（voided）、没听成的条数（notHeard）各自单独报，都不计入这些比例。作废里被模型的服务商拦下的条数（blocked）另外数，是 voided 的一部分。
  * @param {{ id: string, blind: object }[]} entries blind 是每一条的盲听结果（measured、voided 或 not_heard）
  */
@@ -687,13 +687,11 @@ function aggregateBlind(entries) {
     blocked,
     notHeard,
     asks,
-    identified: total((blind) => blind.identified),
-    identifiedRate: total((blind) => blind.identified) / asks,
     sameSpeaker: total((blind) => blind.sameSpeaker),
     sameSpeakerRate: total((blind) => blind.sameSpeaker) / asks,
     consistent: total((blind) => (blind.consistent ? 1 : 0)),
     consistentRate: total((blind) => (blind.consistent ? 1 : 0)) / valid.length,
-    differences: valid.flatMap((entry) => entry.blind.asks.map((ask) => ({ id: entry.id, order: ask.order, text: ask.differences }))),
+    differences: valid.flatMap((entry) => entry.blind.asks.map((ask) => ({ id: entry.id, order: ask.order, whereAlike: ask.whereAlike, whereUnlike: ask.whereUnlike }))),
   };
 }
 
@@ -765,19 +763,21 @@ async function baselineOrUnmeasurable(env, real) {
  *
  * @param {object} env 注入的运行环境：speaker-verification、audio-text-to-text 各自可选
  * @param {{
- *   references: { id: string, audio: AudioClip, text?: string, labels?: Record<string, string|number|boolean> }[],
+ *   references: { id: string, audio: AudioClip, text?: string, labels?: Record<string, string|number|boolean>, synthetic?: boolean }[],
  *   holdouts: { id: string, audio: AudioClip, text: string, labels?: Record<string, string|number|boolean>, generated: AudioClip }[],
  * }} input
- *   references：参考集里的真人原声；holdouts：留出录音，generated 是用这个包把 text 合成出来的录音。labels 是标签。
+ *   references：参考集里的真人原声（synthetic 为 true 的是克隆出来的，不是这个人录的：不进真人基线，也不数进 realRecordings）；
+ *   holdouts：留出录音，generated 是用这个包把 text 合成出来的录音。labels 是标签。
  * @param {{ random?: () => number, maxErrorRate?: number }} [options] random：每条盲听抽一次，决定第一次问的时候谁在 X；maxErrorRate：收音校验的阈值
  * @returns {Promise<object>} 报告，形状见文件头
  */
 export async function measureFidelity(env, input, options = {}) {
   const { references, holdouts } = normalizeFidelityInput(input);
   const blindOptions = normalizeBlindOptions(options);
-  // role 只是让基线说得清哪一段真录音没用上（humanBaseline 的 excluded），库不看它
+  // role 只是让基线说得清哪一段真录音没用上（humanBaseline 的 excluded），库不看它。
+  // 标了 synthetic 的参考是克隆出来的，不是这个人录的：不进真人基线，counts.realRecordings 也不数它
   const real = [
-    ...references.map(({ id, audio }) => ({ id, audio, role: 'reference' })),
+    ...references.filter((ref) => ref.synthetic !== true).map(({ id, audio }) => ({ id, audio, role: 'reference' })),
     ...holdouts.map(({ id, audio }) => ({ id, audio, role: 'holdout' })),
   ];
   const verifier = probeCapability(env, 'speaker-verification');
