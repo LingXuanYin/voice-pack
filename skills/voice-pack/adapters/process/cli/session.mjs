@@ -92,9 +92,10 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   let closing = false; // close() 在请程序退出：它的退出不是出了错
   let nextId = 1;
 
-  // 程序的话（标准错误的全文，标准输出里的日志行）都过打码再交出去：令牌形状的串和签名地址去掉，别的字不动
+  // 程序的话（标准错误的全文，标准输出里的日志行）都过打码再交出去：令牌形状的串和签名地址去掉，别的字不动。
+  // 出一次错只打码一遍：context() 在造这个错的时候调一次，报错的文字（stderrNote）和 details 都用这一份
   const context = () => ({ stderr: reportable(stderr.trim()), output: noise.map((line) => reportable(line)) });
-  const stderrNote = () => (context().stderr === '' ? '' : `。它写在标准错误里的话：${context().stderr}`);
+  const stderrNote = ({ stderr: said }) => (said === '' ? '' : `。它写在标准错误里的话：${said}`);
 
   /** 程序不行了：先拒掉在等的 ready 和在途的请求，再结束它。why 是为什么（也是以后的调用看到的原因），itemError 给在途的请求各自的错（默认同 why）。 */
   function die(why, itemError = () => why, { kill = true } = {}) {
@@ -118,8 +119,9 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   const exitedError = (stage, capability, exit) => {
     const how = exit.signal ? `被信号 ${exit.signal} 结束` : `退出码 ${exit.code}`;
     const where = stage === 'start' ? '在说 ready 之前' : capability === undefined ? '' : `在回应 ${capability} 之前`;
-    return new VoicePackError('process_exited', `程序${where}就退出了（${how}）${stderrNote()}`, {
-      details: { stage, exitCode: exit.code ?? null, signal: exit.signal ?? null, ...(capability === undefined ? {} : { capability }), ...context() },
+    const said = context();
+    return new VoicePackError('process_exited', `程序${where}就退出了（${how}）${stderrNote(said)}`, {
+      details: { stage, exitCode: exit.code ?? null, signal: exit.signal ?? null, ...(capability === undefined ? {} : { capability }), ...said },
     });
   };
   const closedError = () => new VoicePackError('process_not_running', '会话已经关了（命令结束时收尾）', { details: { reason: 'closed' } });
@@ -230,7 +232,8 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       });
       child.unref();
       startTimer = setTimeout(() => {
-        die(new VoicePackError('process_start_timeout', `程序 ${seconds(startTimeoutMs)} 秒内没有说 ready，已结束它${stderrNote()}`, { details: { seconds: seconds(startTimeoutMs), ...context() } }));
+        const said = context();
+        die(new VoicePackError('process_start_timeout', `程序 ${seconds(startTimeoutMs)} 秒内没有说 ready，已结束它${stderrNote(said)}`, { details: { seconds: seconds(startTimeoutMs), ...said } }));
       }, startTimeoutMs);
     });
   }
@@ -244,7 +247,8 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   function request(capability, line, id) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        die(new VoicePackError('process_timeout', `程序 ${seconds(timeoutMs)} 秒内没有回应 ${capability}，已结束它${stderrNote()}`, { details: { capability, seconds: seconds(timeoutMs), ...context() } }));
+        const said = context();
+        die(new VoicePackError('process_timeout', `程序 ${seconds(timeoutMs)} 秒内没有回应 ${capability}，已结束它${stderrNote(said)}`, { details: { capability, seconds: seconds(timeoutMs), ...said } }));
       }, timeoutMs);
       pending.set(id, { capability, resolve, reject, timer });
       child.stdin.write(`${line}\n`);

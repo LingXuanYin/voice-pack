@@ -60,11 +60,12 @@
 //      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
 //      返回值里说明没传和原因；plan.guidance.sent 写明交出去的那段指引这次有没有传（只有每句自己的说明传了，不算）。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引不截，超长的照样交给适配器：平台超了报错，那个错对每一句都一样，照旧往上抛、停下来（见 vocab/capability-signatures.md 的「通用约定」）。
-//      这一句的舞台提示怎么拼（按原文去重，次序是情绪、语速、停顿）：同一行里最近的一处情绪或风格（有就一处，跨过 [pause] 也算，换一行、换声音就清掉）；还在管着的那一处放慢或加快（有就一处，管到下一个放慢、加快或行尾，情绪变了也不清，停顿也不清，和 unit.speed 一致）；
+//      这一句的舞台提示怎么拼（按原文去重，次序是情绪、语速、停顿）：同一行里最近的一处情绪或风格（有就一处，跨过 [pause] 也算，换一行、换声音就清掉；一下子的声音（笑、叹气）例外：它只管紧跟着它的这一句，下一句回到它出现以前管着的那一处，没有就没有）；还在管着的那一处放慢或加快（有就一处，管到下一个放慢、加快或行尾，情绪变了也不清，停顿也不清，和 unit.speed 一致）；
 //      这一段自己前面那一截里排在最后一个情绪或风格之后的停顿。同一截里被后面的放慢、加快替掉的不带。
 //      前面几段的停顿不带过来：停顿算在前一段的后面（一行开头的算在这一段前面），见 lib/line-hints.mjs 文件头「停顿」。
 //      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
-//      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一句分段时，一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在第一段带，情绪、风格每段都带。
+//      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在写它的那一处带：紧跟在它后面的那一段话（停顿标记、舞台提示切开的几段里的第一段），
+//      后面的几段不带（读舞台提示时就不给，规则见 lib/line-hints.mjs 文件头「范围」）；那一段又被 maxChars 切成几段的，只在第一段带。情绪、风格每段都带。
 //      返回值的 units[i].cues 写明没传和原因（style_cues_missing、nothing_to_send）。
 //      enhancers：包里服务 voice-cloning 的增强件，以 { id, model, modelVersion, referenceVersion, capability, load } 递给能力，load() 才读文件。
 //      环境认识对应的模型就用上，并在返回里用 enhancers_used 报出用了哪几个（id）；不认识的会忽略 enhancers，照常生成。
@@ -245,6 +246,7 @@ function buildLines(sources, defaults) {
   let physical = -1;
   let hintLine = null;
   let emotionOnLine = null;
+  let emotionBack; // 一下子的声音（笑、叹气）还没被一段话用掉时：用掉以后 emotionOnLine 回到的那一处（读到的原文，或者 null）；没有等着用掉的就是 undefined
   let speedOnLine = null;
   const addPause = (ms) => {
     if (ms <= 0) return;
@@ -284,6 +286,7 @@ function buildLines(sources, defaults) {
           const speed = piece.speed !== null ? SPEED[piece.speed] : span.speed;
           if (firstLine + piece.line !== hintLine) {
             emotionOnLine = null;
+            emotionBack = undefined;
             speedOnLine = null;
             hintLine = firstLine + piece.line;
           }
@@ -292,6 +295,8 @@ function buildLines(sources, defaults) {
             const isSpeed = direction.actions.includes('slow') || direction.actions.includes('fast');
             if (isSpeed) speedOnLine = direction.raw;
             if (direction.emotion !== null || direction.style !== null) {
+              // 带一下子的声音的提示只管紧跟着它的这一段（和 lib/line-hints.mjs 读 hints 的范围一样）：这一段的说明里有它，下一段回到它出现以前管着的
+              emotionBack = direction.style !== null && ONE_SHOT_STYLES.has(direction.style) ? (emotionBack === undefined ? emotionOnLine : emotionBack) : undefined;
               emotionOnLine = direction.raw;
               own = [];
             } else own.push({ raw: direction.raw, speed: isSpeed, pause: direction.actions.includes('pause') });
@@ -318,6 +323,10 @@ function buildLines(sources, defaults) {
             ...(last && span.join !== undefined ? { join: span.join } : {}),
           });
           pendingBefore = 0;
+          if (emotionBack !== undefined) {
+            emotionOnLine = emotionBack;
+            emotionBack = undefined;
+          }
         });
       });
     });

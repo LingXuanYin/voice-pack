@@ -238,6 +238,7 @@ await env.capabilities['text-generation']({
 - 这一句的 `emotion`、`style`：调用方在 `labels` 里给这一项的（规范化以后认得出的才用）先用，和挑参考一样；没给的，取读这一句的舞台提示时的状态（最后一个有情绪或风格的提示起，和 `lib/line-hints.mjs` 的读法一样）。语速和停顿不进 `cues`，见下面一条。
 - **配音指引永远不进 `cues`。** 指引写的是这个声音的习惯（爱笑、说话慢），不是这一句的指示。它只通过 `style-instruction` 的 `instructions` 传，而且只在环境声明了它的时候才传。
 - 一句被切成几段（`maxChars`）时，`emotion`、`style` 每段都带，除了 `vocab/cues.json` 的 `oneShot` 标着的一下子的声音（笑、叹气）：它只在第一段带。
+- 一行里被停顿标记（`[pause …]`）或舞台提示切成几段要念的话时，一下子的声音只在紧跟着它的那一段的 `cues` 里（那一段的说明里也只有那一段有它），后面的段不带；那一段用掉它以后，情绪和持续的风格回到它出现以前管着的（规则的正本是 `tools/markup.mjs` 文件头「舞台提示的范围」）。
 - **语速和停顿不在 `cues` 里。** 它们是 `unit.speed`、`unit.pauseBeforeMs`、`unit.pauseAfterMs`（和 `unit.join`），由拼接的人按它们做一次（见 `lib/dub.mjs` 文件头「语速和停顿」）。语速只有一条路：合成能力不收语速，环境也不把它译成标签或变速；不论环境声明不声明 `style-cues`，都一样。
 - `style-instruction` 和 `style-cues` 是两回事：前者是一段**自由的文字**（配音指引加这一句的说明，原样交给环境，由环境去理解）；后者是**这一句认出来的几个名字**（库已经读过、规范化过，环境只需要对表）。一个环境可以两个都声明，也可以只声明一个。不声明的理由写成「模型或服务做不到」，不要写成「我们的请求里没有 `cues` 字段」（同 `style-instruction`，分工见 `../adapters/README.md`「只是声明的能力」）。
 
