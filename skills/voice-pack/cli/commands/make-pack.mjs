@@ -49,7 +49,7 @@
 //                       新补的素材接在后面。--changelog 不给就按变化生成一份。--drop 去掉上一版里不要的段（逗号隔开，可以多次给）。
 //                       上一版有外部资源时要取回来核对，环境得有 fetch。验证记录不带过来：这一版重新量，没量出来就没有（lib/pack-version.mjs 文件头）。
 //   --default-segment   明说默认参考段：新包和发新版本都能给（不带 --previous 也行）。段名要是这次素材里的一段（或上一版的参考）；规则和理由在 lib/pack-material.mjs 的文件头。
-//   --no-holdout        不留出录音（makePack 的 holdoutRatio 为 0）：能用的段都进参考集（超过参考上限的照常裁掉），报告不给 no_holdout、holdouts_few，规划里没有试合成。只管这次新挑的：发新版本时上一版已有的留出录音照旧带过来（要去掉用 --drop）。设计出来的声音、库里借来的声音做包时加它（写法见 references/make-pack.md）。
+//   --no-holdout        不留出录音（makePack 的 holdoutRatio 为 0）：能用的段都进参考集，报告不给 no_holdout、holdouts_few，规划里没有试合成。只管这次新挑的：发新版本时上一版已有的留出录音照旧带过来（要去掉用 --drop）。设计出来的声音、库里借来的声音做包时加它（写法见 references/make-pack.md）。
 //   --source-pack       做「你自己的」一个新包时给：它是照着哪个包做的（目录，或分享文件）。给了就在花钱之前查重（lib/duplicate-check.mjs，规则、阈值、依据都在它的文件头）：
 //                       新包的文字（描述、配音指引、示例台词、设计来源）和录音（--recording、--audition、素材里的每一段）和来源包比，重合太多就报 duplicate_detected 停下（没花过钱），
 //                       说明是哪一项、量了多少、阈值是多少。只有用得上才给：来源包只在这一步读，不验签、不联网，也不往新包、标准输出、报告里写它的任何标识（路径、包 ID、名字）；
@@ -380,7 +380,6 @@ function costNote({ billing, plan, saveEvaluation, language }) {
 
 const UNUSED_NOTE = {
   no_text: '没有逐字文本',
-  quality_rejected: '音质不合格',
   duplicate_audio: '和别的一段是同一段音频',
   audio_unrecognized: '认不出是什么音频',
   audio_undecodable: '解不开',
@@ -393,7 +392,8 @@ function unusedNote(segment) {
   const base = `${UNUSED_NOTE[segment.reason] ?? segment.reason}${tried}`;
   const codes = segment.details?.codes?.length > 0 ? `：${segment.details.codes.join('、')}` : '';
   const same = segment.details?.sameAs === undefined ? '' : `：同 ${segment.details.sameAs}`;
-  return `${base}（${segment.reason}${codes}${same}）`;
+  const said = typeof segment.details?.message === 'string' ? `：${segment.details.message}` : ''; // 解不开的：解码程序说的话，全文
+  return `${base}（${segment.reason}${codes}${same}）${said}`;
 }
 
 /** 试合成的一句被作废的原因，给人看（lib/make-pack-trial.mjs 的 checkSynthesized 给的 codes）。 */
@@ -427,10 +427,11 @@ function describeSteps(steps) {
   else if (tagging?.status === 'done') {
     // voided 是作废的总段数，blocked 是其中被模型的服务商拦下的（lib/make-pack-tags.mjs）：两种原因分开写，被拦下的不说成「读不懂」
     const blocked = tagging.blocked ?? 0;
-    const unreadable = tagging.voided - blocked;
+    const unusable = tagging.unusable ?? 0;
+    const unreadable = tagging.voided - blocked - unusable;
     // retried 是为暂时出错多听了几次，notHeard 是试满次数还没成的段（lib/make-pack-tags.mjs）；这几句和转写那一行同样的写法
     lines.push(
-      `打标签：${tagging.tagged} 段打上了${tagging.retried > 0 ? `（暂时出错，自动多听了 ${tagging.retried} 次）` : ''}${unreadable > 0 ? `；${unreadable} 段听者的回答读不懂，作废，不打标签` : ''}${blocked > 0 ? `；${blocked} 段被模型的服务商拦下了回答（多半因为台词是现成的文章），作废，不打标签` : ''}`
+      `打标签：${tagging.tagged} 段打上了${tagging.retried > 0 ? `（暂时出错，自动多听了 ${tagging.retried} 次）` : ''}${unreadable > 0 ? `；${unreadable} 段听者的回答读不懂，作废，不打标签` : ''}${unusable > 0 ? `；${unusable} 段听者的回答没正常结束（截断、出错中断）或是空的，作废，不打标签` : ''}${blocked > 0 ? `；${blocked} 段被模型的服务商拦下了回答（多半因为台词是现成的文章），作废，不打标签` : ''}`
         + `${tagging.notHeard > 0 ? `；${tagging.notHeard} 段没听成：服务暂时出错，试满 ${MAX_ATTEMPTS} 次也没成，不打标签` : ''}`,
     );
   }

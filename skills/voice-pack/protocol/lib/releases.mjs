@@ -33,10 +33,15 @@
 //                           too_large（字节数超过 JSON 的上限，details: { size, limit }；或者列的版本超过 MAX_VERSIONS 个，没有 details）
 //   protocol_unsupported    索引的协议主版本不是这一版认得的（同清单的同名 code）
 //   release_conflict        同一个版本号已经发布了，内容却不一样。details: { version, reason }
-//   published_unreadable    读已发布的文件失败（网络出错、超时、服务器答了 404 以外的失败）。details: { url, reason, status? }
+//   published_unreadable    读已发布的文件失败（网络出错、等响应头超时、正文空闲超时、总时限超时、服务器答了 404 以外的失败、太大）。details: { url, reason, status? }；reason 是 network、headers、idle、timeout、status、too_large 之一
 //
 // fetch 的用法（protocol/README.md 要求用到它的模块自己写明）：
-//   readPublished 用注入的 env.fetch。每次请求带 AbortSignal 和超时（默认 30 秒），网络出错、超时、5xx、429 重试（默认共 3 次，间隔 1 秒起每次翻倍），
+//   readPublished 用注入的 env.fetch。每次请求带 AbortSignal。三种时限，谁先到谁结束这次请求（reason 写在 details 里）：
+//     headersTimeoutMs  等响应头最多多久，默认 300 秒（reason headers）
+//     idleTimeoutMs     响应头到了以后，相邻两块正文之间最多空闲多久，默认 300 秒（reason idle）。每来一块重新计时：一直在推进的读不会被切断
+//     timeoutMs         每次请求的总时限，默认没有，调用方给了才有（reason timeout）
+//   前两个默认值照 undici 的 headersTimeout、bodyTimeout（出处 https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md ）。浏览器的 fetch 没有这两个超时，这里自己守，Node 和浏览器一样。
+//   网络出错、超时、5xx、429 重试（默认共 3 次，间隔 1 秒起每次翻倍），
 //   404 不重试：那是「还没发布」。别的失败（401、403……）也不重试，直接报。读响应用有上限的方式，超了就停。
 //   缓存：公开文件前面有 CDN，缓存多久、读的一方换一个查询参数能不能穿过 CDN，看托管；官方地址（GitHub Pages）缓存十分钟，不把查询串算进缓存键（实测见 RELEASES.md「缓存」）。
 //   版本索引会被覆盖，读它和它的签名要用 cacheBust，每次请求带一个新的 cb 查询参数，避开读的一方自己的 HTTP 缓存；不靠 Cache-Control 请求头（CDN 不理会，浏览器里还会多一次预检）。
@@ -206,6 +211,9 @@ export function addVersionToIndex(index, newEntry) {
 // ---------------------------------------------------------------- 读已发布的文件
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+// 等响应头、正文空闲的默认时限（毫秒）：照 undici 的 headersTimeout、bodyTimeout 默认。浏览器的 fetch 没有这两个超时，由这里守，Node 和浏览器一样。
+const DEFAULT_HEADERS_TIMEOUT_MS = 300_000;
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 const unreadable = (url, reason, message, extra = {}, cause) => fail('published_unreadable', `读不了 ${url}：${message}`, { url, reason, ...extra }, cause);
 
 /** 避开缓存用的查询参数：每次请求带一个新的随机值，读的一方自己的 HTTP 缓存把它当成另一个条目，源站不看它。CDN 算不算它是另一个缓存条目，看托管（RELEASES.md「缓存」）。 */
@@ -220,32 +228,49 @@ function bustCache(url) {
 /**
  * 请求一次。返回 { kind: 'found', bytes } | { kind: 'absent' } | { kind: 'retry', error } | { kind: 'fatal', error }；不抛错。
  * url 是给人看的地址（报错里写它），requestUrl 是真正请求的地址。
+ * 三个时限（文件头）谁先到谁结束这次请求，结果是 retry：总时限 timeoutMs（给了才有）；等响应头 headersTimeoutMs；响应头到了以后的空闲 idleTimeoutMs（每来一块重新计时）。
  */
-async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeoutMs }) {
+async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeoutMs, headersTimeoutMs, idleTimeoutMs }) {
   const controller = new AbortController();
-  let timer;
+  let settled = false; // 第一个结果算数；结束以后不再计时，也不再续空闲的计时器
+  let decide;
+  const decided = new Promise((resolve) => { decide = resolve; });
+  const stop = (outcome) => {
+    if (settled) return;
+    settled = true;
+    decide(outcome);
+    controller.abort(); // 连接和没读完的正文都不要了
+  };
+  const expire = (reason, message, details) => stop({ kind: 'retry', error: unreadable(url, reason, message, details) });
+  const totalAlarm = timeoutMs === undefined ? undefined : setTimeout(() => expire('timeout', `${timeoutMs} 毫秒内没有读完`, { timeoutMs }), timeoutMs);
+  const headersAlarm = setTimeout(() => expire('headers', `${headersTimeoutMs} 毫秒内没有收到响应头`, { headersTimeoutMs }), headersTimeoutMs);
+  let idleAlarm;
+  const rearmIdle = () => {
+    if (settled) return;
+    clearTimeout(idleAlarm);
+    idleAlarm = setTimeout(() => expire('idle', `${idleTimeoutMs} 毫秒内没有新的字节`, { idleTimeoutMs }), idleTimeoutMs);
+  };
   const work = (async () => {
     const response = await doFetch(requestUrl, { signal: controller.signal, ...(headers === undefined ? {} : { headers }) });
+    clearTimeout(headersAlarm);
     const status = response?.status ?? null;
     if (status === 404) return { kind: 'absent' };
     if (response?.ok !== true) {
       const error = unreadable(url, 'status', `服务器返回 ${status ?? '（没有响应）'}`, { status });
       return { kind: status === null || status >= 500 || status === 429 ? 'retry' : 'fatal', error };
     }
-    const read = await readCapped(response, maxBytes);
+    rearmIdle(); // 响应头到了：正文的空闲从这时候开始算
+    const read = await readCapped(response, maxBytes, { onChunk: rearmIdle });
     if (read.tooLarge) return { kind: 'fatal', error: unreadable(url, 'too_large', `比上限 ${maxBytes} 字节大`, { limit: maxBytes }) };
     return { kind: 'found', bytes: read.bytes };
   })().catch((cause) => ({ kind: 'retry', error: unreadable(url, 'network', `网络出错（${cause?.message ?? cause}）`, {}, cause) }));
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      resolve({ kind: 'retry', error: unreadable(url, 'timeout', `${timeoutMs} 毫秒内没有读完`, { timeoutMs }) });
-    }, timeoutMs);
-  });
   try {
-    return await Promise.race([work, timeout]);
+    return await Promise.race([work, decided]);
   } finally {
-    clearTimeout(timer);
+    settled = true;
+    clearTimeout(totalAlarm);
+    clearTimeout(headersAlarm);
+    clearTimeout(idleAlarm);
   }
 }
 
@@ -253,8 +278,9 @@ async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeou
  * 读官方地址上已发布的一个文件。
  * @param {object} env 注入的运行环境，用它的 fetch
  * @param {string} url 文件的地址（officialFileUrl 的结果）
- * @param {{ maxBytes?: number, timeoutMs?: number, attempts?: number, backoffMs?: number, headers?: Record<string, string>, cacheBust?: boolean }} [options]
- *   maxBytes 读到多少字节就算太大（默认是单个成员的上限）；timeoutMs 每次请求的时限（默认 30000）；attempts 最多试几次（默认 3）；
+ * @param {{ maxBytes?: number, timeoutMs?: number, headersTimeoutMs?: number, idleTimeoutMs?: number, attempts?: number, backoffMs?: number, headers?: Record<string, string>, cacheBust?: boolean }} [options]
+ *   maxBytes 读到多少字节就算太大（默认是单个成员的上限）；timeoutMs 每次请求的总时限（毫秒；默认没有）；headersTimeoutMs 等响应头最多多久（毫秒；默认 300000，同 undici 的 headersTimeout）；
+ *   idleTimeoutMs 响应头到了以后，相邻两块正文之间最多空闲多久（毫秒；默认 300000，同 undici 的 bodyTimeout；每来一块重新计时）。三个时限任一到点，这次请求就停掉、按重试处理（文件头）；attempts 最多试几次（默认 3）；
  *   backoffMs 第一次重试前等多久，之后每次翻倍（默认 1000）；headers 额外的请求头（默认没有：浏览器跨域读公开文件时，自定义头会触发预检）；
  *   cacheBust 每次请求在地址后面加一个 cb 查询参数（值是新的随机数），避开读的一方自己的 HTTP 缓存；穿不穿得过 CDN 看托管（官方地址的 CDN 不把查询串算进缓存键，穿不过，
  *   RELEASES.md「缓存」）。读版本索引时要用：它会被覆盖。版本 zip 和它的签名不可变，不用（用了每次都回源站，缓存白设了）。报错里写的地址不带 cb
@@ -263,11 +289,20 @@ async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeou
  */
 export async function readPublished(env, url, options = {}) {
   const doFetch = requireFetch(env);
-  const { maxBytes = resolveLimits().maxMemberBytes, timeoutMs = 30000, attempts = 3, backoffMs = 1000, headers, cacheBust = false } = options;
+  const {
+    maxBytes = resolveLimits().maxMemberBytes,
+    timeoutMs,
+    headersTimeoutMs = DEFAULT_HEADERS_TIMEOUT_MS,
+    idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    attempts = 3,
+    backoffMs = 1000,
+    headers,
+    cacheBust = false,
+  } = options;
   let last;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (attempt > 1 && backoffMs > 0) await sleep(backoffMs * 2 ** (attempt - 2));
-    const outcome = await requestOnce(doFetch, url, cacheBust ? bustCache(url) : url, { headers, maxBytes, timeoutMs });
+    const outcome = await requestOnce(doFetch, url, cacheBust ? bustCache(url) : url, { headers, maxBytes, timeoutMs, headersTimeoutMs, idleTimeoutMs });
     if (outcome.kind === 'found') return { found: true, bytes: outcome.bytes };
     if (outcome.kind === 'absent') return { found: false };
     last = outcome.error;

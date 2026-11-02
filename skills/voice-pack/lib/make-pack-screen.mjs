@@ -7,14 +7,14 @@
 //                                                  loudness 是 readOptions 补全的调响度设置（发新版本查重用，见下）
 //
 // 读条目的：id、audio、previous；写条目的：format（认出的格式）、sha256、quality（音质检查留下的几个量和结论，status 是 'checked'；
-// 环境没有 ffmpeg 又不是 WAV 的、上一版带来的又解不了的，status 是 'unchecked'，不做音质检查也不淘汰）。淘汰的写 unused: { reason, details? }：
+// 环境没有 ffmpeg 又不是 WAV 的、上一版带来的又解不了的，status 是 'unchecked'，不做音质检查也不淘汰；解不了的带 code 和 message）。淘汰的写 unused: { reason, details? }：
 //   audio_unrecognized  认不出是哪种音频。details: { mimeType }
 //   duplicate_audio     和前面一段是同一段音频（字节的哈希一样）。details: { sameAs }
-//   quality_rejected    音质检查不过。details: { codes }（拒绝的那几条原因的 code）
-//   audio_undecodable   解不了。details: { code }
+//   audio_undecodable   解不了。details: { code, message }（message 是解码报的话：ffmpeg 说的话全文，令牌形状的串和签名地址去掉，见 tools/audio-decode.mjs）
+// 音质检查只量、只给提醒（tools/audio-quality.mjs），不淘汰任何一段：能不能用由模型和平台说了算。提醒写在 quality.reasons 里，挑参考时排在后面。
 // 上一版带过来的段（item.previous）只量一遍音质（给优先级和能量的基准用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考。
 // 它们排在前面，新补的和它们字节一样就是重复（sameAs 是上一版里的那一段）。
-// 句子（长录音的句子模式，lib/make-pack-sentences.mjs）只认格式：一到三秒的句子过不了音质检查的线，也不查重；句子的音质在它合成的段上量（那一段也过这里）。
+// 句子（长录音的句子模式，lib/make-pack-sentences.mjs）只认格式：不量音质，也不查重；句子的音质在它合成的段上量（那一段也过这里）。
 // 发新版本查重：上一版里的段是调过响度存进包的（lib/make-pack-loudness.mjs），新补的要是同一段录音，原始字节对不上它，所以新补的再按这次的调响度设置调一遍，
 // 调出来的字节也拿去比（调的结果是确定的）；这次关了调响度，就按默认的目标比：上一版多半是默认目标调的。
 //
@@ -39,7 +39,7 @@ const KEPT_METRICS = ['durationSec', 'sampleRate', 'channels', 'peakDbfs', 'sile
 
 /** 音质检查报告里留下的部分。 */
 function summarizeQuality(result) {
-  return { status: 'checked', decoder: result.decoder, verdict: result.verdict, usable: result.usable, metrics: Object.fromEntries(KEPT_METRICS.map((key) => [key, result.metrics[key]])), reasons: result.reasons };
+  return { status: 'checked', decoder: result.decoder, verdict: result.verdict, metrics: Object.fromEntries(KEPT_METRICS.map((key) => [key, result.metrics[key]])), reasons: result.reasons };
 }
 
 /**
@@ -79,13 +79,12 @@ export async function screen(env, items, { thresholds, loudness }) {
     try {
       const result = await checkAudioQuality(env, item.audio.bytes, { thresholds });
       item.quality = summarizeQuality(result);
-      if (!result.usable && !carried) item.unused = { reason: 'quality_rejected', details: { codes: result.reasons.filter((reason) => reason.severity === 'reject').map((reason) => reason.code) } };
     } catch (error) {
       const kind = decodeFailureKind(error);
       if (kind === 'runtime_missing') item.quality = { status: 'unchecked', reason: 'runtime_missing', runtime: error.details.runtime };
       else if (kind === 'undecodable') {
-        if (carried) item.quality = { status: 'unchecked', reason: 'audio_undecodable', code: error.code };
-        else item.unused = { reason: 'audio_undecodable', details: { code: error.code } };
+        if (carried) item.quality = { status: 'unchecked', reason: 'audio_undecodable', code: error.code, message: error.message };
+        else item.unused = { reason: 'audio_undecodable', details: { code: error.code, message: error.message } };
       } else throw error;
     }
     if (twins !== null && !carried && item.unused === undefined) {

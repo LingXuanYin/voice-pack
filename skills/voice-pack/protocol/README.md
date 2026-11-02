@@ -21,6 +21,7 @@
 | 用途 | 文件 |
 |---|---|
 | 共用的底子 | `errors.mjs`（统一的错误）、`env.mjs`（从运行环境取东西）、`bytes.mjs`（十六进制、Base64）、`hash.mjs`（SHA-256）、`version.mjs`（协议版本、语义化版本）、`limits.mjs`（解包上限）、`paths.mjs`（路径的写法和检查）、`fileset.mjs`（文件集：`Map<路径, Uint8Array>`） |
+| 打码 | `scrub.mjs`（报出去之前的打码：原话里的令牌、刷新令牌、API key、密码、带签名的地址去掉；报错、模型的回答、程序和脚本的标准错误都从这里引；错误进另一个错误的 cause 之前用 `scrubbedCause`） |
 | zip | `zip.mjs`（入口，读和写）、`zip-format.mjs`、`zip-structure.mjs`、`zip-read.mjs`、`zip-write.mjs` |
 | 清单 | `schema.mjs`（JSON Schema 子集的校验器）、`manifest.mjs`（读、写、检查清单）、`seal.mjs`（给一个部分生成清单） |
 | 检查 | `check.mjs`（检查一个部分：`checkPart` 是信任边界上的入口，要选验签的策略；`selfCheckPart` 是库内部自检）、`mutual.mjs`（角色部分和基础部分互相校验）、`audio.mjs`（按内容判断音频格式）、`skill-md.mjs`（SKILL.md 的读和检查，生成角色部分的骨架） |

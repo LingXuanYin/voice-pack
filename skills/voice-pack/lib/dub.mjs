@@ -8,19 +8,20 @@
 //   @capability text-generation     可选：台本里没有任何提示时，让它判断每句的情绪、风格（在 lib/reference-pick.mjs 里用）
 //
 //   const plan   = await planDub(env, pack, script, options);   只规划，不合成：每一段话挑了哪一段参考、为什么、读音词表换了什么。不花钱：不调任何要计费的能力，
-//                                                               text-generation 也不调（要判情绪的句子，plan.judge 是 { status: 'planned', capability, lines }，写明正式运行会判几句，这几句现在用默认参考）
+//                                                               text-generation 也不调（要判情绪的句子，plan.judge 是 planned，写明正式运行会判几句、调几次，这几句现在用默认参考；形状见 lib/reference-pick.mjs 的文件头）
 //   const result = await dubScript(env, pack, script, options); 规划，再合成
 // pack 是 lib/voice-pack.mjs 的 openVoicePack 打开的角色部分，或者几个（数组，第一个是台本开头，即第一个 [voice:] 之前用的声音；见第 1 步）。
 // 库不碰文件系统：合成出来的音频是字节，写成文件是命令行层的事。
 // 几个包：每一句用它那一刻的包（挑参考、读音词表、配音指引、增强件、脚本都照那个包的）；短句并段只在同一个包里并（第 5b 步）；
 //   每个 unit 记着包 ID（unit.pack），plan.packs 列出几个包。只给一个包时，这两样都不出现，输出和以前一字不差。
-//   text-generation 的判断按包分开调（每个包的参考集里有的标签不一样），judge 把它们合在一个对象里（status 取最要紧的一个）。
+//   text-generation 的判断按包分开调（每个包的参考集里有的标签不一样），judge 把它们合在一个对象里（combineJudges，在 lib/reference-pick.mjs）。
 //
 // 台本（script）：一个字符串（带台本标记的整段台本），或者一个数组，每项是
 //   { text, labels?, instructions? }   text 是带标记的台本；labels 是调用方给这一项的标签 { language, emotion, style, energy }；
 //                                      instructions 是调用方给这一项的说明（agent 读了配音指引以后想补的话）。
 // options：labels（给所有项的默认标签，项自己的盖过它）、concurrency（并发数，默认 2，1–8）、maxChars（一次合成最多多少个字，
-//   超过的按句子切开；默认不切）、minChars（合成能力一次至少多少个字，环境声明的；默认没有下限，见第 5b 步）、joinShort（默认 true；
+//   超过的按句子切开；默认不切）、minChars（合成能力一次至少多少个字，环境声明的；默认没有下限，见第 5b 步）、
+//   maxPromptTokens（text-generation 一次请求最多收多少输入，环境声明的；判情绪按它分几次发，默认一次发完；规则在 lib/reference-pick.mjs 的文件头）、joinShort（默认 true；
 //   false 就不并短句，只按下限认：试合成用，每条留出录音一段）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped；失败后重做用）、
 //   runtimesOf（几个包时，每个包的脚本运行时：runtimesOf(pack) 返回这个包的 { 运行时名字: 函数 }；命令行层给每个包目录各建一份（cli/script-runtimes.mjs）；
 //   不给就用 env.runtimes。脚本在它自己的包目录里运行，所以要分开）、
@@ -35,7 +36,8 @@
 //     对不上报 voice_unknown，对上不止一个包报 voice_ambiguous。第一个 [voice:] 之前（或者 [voice:] 是空的）用第一个包。
 //     只有一个包时，别的名字报 voice_unknown：一个包只有一个声音，换声音的台本需要别的包，不悄悄用这个包去念。
 //   2 读舞台提示（lib/line-hints.mjs）：括号里的（耳语）、*笑* 变成这一段的情绪、风格、停顿、语速，从要说的话里拿掉。
-//     括号里词表认不出的内容（（画外音））配音时也拿掉，不念；如实记在这一段的 pick.directions 里（recognized 为 false）。
+//     提示管到哪里，规则见 tools/markup.mjs 文件头「舞台提示的范围」。段与段之间的状态由 readDirections 的 carry 带过去（同一行才带，换一行、换声音就清掉）。
+//     括号里词表认不出的内容（（画外音））配音时也拿掉，不念；如实记在这一段的 pick.directions 里（recognized 为 false），并进这一句的说明（第 7 步），交给模型。
 //   3 每一段挑参考（lib/reference-pick.mjs）：调用方的标签、台本里的提示、text-generation 的判断、默认参考。理由放在 units[i].pick 里。
 //     text-generation 的判断是计费的，在 onPlan 之后才调（见上面的 onPlan）。
 //   4 读音词表（包里的 lexicon.pls，lib/pronunciation-lexicon.mjs）：换掉要说的话里的词，只换标记之间的文字。做不到的如实报在 lexicon.unapplied。
@@ -57,7 +59,10 @@
 //      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
 //      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
 //      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
-//      返回值里说明没传和原因；plan.guidance.sent 写明交出去的那段指引这次有没有传（只有每句自己的说明传了，不算）。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引过长（超过 2000 个字）截短再传，并记一条 guidance_truncated。
+//      返回值里说明没传和原因；plan.guidance.sent 写明交出去的那段指引这次有没有传（只有每句自己的说明传了，不算）。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引不截，超长的照样交给适配器：平台超了报错，那个错对每一句都一样，照旧往上抛、停下来（见 vocab/capability-signatures.md 的「通用约定」）。
+//      这一句的舞台提示怎么拼（按原文去重，次序是情绪、语速、停顿）：同一行里最近的一处情绪或风格（有就一处，跨过 [pause] 也算，换一行、换声音就清掉）；还在管着的那一处放慢或加快（有就一处，管到下一个放慢、加快或行尾，情绪变了也不清，停顿也不清，和 unit.speed 一致）；
+//      这一段自己前面那一截里排在最后一个情绪或风格之后的停顿。同一截里被后面的放慢、加快替掉的不带。
+//      前面几段的停顿不带过来：停顿算在前一段的后面（一行开头的算在这一段前面），见 lib/line-hints.mjs 文件头「停顿」。
 //      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
 //      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一句分段时，一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在第一段带，情绪、风格每段都带。
 //      返回值的 units[i].cues 写明没传和原因（style_cues_missing、nothing_to_send）。
@@ -71,7 +76,7 @@
 // 或者适配器（它自己把音频拼好、直接返回成品的，就是拼接的人，unit.speed 归它处理，例如变速、保持音高，不能原样丢掉）。dub 本身不把 speed 传给合成能力。
 // 语速和停顿只走这些字段，不进 cues（一个概念一条路）：拼接的人按 unit 做一次。不论环境声明不声明 style-cues，都一样。
 // 停顿有两个来源：台本标记 [pause …] 和舞台提示（（停顿 3 秒），一行里只有它时挂到前一句的后面，规则见 lib/line-hints.mjs）。同一处两样相加，
-// 加起来不超过 PAUSE_MAX_MS（tools/markup.mjs，[pause …] 的上限）；前一句的后面加后一句的前面（同一个缝）也不超过它，超过的从后一句的前面扣。
+// 加起来照写的，不封顶（和 [pause …] 一样）；同一行里的都挂在前一句后面、相加。隔一行的缝上，前一句的后面和后一句的前面各写各的，不相加，由拼接的人各插各的（lib/mix.mjs）。放不下一份音频的，拼接时报错（lib/mix.mjs）。
 //
 // 一段失败了怎么办：能力抛的错如果标了 details.transient（服务暂时出错，约定见 vocab/capability-signatures.md），或者标了 details.textRejected
 // （只和这一次的文字有关，换一句就成，同一约定），这一段记成 failed（unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；
@@ -90,15 +95,18 @@
 //   runtime_missing     脚本要的运行时环境没有（details: { runtime, entry, feature }）
 // 只有配音用到的才报；缺 text-generation、style-instruction 都不是错误。text-generation 的回答不能用（没有文字、没有正常结束）也不是错误：
 // 那几句落到默认参考，plan.judge 是 { status: 'unusable', … }，units[i].pick.judgeFailed 为 true，配音接着做（规则在 lib/reference-pick.mjs 的文件头）。
+// 判情绪分几次发、回答被截断、单独超过一次请求的上限的句子怎么办，和 plan.judge 的形状（calls、tooLong、truncated、ignored，提到台词时用台词自己的编号 lines[i].index，几个包一起配时也一样，
+// 挑参考时按 lineNumbers 带过去）都写在 lib/reference-pick.mjs 的文件头。
 //
 // 说明（返回值里的 notes：[{ code, message, details }]，规划和正式运行都有；message 是给人看的中文，details 是它说的那些事实，没有要说的数就是空对象）：
-//   guidance_truncated       配音指引超过 2000 个字，截短以后才传给模型。details: { chars, max }：指引原来有多少个字、最多传多少个字
+//   （配音指引超长，这里不截，超长的照样交给适配器：平台超了报错，那个错对每一句都一样，照旧往上抛、停下来，不算成某一句的失败）
 //   speed_not_applied        台本有语速要求，合成能力不收语速，要拼接的人按 unit.speed 处理。details: {}
 //   scripts_without_feature  包里有没登记功能的脚本，这次没有运行。details: { scripts }，scripts 是 [{ entry, runtime }]；note.scripts 是同一份，是原来的写法，留着给已有的读者
 //   short_lines_joined       有几段比合成能力的下限短，并进了相邻的句子（第 5b 步）。details: { min, units }：下限是多少个字，并成的段有几段
+//   pause_length_unchecked   台本里有停顿，可是参考段里一段也读不出采样率，计划阶段估不出成品的格式，停顿加起来放不放得下一份 WAV 这一次没核（拼接时照常核）。details: { reason: 'no_reference_format' }
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
-//   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 concurrency 不对。details.field
+//   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 maxPromptTokens 或 concurrency 不对。details.field
 //   dub_nothing_to_say       台本里没有可说的话（只有标记和提示）
 //   dub_text_rejected        还没有一句成功、已经有 3 句被服务商拒了（见上面「一段失败了怎么办」）：停下。details: { limit, rejected: [{ unit, line }] }，
 //                            被服务商拒的段（unit，同 only 的编号）和它的句子（line，同 lines[i].index），都从 0 起
@@ -110,25 +118,26 @@
 //   另外 pick_input_invalid（标签不对）、lexicon_invalid、script_*、file_missing（清单里列了、包里没有）等来自各自的模块。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
-import { VoicePackError } from '../protocol/lib/errors.mjs';
+import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { fromBase64 } from '../protocol/lib/bytes.mjs';
 import { guidanceForModel } from '../protocol/lib/guidance-sections.mjs';
-import { parseScript, SPEED, PAUSE_MAX_MS } from '../tools/markup.mjs';
+import { parseScript, SPEED } from '../tools/markup.mjs';
 import { splitSentences } from '../tools/sentences.mjs';
 import { readDirections, canonicalLabel } from './line-hints.mjs';
 import cues from '../vocab/cues.json' with { type: 'json' };
-import { pickReferences } from './reference-pick.mjs';
+import { combineJudges, pickReferences } from './reference-pick.mjs';
 import { lexiconRules, applyLexicon, applyPhonemes, PINYIN_ALPHABET } from './pronunciation-lexicon.mjs';
 import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, runScript, audioForScript, HOOKS } from './pack-script.mjs';
 import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
 import { isServiceError, isTextRejected, summarizeError, pool } from './capability-calls.mjs';
 import { requestsOf, endsMidSentence, JOIN_PUNCTUATION_PAUSE_MS } from './pause-in-request.mjs';
+import { checkPausesFit } from './mix.mjs';
+import { sniffAudio } from '../protocol/lib/audio.mjs';
 
 export const FEATURE = 'dub';
 /** unit.error.code：比合成能力的下限短、并不了的那一段（第 5b 步）。make-pack 的试合成也认这个码，把它记成「没合成」，不是「暂时出错」。 */
 export const TEXT_TOO_SHORT = 'text_too_short';
-const GUIDANCE_MAX = 2000;
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
 /**
@@ -143,8 +152,6 @@ const REMOVE_UNRECOGNIZED = Object.freeze({ unrecognized: 'remove' });
 const PLAN_ONLY = Object.freeze({ ...REMOVE_UNRECOGNIZED, judge: false });
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-/** 一处停顿的毫秒数封顶：上限和台本标记 [pause …] 的一样（tools/markup.mjs 的 PAUSE_MAX_MS），只在那里写一处。 */
-const capPause = (ms) => Math.min(ms, PAUSE_MAX_MS);
 const invalid = (field, message) => new VoicePackError('dub_input_invalid', message, { details: { field } });
 
 // ---------------------------------------------------------------- 输入
@@ -172,9 +179,11 @@ function readOptions(options) {
   if (options.guidance !== undefined && options.guidance !== null && typeof options.guidance !== 'string') throw invalid('guidance', 'guidance 必须是字符串或 null');
   const minChars = options.minChars ?? null;
   if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars 必须是不小于 1 的整数（合成能力一次至少多少个字），或者不给');
+  const maxPromptTokens = options.maxPromptTokens ?? null;
+  if (maxPromptTokens !== null && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < 1)) throw invalid('maxPromptTokens', 'maxPromptTokens 必须是不小于 1 的整数（text-generation 一次请求最多收多少输入），或者不给');
   if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort 必须是 true 或 false');
   if (options.runtimesOf !== undefined && typeof options.runtimesOf !== 'function') throw invalid('runtimesOf', 'runtimesOf 必须是函数：runtimesOf(pack) 返回这个包的脚本运行时');
-  return { concurrency, maxChars, minChars, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only, runtimesOf: options.runtimesOf };
+  return { concurrency, maxChars, minChars, maxPromptTokens, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only, runtimesOf: options.runtimesOf };
 }
 
 // ---------------------------------------------------------------- 几个包
@@ -217,62 +226,80 @@ function ownersOf(packs, lines, voices) {
   return lines.map((line) => (line.voice === null ? packs[0] : matchesOf(line.voice)[0]));
 }
 
-/**
- * 几个包各自的 text-generation 判断，合在一个 judge 里（一个包时就是它自己的，不动）：status 取最要紧的一个
- * （unusable > planned > used > unavailable > not_needed），lines 相加，model、reason、error 取第一个有的。
- */
-function combineJudges(judges) {
-  if (judges.length === 1) return judges[0];
-  const rank = ['unusable', 'planned', 'used', 'unavailable', 'not_needed'];
-  const status = rank.find((name) => judges.some((judge) => judge.status === name)) ?? 'not_needed';
-  const first = (key) => judges.find((judge) => judge[key] !== undefined)?.[key];
-  const lines = judges.reduce((sum, judge) => sum + (judge.lines ?? 0), 0);
-  const ignored = judges.flatMap((judge) => judge.ignored ?? []);
-  return {
-    status,
-    ...(status === 'not_needed' ? {} : { capability: 'text-generation' }),
-    ...(lines > 0 ? { lines } : {}),
-    ...(first('model') === undefined ? {} : { model: first('model') }),
-    ...(first('reason') === undefined ? {} : { reason: first('reason') }),
-    ...(first('error') === undefined ? {} : { error: first('error') }),
-    ...(ignored.length > 0 ? { ignored } : {}),
-  };
-}
-
 // ---------------------------------------------------------------- 台本 -> 一句一句
 
 /**
  * 解析台本标记、读舞台提示，得到一句一句（每句是一段要念的话，带着自己的提示、语速、停顿）。
  * 停顿标记单独成段的（文字是空的），算在前一句后面；一开头的算在第一句前面。舞台提示里一句要念的话都没有的一段（（停顿 3 秒））也一样：
  * 它的停顿（readDirections 的 unattachedPauseMs）和这一段后面的 [pause] 一起算。
- * 同一处停顿（舞台提示的加上 [pause …] 的）相加以后封顶，上限是 tools/markup.mjs 的 PAUSE_MAX_MS；
- * 前一句的后面加后一句的前面（同一个缝）也不超过它：超过的，从后一句的前面扣。
+ * 同一行里同一处停顿（舞台提示的加上 [pause …] 的）相加、挂在前一句后面，不封顶；隔一行的缝上，前一句的后面和后一句的前面各写各的，不相加。
  */
 function buildLines(sources, defaults) {
   const lines = [];
   const voices = [];
   let pendingBefore = 0;
   let chapterOffset = 0;
+  // 同一行里的舞台提示和前一段留下的状态（readDirections 的 carry）：跨过 [pause …] 接着管，换一行、换声音就清掉。
+  // physical 是物理行编号（每个换行、每个声音的开头加一），hintLine 记着 emotionOnLine、speedOnLine 是哪一行的。
+  let carried = null;
+  let physical = -1;
+  let hintLine = null;
+  let emotionOnLine = null;
+  let speedOnLine = null;
   const addPause = (ms) => {
     if (ms <= 0) return;
-    if (lines.length > 0) lines[lines.length - 1].pauseAfterMs = capPause(lines[lines.length - 1].pauseAfterMs + ms);
-    else pendingBefore = capPause(pendingBefore + ms);
+    if (lines.length > 0) lines[lines.length - 1].pauseAfterMs += ms;
+    else pendingBefore += ms;
   };
   sources.forEach((source, sourceIndex) => {
     const labels = { ...(defaults ?? {}), ...(source.labels ?? {}) };
-    const chapters = parseScript(source.text);
+    const chapters = parseScript(source.text, { lineStarts: true });
     chapters.forEach((chapter, chapterIndex) => {
       chapter.spans.forEach((span, spanIndex) => {
         if (span.voice_id !== null) voices.push(span.voice_id);
-        const { pieces, unattachedPauseMs } = readDirections(span.text, REMOVE_UNRECOGNIZED);
+        if (span.line_start === true) {
+          physical += 1;
+          carried = null;
+        }
+        const firstLine = physical; // 这一段的第一行是哪个物理行：可能接着前一段的行
+        // 段自己带语速标签（[slow]、[fast]、[emphasis]）：和舞台提示的放慢、加快是同一类，新的一个出现，前面还在管着的放慢或加快就结束
+        if (span.speed !== null) {
+          speedOnLine = null;
+          if (carried !== null) carried = { ...carried, speed: null };
+        }
+        const read = readDirections(span.text, REMOVE_UNRECOGNIZED, carried, { script: source.text });
+        carried = read.carry;
+        physical = firstLine + span.text.split('\n').length - 1; // 这一段读完时在哪个物理行（段里有几个换行）
+        addPause(read.headPauseMs); // 同一行里前一段后面的停顿，挂在前一句后面
+        const { pieces, unattachedPauseMs } = read;
         if (pieces.length === 0) {
           addPause(unattachedPauseMs);
           addPause(span.pause_ms_after);
           return;
         }
+        // 管着这一句的舞台提示（说明用，规则见文件头第 7 步）：同一行里最近的一处情绪或风格（有就一处），然后是还在管着的那一处放慢或加快（语速照 lib/line-hints.mjs，
+        // 管到下一个放慢、加快或行尾，情绪变了也不清），最后是这一段自己前面那一截里排在最后一个情绪或风格之后的停顿。按原文去重；每段只要 O(1 + 自己那一截)。换一行就清掉。
         pieces.forEach((piece, pieceIndex) => {
           const last = pieceIndex === pieces.length - 1;
           const speed = piece.speed !== null ? SPEED[piece.speed] : span.speed;
+          if (firstLine + piece.line !== hintLine) {
+            emotionOnLine = null;
+            speedOnLine = null;
+            hintLine = firstLine + piece.line;
+          }
+          let own = []; // 这一段自己前面那一截里，最后一个情绪或风格之后的提示：{ raw, speed, pause }
+          for (const direction of piece.directions) {
+            const isSpeed = direction.actions.includes('slow') || direction.actions.includes('fast');
+            if (isSpeed) speedOnLine = direction.raw;
+            if (direction.emotion !== null || direction.style !== null) {
+              emotionOnLine = direction.raw;
+              own = [];
+            } else own.push({ raw: direction.raw, speed: isSpeed, pause: direction.actions.includes('pause') });
+          }
+          // 同一截里被后面的放慢、加快替掉的不带（只留最后一个）；停顿照带
+          const lastSpeed = own.map((entry) => entry.speed).lastIndexOf(true);
+          const actions = own.filter((entry, index) => !entry.speed || entry.pause || index === lastSpeed).map((entry) => entry.raw);
+          const governing = [...new Set([emotionOnLine, speedOnLine, ...actions].filter((part) => part !== null))];
           lines.push({
             index: lines.length,
             source: sourceIndex,
@@ -283,10 +310,11 @@ function buildLines(sources, defaults) {
             labels,
             hints: { ...(piece.hints.emotion === null ? {} : { emotion: piece.hints.emotion }), ...(piece.hints.style === null ? {} : { style: piece.hints.style }) },
             directions: piece.directions,
+            governing,
             instructions: source.instructions,
             speed: speed ?? null,
-            pauseBeforeMs: capPause(piece.pauseBeforeMs + pendingBefore), // 一开头单独成段的停顿，算在第一句前面
-            pauseAfterMs: capPause(piece.pauseAfterMs + (last ? span.pause_ms_after : 0)),
+            pauseBeforeMs: piece.pauseBeforeMs + pendingBefore, // 一开头单独成段的停顿，算在第一句前面
+            pauseAfterMs: piece.pauseAfterMs + (last ? span.pause_ms_after : 0),
             ...(last && span.join !== undefined ? { join: span.join } : {}),
           });
           pendingBefore = 0;
@@ -295,7 +323,6 @@ function buildLines(sources, defaults) {
     });
     chapterOffset += chapters.length;
   });
-  for (let at = 1; at < lines.length; at += 1) lines[at].pauseBeforeMs = Math.min(lines[at].pauseBeforeMs, PAUSE_MAX_MS - lines[at - 1].pauseAfterMs);
   return { lines, voices };
 }
 
@@ -408,23 +435,9 @@ const checkedBeforeCall = (error) => error.code === 'capability_input_invalid';
 
 // ---------------------------------------------------------------- 传给模型的说明
 
-/** 配音指引截到上限以内。尽量在段落边界截；返回 { text, truncated }。 */
-function fitGuidance(guidance) {
-  if (guidance === null || count(guidance) <= GUIDANCE_MAX) return { text: guidance, truncated: false };
-  const head = [...guidance].slice(0, GUIDANCE_MAX).join('');
-  const cut = head.lastIndexOf('\n\n');
-  return { text: (cut > GUIDANCE_MAX / 2 ? head.slice(0, cut) : head).trim(), truncated: true };
-}
-
-/** 管着这一句的舞台提示：从最后一个有情绪或风格的提示起，没有就全部。配音指引（noteOf）用的是这一批。 */
-function governingOf(line) {
-  const last = line.directions.map((d) => d.emotion !== null || d.style !== null).lastIndexOf(true);
-  return line.directions.slice(Math.max(last, 0));
-}
-
-/** 这一句的说明：调用方给的，加上管着这一句的舞台提示（governingOf）。原样用作者的词。 */
+/** 这一句的说明：调用方给的，加上管着这一句的舞台提示（line.governing，buildLines 里算好的，规则见文件头第 7 步）。原样用作者的词。 */
 function noteOf(line) {
-  const parts = [line.instructions, ...governingOf(line).map((d) => d.raw)].filter((part) => typeof part === 'string' && part.trim() !== '');
+  const parts = [line.instructions, ...line.governing].filter((part) => typeof part === 'string' && part.trim() !== '');
   return parts.length === 0 ? null : [...new Set(parts)].join('；');
 }
 
@@ -477,7 +490,7 @@ function pausesInRequest(env, units, styles, { max, hasScripts }) {
   if (!hasCapability(env, 'pause-in-text') || units.every((unit) => hasScripts(unit))) return { units, styles, joins: 0 };
   const oneShot = (at) => styles[at].cues !== null && ONE_SHOT_STYLES.has(styles[at].cues.style);
   const sameStyle = (a, b) => JSON.stringify(styles[a]) === JSON.stringify(styles[b]);
-  // 一个缝的停顿：前一段的后面，加上后一段的前面（buildLines 已经把它封顶在 PAUSE_MAX_MS 以内）
+  // 一个缝的停顿：前一段的后面，加上后一段的前面（照加，没有上限）
   const items = units.map((unit, at) => ({ text: unit.spoken, pause: at + 1 < units.length ? unit.pauseAfterMs + units[at + 1].pauseBeforeMs : unit.pauseAfterMs, inline: true, at }));
   const requests = requestsOf(items, {
     max,
@@ -515,6 +528,37 @@ function pausesInRequest(env, units, styles, { max, hasScripts }) {
 }
 
 
+/** 读一段参考出的、算「读不到、认不出」的错的码（lib/voice-pack.mjs 的 referenceClip 和 loadFile 抛的）。 */
+const UNREADABLE_REFERENCE = new Set(['file_missing', 'file_modified', 'file_unlisted', 'audio_unrecognized']);
+
+/**
+ * 成品的采样率和声道，按参考段估：采样率取参考段里最高的，声道取最多的；mp3 这类没有声道信息的不算声道，声道就按单声道（WAV 的默认）。
+ * 外部的参考段（清单的 externals，取它要上网）和读不到、认不出格式的参考段不算，它们在用到的时候才报。一段也认不出采样率，返回 null：计划阶段核不了，拼接时照常核。
+ * 「读不到、认不出」只指包里的文件不在、被改过、没列进清单、认不出格式（UNREADABLE_REFERENCE 的那几个码）；别的错（读取函数自己出了错、程序错）照抛。
+ */
+async function productFormatOf(packs) {
+  let sampleRate = null;
+  let channels = null;
+  for (const pack of packs) {
+    const external = new Set((pack.manifest.externals ?? []).map((entry) => entry.path));
+    for (const segment of pack.manifest.reference.segments) {
+      if (external.has(segment.audio)) continue;
+      let bytes;
+      try {
+        bytes = (await pack.referenceClip(segment.id)).clip.bytes;
+      } catch (error) {
+        if (isVoicePackError(error) && UNREADABLE_REFERENCE.has(error.code)) continue;
+        throw error;
+      }
+      const info = sniffAudio(bytes);
+      if (info === null) continue;
+      if (typeof info.sampleRate === 'number') sampleRate = Math.max(sampleRate ?? 0, info.sampleRate);
+      if (typeof info.channels === 'number') channels = Math.max(channels ?? 0, info.channels);
+    }
+  }
+  return sampleRate === null ? null : { sampleRate, channels: channels ?? 1 };
+}
+
 /**
  * 规划：返回 { plan, styles, unmergedCount }。styles[i] 是第 i 段真要传给模型的 { instructions, cues }（环境没有 style-instruction 时 instructions 是 null，没有 style-cues 时 cues 是 null）；
  * 全文可能很长，不放进每一段的记录里，只有合成的人拿它。askJudge 为假时（planDub，以及 dubScript 的第一遍）不调任何要计费的能力。
@@ -538,17 +582,17 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
   const perPack = new Map();
   for (const pack of packs) {
     const own = lines.filter((line) => owners[line.index] === pack);
-    const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY);
+    const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), { ...(askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY), ...(settings.maxPromptTokens === null ? {} : { maxPromptTokens: settings.maxPromptTokens }), lineNumbers: own.map((line) => line.index) });
     const picks = new Map(own.map((line, k) => [line.index, { ...picked[k], index: line.index }]));
+    // judge 里提到哪一句台词，用的都是台词自己的编号（lines[i].index）：几个包时，每个包只拿到自己的那几句，编号靠 lineNumbers 带过去（lib/reference-pick.mjs）
     const lexicon = await pack.lexicon();
     const { rules, phonemes, unapplied } = lexicon === null ? { rules: [], phonemes: [], unapplied: [] } : lexiconRules(lexicon, { phonemeInText: phonemeOn });
     const rawGuidance = settings.guidance === undefined ? await pack.guidance() : settings.guidance;
     // 新式指引（有三个小节中的任何一个）只交演法，没有演法就什么都不交；旧式（三个都没有）整段交（guidanceForModel）。要在拼之前取：下面 instruction 把说明和舞台提示接在指引后面，
     // 等适配器在拼好的串里取，演法之后的说明会被切掉，或被并进演法。
     const sentGuidance = guidanceForModel(rawGuidance) ?? rawGuidance;
-    const guidance = fitGuidance(sentGuidance);
-    if (guidance.truncated) notes.push({ code: 'guidance_truncated', message: named(pack, `配音指引有 ${count(sentGuidance)} 个字，超过 ${GUIDANCE_MAX}，截短以后才传给模型`), details: { chars: count(sentGuidance), max: GUIDANCE_MAX } });
-    perPack.set(pack, { own, judge, picks, rules, unapplied, phonemes, usedTerms: new Set(), rawGuidance, guidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
+    // 不截：超长的照样交给适配器，平台超了报错，那个错照旧往上抛（见文件头「说明」）
+    perPack.set(pack, { own, judge, picks, rules, unapplied, phonemes, usedTerms: new Set(), rawGuidance, guidance: sentGuidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
   }
 
   const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
@@ -565,7 +609,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       applied.set(key, seen === undefined ? { ...replacement } : { ...seen, count: seen.count + replacement.count });
     }
     const note = noteOf(line);
-    const instruction = [mine.guidance.text, note].filter((part) => part !== null && part !== '');
+    const instruction = [mine.guidance, note].filter((part) => part !== null && part !== '');
     const instructions = instruction.length === 0 ? null : instruction.join('\n\n');
     const parts = partsOf(replaced.text, settings.maxChars);
     parts.forEach((spoken, partIndex) => {
@@ -573,7 +617,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       const last = partIndex === parts.length - 1;
       const partCues = cuesOf(line, partIndex + 1);
       const cueNames = partCues.emotion !== null || partCues.style !== null;
-      if (styled && mine.guidance.text) carried.add(owner);
+      if (styled && mine.guidance) carried.add(owner);
       styles.push({ instructions: styled ? instructions : null, cues: cued && cueNames ? partCues : null });
       units.push({
         index: units.length,
@@ -652,13 +696,26 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       usedPhonemes.set(key, seen === undefined ? { ...item } : { ...seen, count: seen.count + item.count });
     }
   }
+  // 装不下的停顿，花钱之前就拦下：照拼接的次序排一遍停顿（mix 的规则 8 的下限），规则和估法写在 references/dub.md「停顿放不放得下」。成品的格式按参考段估；
+  // 估不出来，这里核不了，写一条注意说明这一次没核（台本里没有停顿就没什么可核），拼接时照常核。
+  // dubScript 先跑一遍不计费的（askJudge 为假）：这一遍核过了，才去判情绪（计费）。判完的第二遍再核一次，判出来的并段可能让停顿变了
+  const format = await productFormatOf(packs);
+  const pauses = units.map((unit) => ({ number: unit.index + 1, pauseBeforeMs: unit.pauseBeforeMs, pauseAfterMs: unit.pauseAfterMs }));
+  if (format !== null) checkPausesFit(pauses, format);
+  else if (pauses.some((unit) => unit.pauseBeforeMs > 0 || unit.pauseAfterMs > 0)) {
+    notes.push({
+      code: 'pause_length_unchecked',
+      message: '停顿加起来放不放得下一份 WAV，这一次没有核：参考段里没有一段读得出采样率（外部的、读不到的、认不出格式的都不算），成品的格式估不出来。拼接时按成品的实际采样率核，放不下会在那时报错。',
+      details: { reason: 'no_reference_format' },
+    });
+  }
   const plan = {
     pack: packInfo(packs[0]),
     lines: lines.map(({ index, source, chapter, span, voice, text, labels }) => ({ index, source, chapter, span, voice, text, labels })),
     units,
-    judge: combineJudges(packs.map((pack) => perPack.get(pack).judge)),
+    judge: packs.length === 1 ? perPack.get(packs[0]).judge : combineJudges(packs.map((pack) => perPack.get(pack).judge)),
     lexicon: { applied: [...applied.values()], unapplied: many ? uniqueJson(lexiconUnapplied) : lexiconUnapplied, ...(usedPhonemes.size > 0 ? { phonemes: [...usedPhonemes.values()] } : {}) },
-    guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, truncated: perPack.get(pack).guidance.truncated, sent: carried.has(pack) }))),
+    guidance: guidanceSummary(packs.map((pack) => ({ rawGuidance: perPack.get(pack).rawGuidance, sent: carried.has(pack) }))),
     enhancers: emptyEnhancers(mergedOffers(packs.map((pack) => perPack.get(pack).offers))),
     scripts: packs.flatMap((pack) => perPack.get(pack).scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS], ...(many ? { pack: pack.manifest.id } : {}) }))),
     missingRuntimes: inUse.flatMap((pack) => missingScriptRuntimes(envFor(env, settings, pack), perPack.get(pack).scripts, FEATURE).map((item) => (many ? { ...item, pack: pack.manifest.id } : item))),
@@ -847,7 +904,7 @@ function guidanceSummary(entries) {
   return {
     present: entries.some((entry) => entry.rawGuidance !== null && entry.rawGuidance !== undefined),
     chars: entries.reduce((sum, entry) => sum + (entry.rawGuidance ? count(entry.rawGuidance) : 0), 0),
-    truncated: entries.some((entry) => entry.truncated),
+    truncated: false, // 基础部分不截了（超过的由适配器报错）：字段留着、恒为 false，--json 的输出形状不变（只给一个包时输出逐字节不变）
     sent: entries.some((entry) => entry.sent),
   };
 }

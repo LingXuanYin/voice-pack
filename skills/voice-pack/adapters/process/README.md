@@ -32,7 +32,7 @@
 
 ## 进程协议（版本 1）
 
-**传输**：程序的标准输入和标准输出，UTF-8，**一行一个 JSON 对象**，换行结尾（`\r\n` 也认）。适配器写程序的标准输入，读程序的标准输出。标准错误不属于协议：程序的日志写在那里，出错时适配器会把最后一段带给使用者看。
+**传输**：程序的标准输入和标准输出，UTF-8，**一行一个 JSON 对象**，换行结尾（`\r\n` 也认）。适配器写程序的标准输入，读程序的标准输出。标准错误不属于协议：程序的日志写在那里，出错时适配器会把全文带给使用者看（打过码）。
 
 **三种消息**：
 
@@ -68,7 +68,7 @@
    - `ok` 为 `false` 时 `error.code` 必给（非空字符串）。`code` 是小写字母、数字、下划线、字母开头，就原样成为这个错误的 code；不是这个写法（例如 `"Out Of Memory"`），错误的 code 是 `process_program_error`，原来的放在 `details.programCode`。`message` 可选。`transient: true` 表示服务暂时出错、稍后重来也许就成（含义见 `../README.md`「出错的约定」）：**只认 `error.transient`**，`error.details` 里夹带的 `transient` 不算。`details` 可选，是对象，并进错误的 `details`（适配器再加上 `capability`）。
    - 请求的是程序没有的能力：回一个 `error`（骨架里的 `code` 是 `capability_unsupported`）。
 
-**不是协议的行**：程序标准输出里不是协议消息的行（不是 JSON 对象、没有 `id` 也没有 `event` 的 JSON、不认识的 `event`）当作日志忽略，最后几行会放进出错的 `details.output`。所以多一两行 `print` 不会弄坏协议，但别指望它：生成的骨架把 `sys.stdout` 换成了标准错误，标准输出只给协议用。不认识的 `event` 也忽略，以后可以加新的事件。
+**不是协议的行**：程序标准输出里不是协议消息的行（不是 JSON 对象、没有 `id` 也没有 `event` 的 JSON、不认识的 `event`）当作日志忽略，全部放进出错的 `details.output`（打过码）。所以多一两行 `print` 不会弄坏协议，但别指望它：生成的骨架把 `sys.stdout` 换成了标准错误，标准输出只给协议用。不认识的 `event` 也忽略，以后可以加新的事件。
 
 **结束**：命令结束时适配器**关掉程序的标准输入**，程序读到输入结束就应该退出；3 秒内不退出，就被结束。程序自己的清理（保存状态、释放显卡）在读到输入结束之后做。
 
@@ -90,7 +90,7 @@
 | `process_request_invalid` | 请求编不出来：参数里有裸的字节（音频要写成 `{ bytes, mimeType }`）、循环引用。在发之前报，程序不动 | `capability`、`problem`（`bare_bytes` 或 `not_json`）、`field` |
 | `process_program_error` | 程序报的 `error.code` 不合 code 的写法 | 程序给的 `details`、`capability`、`programCode`、`transient`（程序标了才有） |
 
-`stderr` 是程序写在标准错误里的最后一段（不超过 2000 个字符），`output` 是它写在标准输出里的、不是协议消息的最后几行，帮人找原因（例如 Python 的栈追踪在 `stderr` 里）。
+`stderr` 是程序写在标准错误里的全文，`output` 是它写在标准输出里的、不是协议消息的全部行（两者都打过码：令牌形状的串和签名地址去掉，别的字不动），帮人找原因（例如 Python 的栈追踪在 `stderr` 里）。
 
 **超时和退出不标 `details.transient`**：适配器分不清一个卡住的程序和一个必现的 bug，宁可马上停下来让人看。程序知道自己的某个失败是暂时的，就在自己的 `error` 里写 `transient: true`。
 

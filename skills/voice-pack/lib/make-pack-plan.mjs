@@ -28,6 +28,9 @@ import { DEFAULTS, plannedHoldouts } from './pack-material.mjs';
 import { hasWords } from './make-pack-transcribe.mjs';
 import { extraAttempts } from './call-attempts.mjs';
 
+/** 能用的段：筛片段没淘汰的，而且有文本、或者环境能转写、或者是上一版带来的（没有文本又转写不了的用不上）。buildPlan 和 lib/make-pack-assemble.mjs 的 assertFitsFormat 数的是同一份。 */
+export const usableItems = (env, items) => items.filter((item) => item.unused === undefined && (hasWords(item.text) || item.previous !== undefined || hasCapability(env, 'automatic-speech-recognition')));
+
 /**
  * 不花钱的几步做完以后，各项能力最多要调几次。是上界：转写补不出文本的、标签定下来的、挑不出这么多留出录音的，实际会少。
  *   转写      没有文本的片段，一段一次；暂时出错的段每段最多再转写 2 次，那几次不在 calls 里，在 extraCalls 里（lib/call-attempts.mjs）
@@ -41,7 +44,7 @@ export function buildPlan(env, items, settings, materialOptions) {
   const candidates = items.filter((item) => item.unused === undefined);
   const can = (capability) => hasCapability(env, capability);
   const textless = candidates.filter((item) => !hasWords(item.text) && item.previous === undefined);
-  const usable = candidates.filter((item) => hasWords(item.text) || item.previous !== undefined || can('automatic-speech-recognition'));
+  const usable = usableItems(env, items);
   const taggable = usable.filter((item) => item.labels.emotion === undefined || item.labels.style === undefined);
   // 发新版本：上一版的留出录音都带着，评测要把它们都重新合成一遍，所以最少是它们的条数
   const carriedHoldouts = candidates.filter((item) => item.previous === 'holdout').length;

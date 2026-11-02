@@ -9,8 +9,8 @@
 // 写它们时没有对照 app 的解析器，也没有复制上游 VoiceStudio 的代码（它们是 AGPL-3.0-only，这里是 Apache-2.0）。
 // 两边的行为一致靠标准用例和随机台本的逐条比较钉着，不靠两边的写法相像。
 //
-// 语法：外层先于内层，顺序是 章节 > 声音 > 停顿 > 语速和拼读标签；内层的标记不会跨过外层的标记。
-// 标记的关键字（pause、voice、slow、fast、emphasis、spell）不分大小写。
+// 语法：外层先于内层，顺序是 章节 > 声音 > 停顿 > 语速和拼读标签；内层的标记不会跨过外层的标记，
+// 只有一个例外：没关的语速标签跨过停顿（见下面「语速和拼读」）。标记的关键字（pause、voice、slow、fast、emphasis、spell）不分大小写。
 //
 //   换行    CRLF、单独的 CR 都当作 LF；文本开头的 BOM（U+FEFF）去掉。LS（U+2028）、PS（U+2029）在找章节标题时也算换行。
 //   空白    ECMAScript 的 WhiteSpace 加换行符，也就是 String.prototype.trim 去掉的那些字符。
@@ -20,25 +20,40 @@
 //   声音    `[voice:名字]`：这以后的文字用这个声音，到下一个声音标记或这一章结束为止（不跨章）。
 //           名字不能含方括号，去掉两头空白，保留大小写；名字是空的（`[voice:]`）就回到默认声音（options.defaultVoice，没给就是 null）。
 //   停顿    `[pause]`（350 ms）、`[pause 数字]`、`[pause 数字s]`、`[pause 数字ms]`。数字是 ASCII 数字，可以带小数，点两边都要有数字；
-//           没有单位按毫秒；四舍六入五取偶；限制在 0–10000 ms。括号里两头可以有空白，数字和单位之间也可以有。
-//           停顿属于它前面的那段文字（pause_ms_after）。两个标记紧挨着（中间一个字符也没有）就相加，封顶；
+//           没有单位按毫秒；四舍六入五取偶。没有上限：写多长就停多长，两个标记相加也不封顶。括号里两头可以有空白，数字和单位之间也可以有。
+//           上限只有一处，是一份 WAV 能装的：超过 2147483629 秒（按最低采样率 1 Hz 算，见下面的 PAUSE_FORMAT_MAX_MS）的，任何采样率的音频都放不下，
+//           这里抛 pause_out_of_range。按实际采样率放不下的，拼接时（lib/mix.mjs 和 app 的拼接）报错，不在这里截。
+//           停顿属于它前面的那段文字（pause_ms_after）。两个标记紧挨着（中间一个字符也没有）就相加；
 //           中间隔着空白就不合并，后一个成为文字为空的 span（下游把它的停顿加到前一个 span 上，所以只是表示不同）。
 //   语速和拼读
 //           `[slow]`（0.85）、`[fast]`（1.15）、`[emphasis]`（0.92）、`[spell]`，各有结束标记 `[/slow]` 等；标签名紧贴方括号，不能有空白。
-//           嵌套时语速取最里层的；结束标记关掉最近的同名标签，多余的结束标记忽略；
-//           没关的标签管到这一段文字的末尾（声音标记、停顿标记会把它截断）。
+//           嵌套时语速取最里层的；结束标记关掉最近的同名标签，多余的结束标记忽略。
+//           没关的语速标签（`[slow]`、`[fast]`、`[emphasis]` 没有结束标记的）管到这一行结束（换行）、下一个语速标签（三个里的任何一个）的开始标签、或者下一个声音标记为止。
+//           舞台提示里的放慢、加快和这三个标签是同一类（见下面「舞台提示的范围」），一个新的出现，旧的就结束。
+//           中间的停顿标记不切断它：`[slow]你好[pause 1s]我走了` 两段都慢。有结束标记的语速标签、和 `[spell]`，停顿标记照旧切断它：
+//           `[slow]a[pause 1s]b[/slow]` 的 b 不慢。没关的 `[spell]` 管到下一个停顿标记或声音标记为止。
 //           `[spell]` 把里面的文字去掉全部空白，再按字素簇（用户看到的一个字符）拆开，用空格连起来："USA" → "U S A"。
 //           环境没有 Intl.Segmenter 时按码点拆：普通文字结果一样，组合符号、旗帜、零宽连接的表情会被拆开。
 //           `[emphasis]` 只改语速；它还把括在里面的文字和括在外面的隔开，即使语速相同也不合并成一个 span。其他标签没有这个效果。
 //           相邻、语速和拼读状态相同的片段合并；只有空白的片段不出 span，但仍然隔开它两边的片段。
+//   舞台提示的范围
+//           括号里的提示（`（耳语）`、`*笑*`）哪些算数、读出什么，是 lib/line-hints.mjs 的事；它们管到哪里的规则只在这里写，别处（lib/line-hints.mjs、lib/dub.mjs、
+//           references/dub.md）指到这里，给用户读的是 references/markup.md。一个提示管从它出现的地方，到这一行结束，或者下一个同类的提示出现为止；换一行就清掉，换声音也清掉。
+//           同类：情绪和风格是一类，一个新的情绪或风格提示整个换掉旧的（先（耳语）再（生气），后面是生气，不再是耳语）；放慢、加快和上面没关的 [slow]、[fast]、[emphasis]
+//           是一类，一个新的出现，前面还在管着的就结束（「（放慢）你好[fast]我」里「我」是 fast）。停顿不改变情绪、风格和语速，也不切断它们：「（生气）你好[pause 3s]我走了」
+//           里「我走了」照样是生气的，「（放慢）你好（停顿 1 秒）我走了」两段都慢（有结束标记的 [slow] 例外，见上面「语速和拼读」）。
+//           同一行里 [pause …] 和舞台提示里的停顿相加，挂在前一句的后面；隔一行的缝上，前一句的后面和后一句的前面各写各的，不相加（lib/dub.mjs）。
 //
-// 输出  [{ title, spans: [{ voice_id, text, pause_ms_after, speed, join? }] }]
+// 输出  [{ title, spans: [{ voice_id, text, pause_ms_after, speed, join?, line_start? }] }]
 //   voice_id  声音名；没有声音标记、也没给默认声音就是 null
 //   text      去掉两头空白的文字；只有停顿的 span 是空串
 //   speed     标签给的语速；没有就取 options.defaultSpeed，再没有就是 null；文字为空的 span 是 null
 //   join      只出现在「一段文字被行内标签切成几个 span」的、不是最后一个的 span 上：
 //             `continue` 下一个 span 接着说；`paragraph` 两个 span 之间隔着空行（一个换行、若干空格或制表符、再一个换行）
+//   line_start  只在选项 lineStarts 为真时出现（为真才有这个键）：这一段和前一段之间有换行（LF），或者换了声音，或者是一章的第一段。
+//             一段和前一段之间只隔着停顿标记、没有换行的，没有这个键。舞台提示读的是同一行里的（lib/line-hints.mjs），靠它断开。
 // 台本是空串、null、undefined 或者没有任何内容，结果是 []。台本不是字符串（也不是空值）抛 TypeError。
+// 选项：defaultVoice、defaultSpeed（见上）；lineStarts（见「输出」）。不给 lineStarts 时输出的键和以前一样。
 //
 // 和读音词表的关系：词表只替换标记以外的文字。标记里的词（pause、voice、声音名、slow 等标签名）是语法，不是要念的话：词表先于解析器跑的话，
 // 把 pause 改成 break，`[pause 1s]` 就不再是停顿。做法是 lib/pronunciation-lexicon.mjs 的 applyLexicon（用本文件导出的 MARKER_PATTERN 把标记隔开）。
@@ -46,10 +61,15 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 
-// 停顿的默认时长和上限（语法「停顿」：`[pause]` 是 350 ms，限制在 0–10000 ms）：数值是语法里写明的事实
+import { RIFF_SIZE_MAX, wavFileBytes } from './wav.mjs';
+import { VoicePackError } from '../protocol/lib/errors.mjs';
+
+// 停顿的默认时长（语法「停顿」：`[pause]` 是 350 ms）：数值是语法里写明的事实
 const PAUSE_DEFAULT_MS = 350;
-// 停顿的上限，和下面的 pauseMs 一起导出给舞台提示用（lib/line-hints.mjs 的「停顿的时长」）：（停顿 3 秒）的单位、取整和上限就是 [pause 3s] 的，只在这里写一处
-export const PAUSE_MAX_MS = 10000;
+// 停顿的格式上限：一份 16 位单声道的 WAV 最多 RIFF 长度字段装得下的采样数（tools/wav.mjs 的 RIFF_SIZE_MAX 和 wavFileBytes 算出来的：
+// 44 字节的头，之后每个采样 2 字节）。采样率按最低 1 Hz 算（再低的没有意义），所以停顿最长这么多毫秒：超过的，任何采样率的音频都放不下。
+const PAUSE_FORMAT_MAX_FRAMES = Math.floor((RIFF_SIZE_MAX + 8 - wavFileBytes(0, 1)) / 2);
+const PAUSE_FORMAT_MAX_MS = PAUSE_FORMAT_MAX_FRAMES * 1000;
 // 导出给按台词配音的流程用（lib/dub.mjs）：舞台提示里的「放慢」「加快」和 [slow]、[fast] 用同一份数
 export const SPEED = Object.freeze({ slow: 0.85, fast: 1.15, emphasis: 0.92 });
 // 成对的标签：三个给语速的，加 [spell]。名字只在这里列一次，标签的正则和状态表都从它来
@@ -109,14 +129,15 @@ function findHeadings(text) {
   return found;
 }
 
+// 每一章的正文（body）从规范化的台本的 start 位置开始：标记的行和列要从台本的开头数
 function splitChapters(text) {
   const headings = findHeadings(text);
-  if (!headings.length) return [{ title: null, body: text }];
+  if (!headings.length) return [{ title: null, body: text, start: 0 }];
   const parts = [];
   const intro = text.slice(0, headings[0].start);
-  if (intro.trim()) parts.push({ title: null, body: intro });
+  if (intro.trim()) parts.push({ title: null, body: intro, start: 0 });
   headings.forEach((h, i) => {
-    parts.push({ title: h.title, body: text.slice(h.end, i + 1 < headings.length ? headings[i + 1].start : text.length) });
+    parts.push({ title: h.title, body: text.slice(h.end, i + 1 < headings.length ? headings[i + 1].start : text.length), start: h.end });
   });
   return parts;
 }
@@ -129,11 +150,11 @@ function splitAtVoices(body, defaultVoice) {
   let voice = defaultVoice;
   let last = 0;
   for (const m of body.matchAll(VOICE_RE)) {
-    if (m.index > last) runs.push({ voice, text: body.slice(last, m.index) });
+    if (m.index > last) runs.push({ voice, text: body.slice(last, m.index), start: last });
     voice = m[1].trim() || defaultVoice;
     last = m.index + m[0].length;
   }
-  runs.push({ voice, text: body.slice(last) });
+  runs.push({ voice, text: body.slice(last), start: last });
   return runs;
 }
 
@@ -149,115 +170,278 @@ function roundHalfToEven(x) {
 }
 
 /**
- * 一个停顿的毫秒数：数字（字符串，ASCII 数字，可带小数）和单位（'s' 按秒，其余按毫秒），四舍六入五取偶，限制在 0–PAUSE_MAX_MS。
- * 没给数字就是默认的 350。导出给 lib/line-hints.mjs：舞台提示里写的时长用同一条规则。
+ * 一个停顿的毫秒数：数字（字符串，ASCII 数字，可带小数）和单位（'s' 按秒，其余按毫秒），四舍六入五取偶，没有上限。
+ * 超过 PAUSE_FORMAT_MAX_MS（一份 WAV 能装的）抛 pause_out_of_range：不截，也不当成别的数。没给数字就是默认的 350。
+ * 导出给 lib/line-hints.mjs：舞台提示里写的时长用同一条规则。
  * @param {string|undefined} number
  * @param {string|undefined} unit
+ * @param {{ marker: string, text: string, index: number }} [where] 标记的原文、规范化以后的台本、标记在台本里的位置：报错时说清是哪一处（没有就不说）
  */
-export function pauseMs(number, unit) {
+export function pauseMs(number, unit, where) {
   if (number === undefined) return PAUSE_DEFAULT_MS;
   const value = Number.parseFloat(number) * (unit !== undefined && unit.toLowerCase() === 's' ? 1000 : 1);
-  return Math.max(0, Math.min(roundHalfToEven(value), PAUSE_MAX_MS));
+  const ms = roundHalfToEven(value);
+  // 写不出一个有限的数（数字多到超出浮点数），或者超出一份 WAV 的采样数，都是放不下：照实说，不截
+  if (!(ms <= PAUSE_FORMAT_MAX_MS)) throw pauseOutOfRange(where);
+  return Math.max(0, ms);
 }
 
-// 按停顿标记把一段文字切开：[{ text, pause }]，pause 是这段文字后面的停顿（毫秒）。
-// 两个标记紧挨着（中间一个字符都没有）时，后一个并入前一个，相加后封顶；中间隔着空白就不并。
-function splitAtPauses(text) {
+/**
+ * 停顿超出一份 WAV：说清是台本的哪一处。details 是 { marker, line, column, limitSeconds }，和 app 的解析器是同一个形状（corpus 的 expected_error 比对它）。
+ * where 是 { marker, text, index }（标记的原文、规范化以后的台本、标记在台本里的位置），或者 { marker, place }（位置已经由别处算好：{ line, column }，见 placeOfMarker）。
+ * where 没有 text 也没有 place 时（舞台提示的停顿：lib/line-hints.mjs 读的是一句话的文字，不知道它在台本的哪里）line、column 是 null，marker 照给；什么都没给时三个都是 null。
+ * 导出给 lib/line-hints.mjs：它给舞台提示的停顿补上位置时用。
+ */
+export function pauseOutOfRange(where) {
+  const limitSeconds = PAUSE_FORMAT_MAX_MS / 1000;
+  const at = where?.place ?? (where?.text === undefined ? null : placeIn(where.text, where.index));
+  const marker = where?.marker ?? null;
+  let what = '一处停顿';
+  if (at !== null) what = `台本第 ${at.line} 行第 ${at.column} 列的停顿 ${marker}`;
+  else if (marker !== null) what = `台本里的舞台提示 ${marker}`;
+  return new VoicePackError('pause_out_of_range', `${what}超过一份 WAV 能装的（${limitSeconds} 秒，按最低采样率 1 Hz 算）：任何采样率的音频都放不下它`, {
+    details: { marker, line: at?.line ?? null, column: at?.column ?? null, limitSeconds },
+  });
+}
+
+/** 规范化以后的台本里，index 在第几行第几列（都从 1 数；行以 LF 分，列是这一行里 UTF-16 的位置，和 app 的解析器数的是同一个东西）。 */
+function placeIn(text, index) {
+  const before = text.slice(0, index);
+  return { line: before.split('\n').length, column: index - before.lastIndexOf('\n') };
+}
+
+/**
+ * 一处标记第一次写在台本的哪里：{ line, column }，数法和 [pause] 报错的一样（规范化以后的台本，都从 1 数）；找不到是 null。章节标题（# 开头的行）里写的不算：标题是纯文字。
+ * 给读出来的东西找位置用：舞台提示是从一句话的文字里读出来的，那句话不带它在台本里的位置。同一个提示写了几处，每一处都一样长，说第一处就是说清了「哪一个」。
+ * @param {string} script 台本（没规范化的原文）
+ * @param {string} marker 标记的原文
+ */
+export function placeOfMarker(script, marker) {
+  if (typeof script !== 'string' || typeof marker !== 'string' || marker === '') return null;
+  const text = normalize(script);
+  for (const chapter of splitChapters(text)) {
+    const at = chapter.body.indexOf(marker);
+    if (at >= 0) return placeIn(text, chapter.start + at);
+  }
+  return null;
+}
+
+// 按停顿标记把一段正文切开：[{ text, pause, at }]，pause 是这段文字后面的停顿（毫秒），at 是这段文字在正文里从哪里开始。
+// script 是这段文字所在的规范化台本（text）和它从哪里开始（start），用来算标记的位置。
+// 两个标记紧挨着（中间一个字符都没有）时，后一个并入前一个，相加（没有上限）；中间隔着空白就不并。
+function splitAtPauses(text, script) {
   const pieces = [];
   let last = 0;
   for (const m of text.matchAll(PAUSE_RE)) {
     const before = text.slice(last, m.index);
+    const at = last;
     last = m.index + m[0].length;
-    const pause = pauseMs(m[1], m[2]);
+    const pause = pauseMs(m[1], m[2], { marker: m[0], text: script.text, index: script.start + m.index });
     if (before === '' && pieces.length) {
       const prev = pieces[pieces.length - 1];
-      prev.pause = Math.min(prev.pause + pause, PAUSE_MAX_MS);
-    } else pieces.push({ text: before, pause });
+      prev.pause += pause;
+    } else pieces.push({ text: before, pause, at });
   }
   const tail = text.slice(last);
-  if (tail !== '' || !pieces.length) pieces.push({ text: tail, pause: 0 });
+  if (tail !== '' || !pieces.length) pieces.push({ text: tail, pause: 0, at: last });
   return pieces;
 }
 
 // ---------------------------------------------------------------- 语速和拼读
 
-// 按标签把一段文字切成片段：[{ text, speed, spell, emphasis }]；状态相同的相邻片段合并。
-// 每种标签一个栈，栈里是「它是整段文字里第几个打开的标签」：结束标记弹出同名的最近一个（语法里的「关掉最近的同名标签」），
-// 当前语速取三种给语速的标签里栈顶最大的那个（最里层、也就是最后打开的），拼读和强调看栈空不空。
-// 每一步都是 O(1)，所以嵌套很深的台本也不会变慢。
-function splitAtTags(text) {
+// 一段正文里所有标签的匹配（按出现的次序），和它们的配对：结束标记关掉最近的同名开标记（语法「语速和拼读」），没有开标记的结束标记不配对。
+// 配对只看正文，不看停顿：停顿怎么切断标签，由 makeTags 管。每个事件带它在正文里的位置（at）和结束的位置（end）。
+// opener：结束标记关掉的那个开标记（没有开标记可关的结束标记，和开标记自己，是 null）。closed：这个开标记之后有结束标记和它配对；没有的，是没关的标签。
+function tagEvents(run) {
+  const events = [];
   const open = Object.fromEntries(TAG_NAMES.map((name) => [name, []]));
-  let opened = 0;
-  const state = () => {
-    let speed = null;
-    let innermost = -1;
-    for (const name of Object.keys(SPEED)) {
-      const top = open[name][open[name].length - 1];
-      if (top > innermost) {
-        innermost = top;
-        speed = SPEED[name];
+  for (const m of run.matchAll(TAG_RE)) {
+    const name = m[2].toLowerCase();
+    const ev = { at: m.index, end: m.index + m[0].length, name, close: m[1] === '/', opener: null, closed: false, dead: false };
+    if (ev.close) {
+      const opened = open[name].pop();
+      if (opened) {
+        ev.opener = opened;
+        opened.closed = true;
       }
-    }
-    return { speed, spell: open.spell.length > 0, emphasis: open.emphasis.length > 0 };
-  };
-  const segments = [];
-  const add = (chunk) => {
-    if (chunk === '') return;
-    const props = state();
-    const prev = segments[segments.length - 1];
-    if (prev && prev.speed === props.speed && prev.spell === props.spell && prev.emphasis === props.emphasis) prev.text += chunk;
-    else segments.push({ text: chunk, ...props });
-  };
-  let last = 0;
-  for (const m of text.matchAll(TAG_RE)) {
-    add(text.slice(last, m.index));
-    last = m.index + m[0].length;
-    const stack = open[m[2].toLowerCase()];
-    if (m[1] === '/') stack.pop();
-    else stack.push(opened++);
+    } else open[name].push(ev);
+    events.push(ev);
   }
-  add(text.slice(last));
-  return segments;
+  return events;
 }
 
-let graphemes;
-// 去掉全部空白，按字素簇拆开，用空格连起来。用字素簇而不是码元或码点：
+/**
+ * 标签的状态，从正文的头走到尾（跨过停顿标记接着用）。开标记按次序进栈，死了（被结束标记关掉、被切断、或被下一个语速标签结束）的不算。
+ *   没关的语速标签：同一时间只有一个还活着（三种语速标签是同一类）；停顿不切断它（同一行里的停顿标记跨过去接着管），换行、下一个语速标签的开始标签、
+ *   声音标记结束它；有结束标记的语速标签，和拼读：停顿切断。
+ * 每个函数都是摊还 O(1)：死了的开标记在栈顶时才弹出来。
+ */
+function makeTags() {
+  const stacks = Object.fromEntries(TAG_NAMES.map((name) => [name, []]));
+  let unclosed = null; // 没关的语速标签（同一时间只有一个还活着）
+  let closedSpeed = []; // 有结束标记的语速标签：停顿切断
+  let spells = []; // 拼读：停顿切断
+  const top = (name) => {
+    const stack = stacks[name];
+    while (stack.length && stack[stack.length - 1].dead) stack.pop();
+    return stack.length ? stack[stack.length - 1] : null;
+  };
+  return {
+    open(ev) {
+      stacks[ev.name].push(ev);
+      if (ev.name === 'spell') {
+        spells.push(ev);
+        return;
+      }
+      // 下一个语速标签的开始标签：前一个没关的标签在这里结束（有结束标记的它不受影响，它到自己的结束标记为止）
+      if (unclosed !== null) unclosed.dead = true;
+      if (ev.closed) {
+        closedSpeed.push(ev);
+        unclosed = null;
+      } else unclosed = ev;
+    },
+    close(ev) {
+      if (ev.opener !== null) ev.opener.dead = true;
+    },
+    // 停顿标记：有结束标记的语速标签和拼读都在这里断开（没关的语速标签不断）
+    pause() {
+      for (const ev of closedSpeed) ev.dead = true;
+      for (const ev of spells) ev.dead = true;
+      closedSpeed = [];
+      spells = [];
+    },
+    // 换行：没关的语速标签断开（有结束标记的跨行，和以前一样）
+    newline() {
+      if (unclosed !== null) unclosed.dead = true;
+      unclosed = null;
+    },
+    // 当前的语速（最里层的生效语速标签）、拼读和强调
+    state() {
+      let speed = null;
+      let innermost = -1;
+      for (const name of Object.keys(SPEED)) {
+        const ev = top(name);
+        if (ev !== null && ev.at > innermost) {
+          innermost = ev.at;
+          speed = SPEED[name];
+        }
+      }
+      return { speed, spell: top('spell') !== null, emphasis: top('emphasis') !== null };
+    },
+  };
+}
+
+// spell 的字：去掉全部空白，再按字素簇拆开，用空格连起来。用字素簇而不是码元或码点：
 // 带组合符号的字母、码点在 BMP 之外的字、旗帜、用零宽连接符拼出来的表情，都是一个字符。
 // 环境没有 Intl.Segmenter（Chrome 87、Firefox 125、Safari 14.1 之前）就退回按码点拆：普通文字结果一样，
 // 组合符号、旗帜、零宽连接的表情会被拆开，但不会拆出半个字符。app 的解析器同样退回
+let graphemes;
 function spellOut(text) {
   graphemes ??= typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('en', { granularity: 'grapheme' }) : null;
   const letters = text.replace(/\s+/g, '');
   return (graphemes ? Array.from(graphemes.segment(letters), (part) => part.segment) : Array.from(letters)).join(' ');
 }
 
-// 一段（已经去掉两头空白的）文字，加上它后面的停顿，变成 span
-function renderPiece(text, voice, pause, defaultSpeed) {
+// 一段正文（停顿之间的那一段，原样，没去掉空白）过一遍标签：切成片段 [{ text, speed, spell, emphasis }]，状态相同的相邻片段合并。
+// 换行（LF）处先把没关的语速标签断开，再接着走。tags 和 cursor（下一个标签事件）从上一段接过来，所以标签能跨过停顿。
+function segmentsOfPiece(run, piece, ctx) {
+  const { events, lineFeeds, tags } = ctx;
+  const segments = [];
+  const add = (chunk) => {
+    if (chunk === '') return;
+    const state = tags.state();
+    const prev = segments[segments.length - 1];
+    if (prev && prev.speed === state.speed && prev.spell === state.spell && prev.emphasis === state.emphasis) prev.text += chunk;
+    else segments.push({ text: chunk, ...state });
+  };
+  // 一段文字：每个换行处切开，换行留在换行前面的那一段（它还是那一行）
+  const words = (from, to) => {
+    let start = from;
+    while (ctx.nextLineFeed < lineFeeds.length && lineFeeds[ctx.nextLineFeed] < from) ctx.nextLineFeed++;
+    while (ctx.nextLineFeed < lineFeeds.length && lineFeeds[ctx.nextLineFeed] < to) {
+      add(run.slice(start, lineFeeds[ctx.nextLineFeed] + 1));
+      tags.newline();
+      start = lineFeeds[ctx.nextLineFeed] + 1;
+      ctx.nextLineFeed++;
+    }
+    add(run.slice(start, to));
+  };
+  const end = piece.at + piece.text.length;
+  let last = piece.at;
+  while (ctx.event < events.length && events[ctx.event].at < end) {
+    const ev = events[ctx.event++];
+    words(last, ev.at);
+    if (ev.close) tags.close(ev);
+    else tags.open(ev);
+    last = ev.end;
+  }
+  words(last, end);
+  return segments;
+}
+
+/**
+ * 这一段是不是一行的开头：和前一段之间有换行（flags.sawLineFeed），或者这是声音、一章的第一段（flags.fresh）。问过以后两样都清掉，下一段从头算。
+ * ctx.nextLineFeed 是另一回事：run 里下一个还没走过的换行是第几个。
+ */
+function takeLineStart(flags) {
+  const lineStart = flags.sawLineFeed || flags.fresh;
+  flags.sawLineFeed = false;
+  flags.fresh = false;
+  return lineStart;
+}
+
+// 按 join 把一段的 span 接起来：一段文字被行内标签切开时，相邻两段之间是接着说（continue），还是隔着空行（paragraph）
+// 段里每个片段的前面和后面的空白（gap）是它前一段和本段之间的空白：空行只在这里认。
+function renderPiece(segments, voice, pause, defaultSpeed, flags, options) {
   const shown = [];
   let gap = ''; // 上一个出了 span 的片段的尾部空白，加上中间被跳过的纯空白片段
-  for (const seg of splitAtTags(text)) {
+  for (const seg of segments) {
     const spoken = (seg.spell ? spellOut(seg.text) : seg.text).trim();
+    const leading = seg.text.slice(0, seg.text.length - seg.text.trimStart().length);
+    const trailing = seg.text.slice(seg.text.trimEnd().length);
     if (spoken === '') {
       gap += seg.text;
+      if (seg.text.includes('\n')) flags.sawLineFeed = true;
       continue;
     }
-    const leading = seg.text.slice(0, seg.text.length - seg.text.trimStart().length);
-    shown.push({ text: spoken, speed: seg.speed ?? defaultSpeed, paragraphBefore: BLANK_LINE_RE.test(gap + leading) });
-    gap = seg.text.slice(seg.text.trimEnd().length);
+    if (leading.includes('\n')) flags.sawLineFeed = true;
+    const lineStart = takeLineStart(flags);
+    shown.push({ text: spoken, speed: seg.speed ?? defaultSpeed, paragraphBefore: BLANK_LINE_RE.test(gap + leading), lineStart });
+    gap = trailing;
+    if (trailing.includes('\n')) flags.sawLineFeed = true;
   }
-  if (!shown.length) return pause > 0 ? [{ voice_id: voice, text: '', pause_ms_after: pause, speed: null }] : [];
+  if (!shown.length) {
+    if (pause <= 0) return [];
+    const span = { voice_id: voice, text: '', pause_ms_after: pause, speed: null };
+    const startsLine = takeLineStart(flags); // 要不要行首标记都要问：问了，换行和 fresh 的状态就用掉了
+    if (options.lineStarts && startsLine) span.line_start = true;
+    return [span];
+  }
   return shown.map((s, i) => {
     const last = i === shown.length - 1;
     const span = { voice_id: voice, text: s.text, pause_ms_after: last ? pause : 0, speed: s.speed };
     if (!last) span.join = shown[i + 1].paragraphBefore ? 'paragraph' : 'continue';
+    if (options.lineStarts && s.lineStart) span.line_start = true;
     return span;
   });
 }
 
-function bodyToSpans(body, defaultVoice, defaultSpeed) {
+// body：这一章的正文。script：这一章的正文所在的规范化台本（text）和正文从哪里开始（start）。
+// 一个声音的一段正文（run）从头走到尾：标签的状态跨过停顿接着用，声音标记和章节重新开始。
+function bodyToSpans(body, defaultVoice, defaultSpeed, script, options) {
   const spans = [];
   for (const run of splitAtVoices(body, defaultVoice)) {
-    for (const { text, pause } of splitAtPauses(run.text)) spans.push(...renderPiece(text.trim(), run.voice, pause, defaultSpeed));
+    const lineFeeds = [];
+    for (let i = run.text.indexOf('\n'); i !== -1; i = run.text.indexOf('\n', i + 1)) lineFeeds.push(i);
+    const ctx = { events: tagEvents(run.text), event: 0, lineFeeds, nextLineFeed: 0, tags: makeTags() };
+    // 声音或章节的第一段：换行（之前没有换行也算）
+    const flags = { sawLineFeed: false, fresh: true };
+    for (const piece of splitAtPauses(run.text, { text: script.text, start: script.start + run.start })) {
+      const segments = segmentsOfPiece(run.text, piece, ctx);
+      for (const span of renderPiece(segments, run.voice, piece.pause, defaultSpeed, flags, options)) spans.push(span);
+      // 停顿标记：有结束标记的语速标签和拼读断开，没关的语速标签接着管
+      ctx.tags.pause();
+    }
   }
   return spans;
 }
@@ -265,15 +449,17 @@ function bodyToSpans(body, defaultVoice, defaultSpeed) {
 /**
  * 解析台本标记。语法和输出的形状见文件头。
  * @param {string|null|undefined} text 台本
- * @param {{ defaultVoice?: string|null, defaultSpeed?: number|null }} [options]
- * @returns {{ title: string, spans: { voice_id: string|null, text: string, pause_ms_after: number, speed: number|null, join?: 'continue'|'paragraph' }[] }[]}
+ * @param {{ defaultVoice?: string|null, defaultSpeed?: number|null, lineStarts?: boolean }} [options]
+ * @returns {{ title: string, spans: { voice_id: string|null, text: string, pause_ms_after: number, speed: number|null, join?: 'continue'|'paragraph', line_start?: true }[] }[]}
  */
-export function parseScript(text, { defaultVoice = null, defaultSpeed = null } = {}) {
+export function parseScript(text, { defaultVoice = null, defaultSpeed = null, lineStarts = false } = {}) {
   if (text === null || text === undefined || text === '') return [];
   if (typeof text !== 'string') throw new TypeError('台本必须是字符串');
   const chapters = [];
-  for (const { title, body } of splitChapters(normalize(text))) {
-    const spans = bodyToSpans(body, defaultVoice, defaultSpeed);
+  const script = normalize(text);
+  const options = { lineStarts: lineStarts === true };
+  for (const { title, body, start } of splitChapters(script)) {
+    const spans = bodyToSpans(body, defaultVoice, defaultSpeed, { text: script, start }, options);
     if (spans.length) chapters.push({ title: title ?? `Chapter ${chapters.length + 1}`, spans });
   }
   return chapters;

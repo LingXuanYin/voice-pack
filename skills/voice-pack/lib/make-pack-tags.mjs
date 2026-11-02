@@ -13,20 +13,20 @@
 //   tagAll(env, items, { concurrency, maxErrorRate, wait })  情绪或风格没给齐的片段，让听者打标签，返回这一步的情况（steps.tagging）：
 //                                                        { status: 'not_needed', tagged, voided, blocked, notHeard, retried }、
 //                                                        { status: 'skipped', capability, reason: 'capability_missing', segments, tagged, voided, blocked, notHeard, retried }、
-//                                                        { status: 'done', capability, calls, tagged, voided, blocked, notHeard, retried, models }
-//                                                      calls 是要打标签的段数（每段问一次）；voided 是作废的总段数（听者没听到、回答不是固定格式、回答被模型的服务商拦下）；
-//                                                      blocked 是其中被服务商拦下的段数（voided 的一部分）；notHeard 是服务暂时出错、试满次数也没听成的段数；
+//                                                        { status: 'done', capability, calls, tagged, voided, blocked, unusable, notHeard, retried, models }
+//                                                      calls 是要打标签的段数（每段问一次）；voided 是作废的总段数（听者没听到、回答不是固定格式或没正常结束或是空的、回答被模型的服务商拦下）；
+//                                                      blocked 是其中被服务商拦下的段数（voided 的一部分）；unusable 是其中回答没正常结束或是空的段数（voided 的一部分，done 才有）；notHeard 是服务暂时出错、试满次数也没听成的段数；
 //                                                      retried 是为暂时出错多问了几次（0 就是一次也没重试），所以这一步一共问了 calls + retried 次
 //   assembleTags(items)                                把几处来的标签合成每段的最终标签
 //
 // 读条目的：unused、labels、previous、text、transcribedLanguage、quality（响度）、audio；写条目的：language、tagging（听者的结果，写法见 lib/segment-tags.mjs 的返回；
-// 被服务商拦下的是 { status: 'voided', reason: 'provider_blocked' }）、tags、tagSources。淘汰的写 unused: { reason: 'language_unknown', details: {} }。
+// 被服务商拦下的是 { status: 'voided', reason: 'provider_blocked' }，回答没正常结束或是空的是 { status: 'voided', reason: 'tag_answer_unusable', problem, stopReason?, model? }）、tags、tagSources。淘汰的写 unused: { reason: 'language_unknown', details: {} }。
 //
 // 暂时出错的段在这一步里自己再问：每段最多问 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，转写、命令行和 app 用的是同一份）；
 // 最多多问几次在规划里（plan.extraCalls，lib/make-pack-plan.mjs），花钱之前已经说清楚。`wait` 是等待函数（makePack 的 options.retryWait），不给就真的等。
-// 被服务商拦下（provider_blocked）、回答不是固定格式的段不重试，重来还是同一个答案。
+// 被服务商拦下（provider_blocked）、回答不是固定格式或没正常结束或是空的段不重试，重来还是同一个答案。
 //
-// 抛出的错误：没有自己的。听者暂时出错（details.transient）试满次数还没成，记成「没听成」、回答不符合固定格式或被服务商拦下（provider_blocked）记成「作废」，都不抛（lib/segment-tags.mjs）；
+// 抛出的错误：没有自己的。听者暂时出错（details.transient）试满次数还没成，记成「没听成」、回答不符合固定格式、没正常结束或是空的，或被服务商拦下（provider_blocked）记成「作废」，都不抛（lib/segment-tags.mjs）；
 // 别的错原样往上抛，不重试（包括等的时候做包被取消）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -111,16 +111,18 @@ export async function tagAll(env, items, { concurrency, maxErrorRate, wait }) {
   const todo = items.filter((item) => item.unused === undefined && (item.labels.emotion === undefined || item.labels.style === undefined));
   if (todo.length === 0) return { status: 'not_needed', tagged: 0, voided: 0, blocked: 0, notHeard: 0, retried: 0 };
   if (!hasCapability(env, 'audio-text-to-text')) return { status: 'skipped', capability: 'audio-text-to-text', reason: 'capability_missing', segments: todo.length, tagged: 0, voided: 0, blocked: 0, notHeard: 0, retried: 0 };
-  const step = { status: 'done', capability: 'audio-text-to-text', calls: todo.length, tagged: 0, voided: 0, blocked: 0, notHeard: 0, retried: 0, models: [] };
+  const step = { status: 'done', capability: 'audio-text-to-text', calls: todo.length, tagged: 0, voided: 0, blocked: 0, unusable: 0, notHeard: 0, retried: 0, models: [] };
   await pool(todo, concurrency, async (item) => {
     const result = await tagSegment(env, { audio: item.audio, text: item.text }, { maxErrorRate, attempts: MAX_ATTEMPTS, wait, onRetry: () => { step.retried += 1; } });
     const { model, ...rest } = result;
     if (model !== undefined && !step.models.includes(model)) step.models.push(model);
-    item.tagging = rest;
+    // 回答没正常结束或是空的：原因（problem、stopReason）和模型都进报告，同盲听的 blind_answer_unusable；别的作废不带模型
+    item.tagging = result.reason === 'tag_answer_unusable' ? result : rest;
     if (result.status === 'tagged') step.tagged += 1;
     else if (result.status === 'voided') {
       step.voided += 1;
       if (result.reason === 'provider_blocked') step.blocked += 1;
+      else if (result.reason === 'tag_answer_unusable') step.unusable += 1;
     } else step.notHeard += 1;
   });
   return step;

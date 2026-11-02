@@ -22,6 +22,7 @@
 //   --only       只合成这几句（序号从 1 起，和输出里、文件名里的一致）。重做失败的几句用它：已经做好的文件原样留着，dub.json 把上一次的结果合进来。
 //   --max-chars  一次合成最多多少个字，超过的按句子切开。不给就不切；接进来的适配器给了 limits.maxChars 就默认取它的（规则见 adapters/README.md）。
 //   --concurrency 并发数，默认 2。
+//   判情绪的请求   台本里没带标签的句子让 text-generation 判情绪。接进来的适配器给了 limits.maxPromptTokens（模型一次能收的输入）就按它分几次发，没给就一次发完（规则和 judge 的形状见 lib/reference-pick.mjs 的文件头，limits 见 adapters/README.md）。
 //   --adapter, --adapter-option, 官方适配器声明的简写和参数
 //                模型从适配器接进来：官方的给名字，自己的给模块文件，可以给多个，后给的盖过先给的（统一的入口和合并规则只在 cli/adapters.mjs 写）。
 //                适配器给了费用说明（billing）时，合成开始之前会在标准错误里说明要生成几次（--json 时不说，免得弄脏机器读的输出）。
@@ -43,7 +44,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { VoicePackError } from '../../protocol/lib/errors.mjs';
 import { planDub, dubScript, TEXT_TOO_SHORT } from '../../lib/dub.mjs';
-import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, maxCharsOf, minCharsOf, quoteArgument, takeAdapterArguments } from '../adapters.mjs';
+import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, maxCharsOf, maxPromptTokensOf, minCharsOf, quoteArgument, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 import { openPackDirectory } from '../pack-directory.mjs';
 import { createScriptRuntimes } from '../script-runtimes.mjs';
@@ -103,6 +104,12 @@ function reportUnit(unit) {
   return rest;
 }
 
+/** 一串段的序号（命令行上的，从 1 起，和下面的列表、文件名、--only 一样），用顿号连起来。台词的编号（judge 里的，从 0 起）不在这里用，见 lib/reference-pick.mjs 文件头。 */
+const numbersOf = (units) => units.map((unit) => unit.number).join('、');
+
+/** judge.tooLong 的一句话：几句单独就超过一次请求的输入上限，不判（落到默认参考）。 */
+const tooLongSentence = (tooLong) => `有 ${tooLong.lines.length} 句单独就超过一次请求的输入上限（${tooLong.limit}），不判，也不截`;
+
 /** 一句用的参考段。几个包时前面写着包 ID：一句用哪个包的声音，要看得出来。 */
 function pickLabel(unit, many) {
   const { pick } = unit;
@@ -133,7 +140,7 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
       ? '随每句通过 instructions 传给了模型'
       : `演法没有交给模型（指引里没有演法，或演法是空的）${perLine ? '，只有每句自己的说明（舞台提示等）随句传了' : '，这次没有可传的内容'}`;
     lines.push(report.capabilities['style-instruction']
-      ? `配音指引：环境有 style-instruction，${fate}${report.guidance.truncated ? '（过长，截短了）' : ''}`
+      ? `配音指引：环境有 style-instruction，${fate}`
       : '配音指引：环境没有 style-instruction，没传 instructions（照指引写的话、选的参考，仍然生效）');
   }
   if (report.capabilities['style-cues']) {
@@ -149,12 +156,23 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
   if (report.scripts.length > 0) lines.push(`脚本：${report.scripts.map((item) => `${item.pack === undefined ? '' : `${item.pack} `}${item.entry}（${item.runtime}）`).join('、')}`);
   if (report.missingRuntimes.length > 0) lines.push(`缺运行时：${report.missingRuntimes.map((item) => `${item.runtime}（脚本 ${item.pack === undefined ? '' : `${item.pack} `}${item.entry}）`).join('、')}；真合成会在开始前报 runtime_missing`);
   if (!report.capabilities['voice-cloning']) lines.push('缺所需能力：voice-cloning；真合成会在开始前报 capability_missing');
-  if (report.judge.status === 'used') lines.push(`情绪判断：台本里没有提示的句子，让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}`);
+  if (report.judge.status === 'used') lines.push(`情绪判断：台本里没有提示的句子，让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}${report.judge.calls > 1 ? `，分 ${report.judge.calls} 次发` : ''}`);
   else if (report.judge.status === 'unavailable') lines.push('情绪判断：台本里有句子没有任何提示，环境没有 text-generation，用了默认参考');
-  else if (report.judge.status === 'planned') lines.push(`情绪判断：正式运行会用 text-generation 判 ${report.judge.lines} 句（台本里没有提示的句子）；试运行不调它（要计费），这几句现在用默认参考`);
-  else if (report.judge.status === 'unusable') {
-    const fell = report.units.filter((unit) => unit.pick.judgeFailed === true).map((unit) => unit.number);
-    lines.push(`情绪判断：text-generation 的回答不能用（${report.judge.error?.message ?? report.judge.reason}），这几句用了默认参考：${fell.join('、')}`);
+  else if (report.judge.status === 'planned') {
+    const { calls, tooLong } = report.judge;
+    if (calls > 0) lines.push(`情绪判断：正式运行会用 text-generation 判 ${report.judge.lines} 句（台本里没有提示的句子）${calls > 1 ? `，分 ${calls} 次发` : ''}（${CUT_SHORT_NOTE}）；试运行不调它（要计费），这几句现在用默认参考`);
+    if (tooLong !== undefined) lines.push(`情绪判断：${tooLongSentence(tooLong)}，用默认参考：${numbersOf(report.units.filter((unit) => unit.pick.judgeFailed === true))}`);
+  } else if (report.judge.status === 'unusable') {
+    const { tooLong } = report.judge;
+    const fell = report.units.filter((unit) => unit.pick.judgeFailed === true);
+    // 单独超限的那几句根本没发出去：说「回答不能用」，只因为别的句子也落到了默认参考（回答不能用或被截断）
+    const answerFailed = fell.some((unit) => !(tooLong?.lines ?? []).includes(unit.line));
+    const causes = [
+      ...(answerFailed ? [`text-generation 的回答不能用（${report.judge.error?.message ?? report.judge.reason}）`] : []),
+      ...(tooLong === undefined ? [] : [tooLongSentence(tooLong)]),
+    ];
+    const othersJudged = report.units.some((unit) => unit.pick.rule === 'text-generation'); // 分几次发的，别的几次判成了
+    lines.push(`情绪判断：${causes.join('；')}，这几句用了默认参考：${numbersOf(fell)}${othersJudged ? '；别的句子判成了' : ''}`);
   }
   for (const note of report.notes) lines.push(`注意：${note.message}`);
   lines.push('', `共 ${report.units.length} 句：`);
@@ -195,11 +213,18 @@ function redoFlags(options) {
   return parts;
 }
 
+/** 判情绪的次数是分批以后的；回答被截断（模型一次回答的长度到了头）时，那一批对半分开再问，所以实际的次数可能比说的多。 */
+const CUT_SHORT_NOTE = '回答被截断时会对半分开再问，次数会多';
+
 /** 费用说明（花钱之前写到标准错误）。calls 来自 dubScript 的 onPlan：exact 为真就是正好这么多次；为假（要判情绪，并段要等判的结果）就是最多这么多次。 */
 function costNote({ billing, plan, calls }) {
   const times = calls.exact ? `合成 ${calls.count} 次` : `最多合成 ${calls.count} 次`;
   const lines = [`${billing}：`, `  ${times}（voice-cloning）`];
-  if (plan.judge.status === 'planned') lines.push(`  台本里有 ${plan.judge.lines} 句没有提示，先让 text-generation 判一次情绪（这一次不算在上面的次数里）`);
+  if (plan.judge.status === 'planned' && plan.judge.calls > 0) {
+    const asked = plan.judge.calls === 1 ? `判一次情绪（这一次不算在上面的次数里；${CUT_SHORT_NOTE}）` : `判情绪，分 ${plan.judge.calls} 次发（一次请求装不下，按模型一次能收的输入分批；这几次不算在上面的次数里；${CUT_SHORT_NOTE}）`;
+    lines.push(`  台本里有 ${plan.judge.lines} 句没有提示要判，先让 text-generation ${asked}`);
+  }
+  if (plan.judge.tooLong !== undefined) lines.push(`  ${tooLongSentence(plan.judge.tooLong)}，用默认参考`);
   return `${lines.join('\n')}\n`;
 }
 
@@ -254,6 +279,7 @@ export async function run(args, ctx) {
   const script = readScript(ctx, scriptArgument);
   const labels = Object.fromEntries(LABEL_FLAGS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]]));
   const adapterMaxChars = maxCharsOf(adapters);
+  const adapterMaxPromptTokens = maxPromptTokensOf(adapters); // text-generation 一次请求最多收多少输入（环境声明的）：判情绪按它分批发（lib/reference-pick.mjs）
   const adapterMinChars = minCharsOf(adapters); // 合成能力一次至少多少个字（环境声明的）：短句并段，并不了的记成没做（lib/dub.mjs 第 5b 步）
   const dubOptions = {
     ...(Object.keys(labels).length > 0 ? { labels } : {}),
@@ -262,6 +288,7 @@ export async function run(args, ctx) {
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(options['max-chars'] !== undefined ? { maxChars: options['max-chars'] } : adapterMaxChars !== undefined ? { maxChars: adapterMaxChars } : {}),
     ...(adapterMinChars !== undefined ? { minChars: adapterMinChars } : {}),
+    ...(adapterMaxPromptTokens !== undefined ? { maxPromptTokens: adapterMaxPromptTokens } : {}),
     ...(packs.length > 1 ? { runtimesOf: (pack) => runtimes.get(pack.manifest.id) } : {}),
   };
   // 重做提示用的：这次命令行上给的适配器、标签、说明、切句、并发（和 --out、--only 之外的选项一样，照着原样写回去）

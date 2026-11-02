@@ -4,6 +4,7 @@
 // 读法的正本是 lib/fidelity.mjs 文件头「怎么读这份报告」（读法本身是文字，写在那一处）；这里是它的程序：分档、哪几个数不是分数、
 // 作废、没听成和量不到各算几条，都在 readReport 里决定一次。命令行（cli/fidelity-report.mjs）和 app 都从它的返回值显示，
 // 不各写一份阈值和规则。显示的措辞（中文句子、英文翻译、排版）是各自的事，这里只给数、档和说明的键。
+// 导出的 whereOf(ask)：一问里的哪里像、哪里不像。旧报告（问法分开之前）的 differences 读成哪里不像，哪里像为 null。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
@@ -138,7 +139,7 @@ function blindListeningView(blind, { designSource = false } = {}) {
  * 一问里模型说的哪里像、哪里不像（原话，一字不改）。问法分成哪里像、哪里不像之前存下的报告，每问只有一段 differences，那是模型说的区别的原话：照原样放在「哪里不像」那一边，
  * 「哪里像」为 null（那时没有分开问）。
  */
-const whereOf = (ask) =>
+export const whereOf = (ask) =>
   ask.whereAlike === undefined && ask.whereUnlike === undefined && ask.differences !== undefined
     ? { whereAlike: null, whereUnlike: ask.differences }
     : { whereAlike: ask.whereAlike ?? null, whereUnlike: ask.whereUnlike ?? null };

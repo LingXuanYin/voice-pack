@@ -11,20 +11,20 @@
 // 怎么运行：解释器 <入口的完整路径>，当前目录是包目录，标准输入是 input，不经 shell（参数数组直接交给系统，文件名里的特殊字符不会被当成命令）。
 //   解释器：node 就是正在运行的这个 node（一定有）；python 先找 python3、再找 python；别的名字就在 PATH 上找同名的程序（findExecutable 的规则）。
 //   找不到解释器，这个名字就不在容器里，用到它的功能会抛 runtime_missing（核心层 requireRuntime 的报法）。
-//   失败：起不来、退出码不是 0、超时、输出太大，都抛 Error，说明里有原因；退出码非零时带着标准错误的末尾（最多 400 个字符）。
+//   失败：起不来、退出码不是 0、超时、输出太大，都抛 Error，说明里有原因；退出码非零时带着标准错误的全文（打过码：令牌形状的串和签名地址去掉，别的字不动）。
 //   不带输入：输入里可能有音频，不往错误里放。
 //
-// 超时和输出上限默认 10 分钟、256 MiB（音频钩子的输出是 Base64 的音频）。超时只结束它起的那个进程（拿着自己的 PID），不按名字找别的进程；
+// 超时默认 10 分钟（我们自己定的；脚本卡住不动时平台没有默认做法，这一条暂时保留）。输出上限默认是 Node 能装进一个字符串的上限，buffer.constants.MAX_STRING_LENGTH（本机 Node v24.14.0 是 2^29 − 24，约 512 MiB；出处 https://nodejs.org/api/buffer.html#bufferconstantsmax_string_length ）：输出最后要整个变成字符串，超过它 toString 会抛 RangeError，那一步在 close 事件里执行，会带崩宿主进程，所以超了就结束它。音频钩子的输出是 Base64 的音频，常常很大。超时只结束它起的那个进程（拿着自己的 PID），不按名字找别的进程；
 // 脚本自己再起的子进程不管。
 import { spawn } from 'node:child_process';
+import { constants as bufferConstants } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { findExecutable } from './node-runtimes.mjs';
+import { reportable, scrubbedCause } from '../protocol/lib/scrub.mjs';
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
-const STDERR_KEEP = 64 * 1024;
-const TAIL = 400;
+const DEFAULT_MAX_OUTPUT_BYTES = bufferConstants.MAX_STRING_LENGTH;
 
 /** 一个运行时名字要找哪些程序名（按先后）。node 不走这里。 */
 export function interpreterNames(name) {
@@ -54,7 +54,6 @@ function run(executable, args, { input, cwd, timeoutMs, maxOutputBytes, label })
     const out = [];
     const err = [];
     let outBytes = 0;
-    let errBytes = 0;
     let settled = false;
     let failure = null; // 我们自己决定要结束它（超时、输出太大）：等它真的退出了再报，不留着还在跑的进程
     const finish = (action) => {
@@ -75,18 +74,14 @@ function run(executable, args, { input, cwd, timeoutMs, maxOutputBytes, label })
       if (outBytes > maxOutputBytes) return stop(new Error(`脚本 ${label} 的输出超过 ${Math.round(maxOutputBytes / 1024 / 1024)} MiB，已被结束`));
       out.push(chunk);
     });
-    child.stderr.on('data', (chunk) => {
-      errBytes += chunk.length;
-      err.push(chunk);
-      while (errBytes - err[0].length > STDERR_KEEP) errBytes -= err.shift().length; // 只留最近的一段
-    });
+    child.stderr.on('data', (chunk) => err.push(chunk)); // 标准错误的全文都留着，出错时才拼起来（见下面 close）
     child.stdin.on('error', () => {}); // 脚本不读标准输入就退出了：EPIPE 不是错误，结果看退出码
-    child.on('error', (cause) => finish(() => reject(new Error(`脚本 ${label} 起不来（${executable}）：${cause.message}`, { cause }))));
+    child.on('error', (cause) => finish(() => reject(new Error(reportable(`脚本 ${label} 起不来（${executable}）：${cause.message}`), { cause: scrubbedCause(cause) }))));
     child.on('close', (code, signal) => {
       finish(() => {
         if (failure !== null) return reject(failure);
         if (code === 0) return resolve(Buffer.concat(out).toString('utf8'));
-        const stderr = Buffer.concat(err).toString('utf8').trim().slice(-TAIL);
+        const stderr = reportable(Buffer.concat(err).toString('utf8').trim());
         reject(new Error(`脚本 ${label} 退出码 ${code ?? signal}${stderr === '' ? '' : `：${stderr}`}`));
       });
     });
@@ -102,7 +97,7 @@ function run(executable, args, { input, cwd, timeoutMs, maxOutputBytes, label })
  * @param {Record<string, unknown>} [options.existing] 环境里已经有的运行时：同名的不建（例如 ffmpeg 的签名是另一种）
  * @param {string} [options.pathEnv] 换掉 PATH（测试用）
  * @param {number} [options.timeoutMs] 单次运行的上限，默认 10 分钟
- * @param {number} [options.maxOutputBytes] 输出的上限，默认 256 MiB
+ * @param {number} [options.maxOutputBytes] 输出的上限，默认是 Node 能装进一个字符串的上限（buffer.constants.MAX_STRING_LENGTH，约 512 MiB）
  * @returns {Record<string, (call: { entry: string, input: string }) => Promise<string>>} 找得到解释器的才有
  */
 export function createScriptRuntimes({ packDir, names, existing = {}, pathEnv, timeoutMs = DEFAULT_TIMEOUT_MS, maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES }) {

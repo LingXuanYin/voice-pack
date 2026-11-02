@@ -9,7 +9,7 @@
 //     'kept' 是沿用：上一版的默认段（条件见规则 5），或者作者明说的（lib/make-pack-pick.mjs 报告时分成 'previous' 和 'author'）。
 //   options.similarities（可选）：{ [段名]: 数的数组 }，每段候选和其余参考的说话人相似度（只量参考之间的，留出录音一条都不算；由调用方量，见 lib/make-pack-pick.mjs）。
 //
-// 候选（candidates，每个是一个已经能用的片段：音质没被拒绝、有文本）：
+// 候选（candidates，每个是一个能用的片段：有文本；音质只有 verdict 里的提醒）：
 //   { id, order, verdict: 'ok' | 'warn' | 'unchecked', durationSec: number | null, tokens: number, textChars: number, plain?: boolean, synthetic?: boolean, tags: { language, emotion?, style?, energy? } }
 //   order 是它在输入里的次序（从 0 起，不重复）；tokens 是文本的词数（lib/fidelity.mjs 的 tokenizeTranscript：中文按字、英文按词）；
 //   plain 是 false 表示文本里有台本标记或舞台提示（不给就当没有）；synthetic 是 true 表示这段是合成的（克隆出来的），不是这个人录的（不给就是真录音）；
@@ -33,7 +33,7 @@
 //     那一次放宽也找不到能当留出录音的，就不留：报告会提示没有留出录音（lib/material-hints.mjs 的 suggestMaterial）。
 //     作者明说的默认段（新补的，见规则 5）不取：它要当默认参考段，轮到它的时候跳过，取它下一段。
 //   4 参考集：除了留出录音，剩下的都是参考；超过 maxReferences 段时，先保证作者明说的默认段（新补的）留住，再保证每个标签组都有最好的一段，
-//     再按优先级补满，多出来的不要（over_limit）。明说的段不因为音质是 warn 或者优先级靠后被裁掉；上一版的参考已经占满上限、它进不了参考集的，
+//     再按优先级补满，多出来的不要（over_limit）。没给 maxReferences 就不限（DEFAULTS.maxReferences 是 Infinity）。明说的段不因为音质是 warn 或者优先级靠后被裁掉；上一版的参考已经占满上限、它进不了参考集的，
 //     在花钱之前就报（lib/make-pack-pick.mjs 的 assertDefaultUsable）。
 //     参考在清单里的次序：新做的包按优先级（好的在前，配音时同样合适的几段里取在前面的）；发新版本时，已有的在前、次序不变，新的接在后面。
 //   5 默认参考段（「平常说话」，不带舞台提示的台词都用它；卡片试听放的也是它，所以要是这个人自己的声音）。
@@ -59,7 +59,8 @@ import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
 export const DEFAULTS = Object.freeze({
   holdoutRatio: 0.2,
   maxHoldout: 6,
-  maxReferences: 24,
+  // 不设上限：参考段数只受格式写明的上限（protocol/FORMAT.md：reference.segments 最多 500 项），撞上时清单检查报错（组装时才查，见 make-pack-assemble.mjs），这里不裁。
+  maxReferences: Infinity,
   minHoldoutTokens: 10,
 });
 
@@ -100,7 +101,9 @@ export function materialOptionProblems(options) {
   const add = (field, message) => problems.push({ field, message });
   if (given('holdoutRatio') && !(typeof options.holdoutRatio === 'number' && options.holdoutRatio >= 0 && options.holdoutRatio <= 1)) add('holdoutRatio', '必须是 0 到 1 之间的数');
   for (const key of ['maxHoldout', 'maxReferences', 'minHoldoutTokens']) {
-    if (given(key) && !(Number.isInteger(options[key]) && options[key] >= 0)) add(key, '必须是不小于 0 的整数');
+    // maxReferences 可以是 Infinity：不限，DEFAULTS 里就是它（做包时参考段数不设上限）
+    const unlimited = key === 'maxReferences' && options[key] === Infinity;
+    if (given(key) && !unlimited && !(Number.isInteger(options[key]) && options[key] >= 0)) add(key, '必须是不小于 0 的整数');
   }
   if (Number.isInteger(options.maxReferences) && options.maxReferences === 0) add('maxReferences', '必须不小于 1（参考集至少要有一段）');
   if (given('maxSynthesisChars') && options.maxSynthesisChars !== null && !(Number.isInteger(options.maxSynthesisChars) && options.maxSynthesisChars >= 1)) add('maxSynthesisChars', '必须是正整数（或 null：不限）');

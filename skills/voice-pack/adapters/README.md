@@ -42,12 +42,12 @@ export default async function createAdapter({ cwd, dir, env, options, use, Voice
 | `runtimes` | `{ 工具名: 函数 }`，命令行工具的实现，例如 `ffmpeg`；签名写在第一个调用它的模块的文件头（`@runtime`） | 并进 `runtimes` | 用命令已有的 |
 | `fetch` | 函数，形同标准 `fetch(input, init)` | 成为命令的网络读取（所有网络读取都走它） | 用命令已有的 |
 | `billing` | 非空字符串：一句话说明调用这个适配器的能力，**费用记在哪里**。写成能接在「要」后面的短语，例如「在某个账户上调用，费用记在使用者自己的账户上」 | 每次花钱的几步开始之前，命令把它写到标准错误里，开头是「要」，后面接各项能力调几次；`--json` 时不说，免得弄脏机器读的输出（`dub`、`convert`、`make-pack`、`fidelity` 都这样） | 命令不说费用：这个适配器不花钱，或者费用不归这里管 |
-| `limits` | `{ maxChars?, minChars? }`：`maxChars` 是**一次合成最多多少个字**，整数，不小于 10（同 `dub` 的 `--max-chars`）；`minChars` 是**合成能力一次至少要多少个字**，整数，不小于 1（码位，同 `minChars` 选项，见 `lib/dub.mjs`），例如 15 | `maxChars`：`dub` 默认按它把长句子按句子切开；命令行上给的 `--max-chars` 盖过它。`minChars`：`dub`、`make-pack` 的试合成按它并段，并不了的那一段记成失败、不调用能力（规则见 `lib/dub.mjs` 的文件头） | 不限制：`dub` 不切，也不并段（同没给 `--max-chars`） |
+| `limits` | `{ maxChars?, minChars?, maxPromptTokens? }`：`maxChars` 是**一次合成最多多少个字**，整数，不小于 10（同 `dub` 的 `--max-chars`）；`minChars` 是**合成能力一次至少要多少个字**，整数，不小于 1（码位，同 `minChars` 选项，见 `lib/dub.mjs`），例如 15；`maxPromptTokens` 是 **`text-generation` 一次请求最多收多少输入**，整数，不小于 1，写模型或平台写明的那个数（单位按它的出处，通常是 token） | `maxChars`：`dub` 默认按它把长句子按句子切开；命令行上给的 `--max-chars` 盖过它。`minChars`：`dub`、`make-pack` 的试合成按它并段，并不了的那一段记成失败、不调用能力（规则见 `lib/dub.mjs` 的文件头）。`maxPromptTokens`：`dub` 判情绪把没带标签的句子按它分几次发（量法见 `lib/input-batches.mjs`，单独超限的句子怎么办见 `lib/reference-pick.mjs` 的文件头） | 不限制：`dub` 不切，也不并段（同没给 `--max-chars`），判情绪一次发完 |
 | `previewCard` | `{ productName?, links?: { open?, make? } }`：这个适配器背后的**产品**，在分享文件的预览卡片（`index.html`）上写什么。`productName` 是「在 X 里打开」里的 X；`links.open` 是打开入口，`links.make` 是「做一个你自己的」入口，都是完整的 `http`、`https` 地址，里面的 `{id}` 换成包 ID。形状同核心层 `pack` 命令的 `--product-name`、`--open-link`、`--make-link` | `make-pack` 的 `--share-file` 打分享文件时把它交给卡片生成程序（`protocol/lib/preview-card.mjs` 不写任何产品的名字和地址，只收调用方给的值） | 卡片上没有产品名，也没有这两个入口（只用别的适配器，或者不用适配器，都是这样） |
 
 几个适配器一起给时怎么合并（同名的能力谁盖过谁、`billing` 怎么连起来、`limits` 和 `previewCard` 取谁的），**只在 `cli/adapters.mjs` 的文件头写一处**，这里不重述。
 
-`billing`、`limits.maxChars` 和 `previewCard` 是适配器自己的事（费用记在哪个账户、一次最多合成多少字、卡片上写哪个产品），放进返回值里，通用层就不用去读某个适配器的产品契约。**适配器给的数不要在代码里再写一份**：它有自己的数据就从那里取（例如一个产品带的适配器，`maxChars` 和 `previewCard` 从这个产品自己的契约文件里读）。
+`billing`、`limits`（`maxChars`、`minChars`、`maxPromptTokens`）和 `previewCard` 是适配器自己的事（费用记在哪个账户、一次最多合成多少字、模型一次能收多少输入、卡片上写哪个产品），放进返回值里，通用层就不用去读某个适配器的产品契约。**适配器给的数不要在代码里再写一份**：它有自己的数据就从那里取（例如一个产品带的适配器，`maxChars` 和 `previewCard` 从这个产品自己的契约文件里读）。
 
 返回的形状由 `lib/adapter-check.mjs` 的 `checkAdapterShape` 核对，加载时不合格报 `adapter_invalid`，`details.problems` 一条一条说哪里不对。
 
@@ -78,6 +78,7 @@ export default async function createAdapter({ cwd, dir, env, options, use, Voice
 5. **凭据的值不进任何地方**：报错的 `message`、`details`、日志、`cause` 里都不能有令牌、密钥的值。适配器读到的凭据只用来发请求。
 6. **服务商拦下了回答，要报成被拦下，不要当成回答交出去**：听音频的能力（`audio-text-to-text`）拿到的回答，如果是服务商用内容过滤拦下时的那句说明，抛 `provider_blocked`，不带 `transient`（同一段录音再问还是被拦）。认的是服务商的原话，所以只写在适配器里，通用层只认这个 code。写法和库怎么对待它，只在 `vocab/capability-signatures.md` 的 `audio-text-to-text` 一节。
 7. **只和这一次的文字有关的拒绝要标 `details.textRejected`**：能力因为这一次要说的文字被拒（字数太短或太长、有处理不了的字、服务商对这句话的说法），抛 `VoicePackError` 并在 `details.textRejected` 里写 `true`，不标 `transient`。约定和库（配音）怎么对待它，只写在 `vocab/capability-signatures.md` 的「通用约定」。适配器只标它认得出的：自己在碰服务之前的检查（字数、字符、空白，码用 `capability_input_invalid`，库据此不计数），或者服务商的原话（写进那个适配器的代码，并注明出处，码不用 `capability_input_invalid`，库据此计数）；认不出的不标。参考、凭据、参数、声音的描述这类对每一句都一样的错不标，它们照常停下。
+8. **回答没正常结束或是空的，标 `details.unusable`**：听音频的能力（`audio-text-to-text`）的回答被截断（`stopReason` 是 `length`）、中途出错（`error`、`aborted`），或者没有文字，抛适配器自己定义的错误码（`details.problem` 写 `stop_reason` 或 `text_missing`），并在 **`details.unusable` 里写 `true`**，不标 `transient`（每问一次都花钱，再问也可能还是这样）。库把那一条记成作废，不往上抛，也不停下整次。约定和库怎么对待它，写在 `vocab/capability-signatures.md` 的「通用约定」。
 
 加载适配器时的错（`cli/adapters.mjs`）：`adapter_invalid`（`details.reason`：`load` 模块加载不了、`not_function` 没有默认导出的函数、`factory_failed` 工厂抛了错、`shape` 返回的形状不对、`manifest` 官方适配器的 `adapter.json` 写坏了）和 `adapter_not_found`（给的是名字，`adapters/` 里没有这个官方适配器，错误说明会教人自己的适配器要给路径；适配器里 `use(名字)` 的名字不对也是它）。工厂自己抛的 `VoicePackError` 原样往上，不包。
 

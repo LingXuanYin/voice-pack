@@ -63,7 +63,7 @@ export async function adjustedClip(env, bytes, { targetLufs, peakCeilingDbfs, li
   } catch (error) {
     const kind = decodeFailureKind(error);
     if (kind === 'runtime_missing') return { skipped: 'runtime_missing', details: { runtime: error.details.runtime } };
-    if (kind === 'undecodable') return { skipped: 'audio_undecodable', details: { code: error.code } };
+    if (kind === 'undecodable') return { skipped: 'audio_undecodable', details: { code: error.code, message: error.message } };
     throw error;
   }
   const result = normalizeLoudness({ sampleRate: decoded.sampleRate, samples: decoded.samples }, { targetLufs, peakCeilingDbfs: ceilingForPcm16(peakCeilingDbfs), limiter });

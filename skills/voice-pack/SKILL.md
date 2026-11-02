@@ -27,7 +27,7 @@ compatibility: "需要带 Web Crypto、Compression Streams（deflate-raw）和 f
 
 | 流程 | 所需能力 | 输入 | 输出 |
 |---|---|---|---|
-| 克隆 | `voice-cloning`（参数 `ref_audio`、`ref_text`）；逐字文本可用 `automatic-speech-recognition` 转写 | 一段干净的参考（做包至少 5 秒，10 到 20 秒最好，不带伴奏；平台的下限见适配器说明）和它的逐字文本 | 一个声音 |
+| 克隆 | `voice-cloning`（参数 `ref_audio`、`ref_text`）；逐字文本可用 `automatic-speech-recognition` 转写 | 一段干净的参考（做包建议 5 到 20 秒，10 到 20 秒最好，不带伴奏；短的也照样做，模型和平台的要求见适配器说明，平台拒了报它的原话）和它的逐字文本 | 一个声音 |
 | 设计 | `voice-design` | 按七个维度挑的属性，写成一段自然语言描述 | 一段声音；满意的锁定成参考，之后走克隆 |
 | 融合 | `voice-cloning`，传多段参考 | 2 段以上参考，各带权重 | 一个融合的声音 |
 

@@ -16,11 +16,13 @@
 //
 // 暂时出错（details.transient）怎么办：tagSegment 默认只问一次（options.attempts 是 1），出错就是没听成；做包（lib/make-pack-tags.mjs 的 tagAll）给 attempts: MAX_ATTEMPTS，
 // 这一段在同一次做包里按 lib/call-attempts.mjs 的规则再问（每段最多 3 次，第 2、3 次之前等 5 秒、15 秒），3 次都暂时出错才是没听成。规则只在那个模块写一份。
-// 不重试的：回答被服务商拦下（provider_blocked，同一段录音再问还是被拦）、回答不是固定格式、收音校验没过：能力是答了的，重来也是一样的答案。别的错（401……）原样抛出，也不重试。
+// 不重试的：回答被服务商拦下（provider_blocked，同一段录音再问还是被拦）、回答没正常结束或是空的（能力标 details.unusable）、回答不是固定格式、收音校验没过：能力是答了的，
+//   重来也是一样的答案，而且每问一次都花钱。别的错（401……）原样抛出，也不重试。
 //
 // 返回（tagSegment）：
 //   { status: 'tagged', emotion?, style?, dropped?, model? }   听到了。没有情绪、没有风格的不写那一项
-//   { status: 'voided', reason: 'listening_check_failed' | 'tag_answer_invalid' | 'provider_blocked', errorRate?, model? }   不采用：没听到，或者回答不是固定格式，
+//   { status: 'voided', reason: 'listening_check_failed' | 'tag_answer_invalid' | 'tag_answer_unusable' | 'provider_blocked', errorRate?, model?, problem?, stopReason? }   不采用：没听到，或者回答不是固定格式，
+//                                                              或者回答没正常结束、是空的（能力标 details.unusable，记成 tag_answer_unusable，带 problem（stop_reason 或 text_missing）、stopReason、模型，和盲听的 blind_answer_unusable 一样），
 //                                                              或者回答被模型的服务商拦下了（能力抛 provider_blocked，写法见 vocab/capability-signatures.md；同一段录音再问还是被拦，所以不是没听成）
 //   { status: 'not_heard', error: { code, message, details }, attempts }  服务暂时出错（能力在 details.transient 里标了 true），问满了 attempts 次也没成：这一段没打上，别的段照常；
 //                                                              attempts 是这一段问了几次（不重试的时候是 1）
@@ -33,10 +35,11 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import cues from '../vocab/cues.json' with { type: 'json' };
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
+import { reportable } from '../protocol/lib/scrub.mjs';
 import { requireCapability } from '../protocol/lib/env.mjs';
 import { openingErrorRate, OPENING_WORDS, DEFAULT_MAX_ERROR_RATE } from './fidelity.mjs';
 import { canonicalLabel } from './line-hints.mjs';
-import { summarizeError, badResult } from './capability-calls.mjs';
+import { summarizeError, badResult, isUnusableAnswer } from './capability-calls.mjs';
 import { callWithRetries } from './call-attempts.mjs';
 
 export const EMOTIONS = Object.freeze(Object.keys(cues.emotion));
@@ -59,11 +62,17 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 // 整段回答就是一个 ``` 代码块
 const FENCED = /^```[A-Za-z0-9_-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/;
 
-const invalidAnswer = (reason, reply) => new VoicePackError('tag_answer_invalid', `打标签的回答不符合固定格式（${reason}），不猜，这一段不采用模型打的标签`, { details: { reason, reply: String(reply).slice(0, 300) } });
+const invalidAnswer = (reason, reply) => new VoicePackError('tag_answer_invalid', `打标签的回答不符合固定格式（${reason}），不猜，这一段不采用模型打的标签`, { details: { reason, reply: reportable(reply) } });
+
+/** 回答没正常结束或是空的（能力标 details.unusable）：带 problem、stopReason、模型，和盲听的 blind_answer_unusable 一样（lib/fidelity.mjs）。 */
+const unusableDetails = (error) => {
+  const { problem, stopReason, model } = error.details ?? {};
+  return { ...(problem === undefined ? {} : { problem }), ...(stopReason === undefined ? {} : { stopReason }), ...(typeof model === 'string' ? { model } : {}) };
+};
 
 /**
  * 把模型的回答解析出来。整段回答必须是一个 JSON 对象（可以包在一个代码块里），transcript、emotion、style 都是字符串。
- * @throws {VoicePackError} tag_answer_invalid。details.reason 说哪里不对，details.reply 是原话的前 300 个字符
+ * @throws {VoicePackError} tag_answer_invalid。details.reason 说哪里不对，details.reply 是原话全文（打过码，规则见 protocol/lib/scrub.mjs）
  */
 export function parseTagAnswer(reply) {
   let body = String(reply).trim();
@@ -105,6 +114,8 @@ export async function tagSegment(env, segment, { maxErrorRate = DEFAULT_MAX_ERRO
   } catch (error) {
     // 回答被模型的服务商拦下：能力按约定抛 provider_blocked（适配器认服务商的原话，库只认这个码）。同一段录音再问还是被拦，所以是作废，不是没听成，也不重试
     if (isVoicePackError(error, 'provider_blocked')) return { status: 'voided', reason: 'provider_blocked', ...(typeof error.details?.model === 'string' ? { model: error.details.model } : {}) };
+    // 回答没正常结束（截断、出错中断）或是空的：能力标 details.unusable。读不懂，记成作废（和回答不是固定格式一样），不再问：每问一次都花钱，再问也可能还是这样
+    if (isUnusableAnswer(error)) return { status: 'voided', reason: 'tag_answer_unusable', ...unusableDetails(error) };
     throw error;
   }
   if ('error' in outcome) return { status: 'not_heard', error: summarizeError(outcome.error), attempts: outcome.attempts };

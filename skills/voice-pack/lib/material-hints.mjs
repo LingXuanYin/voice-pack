@@ -36,11 +36,7 @@
 //   direction_tags_missing      没有音色标签：社区里按音色标签搜不到这个包。details: {}
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
-import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
 import { DEFAULTS, plannedHoldouts } from './pack-material.mjs';
-
-/** 建议的参考段长度（秒）：音质检查的提醒线（tools/audio-quality.mjs 的 REFERENCE_THRESHOLDS.duration），提示里说的长度就是它，不另写一份。 */
-const { warnBelow: REFERENCE_MIN_SECONDS, warnAbove: REFERENCE_MAX_SECONDS } = REFERENCE_THRESHOLDS.duration;
 
 export const THRESHOLDS = Object.freeze({
   /** 读还原度的读法要求的有效留出录音条数（lib/fidelity.mjs 文件头）。 */
@@ -58,7 +54,6 @@ const ENERGY_NAME = Object.freeze({ low: '低', high: '高' });
 /** 没用上的原因的说明：怎么补。没列的原因给一句通用的。 */
 const UNUSED_ADVICE = Object.freeze({
   no_text: '没有文本，没用上：补上逐字文本，或者在环境里接上转写（automatic-speech-recognition）',
-  quality_rejected: `音质不合格，没用上：重录一段更干净的（${REFERENCE_MIN_SECONDS}–${REFERENCE_MAX_SECONDS} 秒，不带伴奏、没有削波），或者换一段`,
   transcription_failed: '转写没成（服务暂时出错），没用上：稍后重做一次',
   language_unknown: '认不出是哪种语言，没用上：在素材里给 labels.language',
   duplicate_audio: '和别的片段是同一段音频，没用上：重复的不用补',
@@ -160,8 +155,7 @@ export function suggestMaterial(material) {
   const byReason = new Map();
   for (const entry of unused) byReason.set(entry.reason, [...(byReason.get(entry.reason) ?? []), entry]);
   for (const [reason, entries] of byReason) {
-    const codes = reason === 'quality_rejected' ? [...new Set(entries.flatMap((entry) => entry.details?.codes ?? []))].sort() : undefined;
-    add(`unused_${reason}`, `${entries.length} 段${UNUSED_ADVICE[reason] ?? `没用上（${reason}）`}。`, { count: entries.length, ids: entries.map((entry) => entry.id), ...(codes === undefined ? {} : { codes }) });
+    add(`unused_${reason}`, `${entries.length} 段${UNUSED_ADVICE[reason] ?? `没用上（${reason}）`}。`, { count: entries.length, ids: entries.map((entry) => entry.id) });
   }
 
   if (!guidance) add('guidance_missing', '没有配音指引：包不只音色要像，说话方式也要像。写几句语气、节奏、口头禅、适合的场景（只写想要的效果，不写某个模型的指令语法），agent 配音时会照着做。');

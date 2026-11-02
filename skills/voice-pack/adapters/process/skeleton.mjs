@@ -44,7 +44,7 @@ function programFile({ capabilities, header, notImplemented }) {
     'PROTOCOL = 1',
     '',
     '# 标准输出只给进程协议用：模型库里的 print 会弄坏进程协议，所以先留下真的标准输出，再把 sys.stdout 换成标准错误。',
-    '# 日志写在标准错误里：程序出了错，最后一段会带给使用者看。',
+    '# 日志写在标准错误里：程序出了错，全文会带给使用者看。',
     'protocol_out = sys.stdout',
     'sys.stdout = sys.stderr',
     '',

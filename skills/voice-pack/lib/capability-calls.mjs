@@ -9,6 +9,8 @@
 //                                                  没标的错（缺能力、参数错、401、返回的形状不对、普通的 Error……）都不是：照常往上抛，库不猜
 //   isTextRejected(error)                          能力抛的错是不是「只和这一次的文字有关」的拒绝：是 VoicePackError，details.textRejected 为 true
 //                                                  （谁来标是能力实现的事，约定同上，写在 vocab/capability-signatures.md「通用约定」）。配音据此把这一段记成失败、别的段照常做；没标的照常往上抛
+//   isUnusableAnswer(error)                        能力抛的错是不是「回答没正常结束（截断、出错中断）或是空的」：是 VoicePackError，details.unusable 为 true
+//                                                  （谁来标是能力实现的事，约定同上）。打标签、盲听据此把那一条记成「作废」，不重试、不停下整次；没标的照常往上抛
 //   summarizeError(error)                          收进报告的错误摘要 { code, message, details }：details 没有就是 {}，不带 cause 和栈
 //   badResult(capability, problem, message?, extra?)  所需能力的返回不合约定：造一个 capability_result_invalid，调用方自己 throw。
 //                                                  problem 是问题的代码（text_missing……）或一句话，message 是说明（省略就用 problem），
@@ -25,6 +27,9 @@ export const isServiceError = (error) => isVoicePackError(error) && error.detail
 
 /** 只和这一次的文字有关的拒绝（details.textRejected 为 true，约定见 vocab/capability-signatures.md「通用约定」）。 */
 export const isTextRejected = (error) => isVoicePackError(error) && error.details?.textRejected === true;
+
+/** 回答没正常结束（截断、出错中断）或是空的（details.unusable 为 true，约定见 vocab/capability-signatures.md「通用约定」）。不是服务出错：不重试，每问一次都花钱，再问也可能还是这样。 */
+export const isUnusableAnswer = (error) => isVoicePackError(error) && error.details?.unusable === true;
 
 export const summarizeError = (error) => ({ code: error.code, message: error.message, details: error.details ?? {} });
 

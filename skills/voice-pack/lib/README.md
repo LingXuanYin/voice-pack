@@ -17,7 +17,7 @@
 | `dub.mjs` | `planDub` 只规划（每句挑哪段参考、读音词表换了什么、停顿和语速的记录；不花钱），`dubScript` 规划再逐句合成：一段服务暂时出错、或者文字被拒（`details.textRejected`）记成 failed，别的段照做；调用之前查出来的文字错（`capability_input_invalid`）不计数；服务商拒的连着 3 句、还没有一句成功的停下来（`dub_text_rejected`）；别的错停下来 |
 | `mix.mjs` | `planMix(report)` 检查 dub 的报告（有一句没做成、或者 dub 中途停下，就不出成品）；`mixParts(env, parts)` 把各句接成一个 WAV：句前句后的停顿插成静音，换人处（相邻两句的包不同）先把两边的静音各削到 50 毫秒，统一成第一句的采样率和声道（纯 JS 重采样），有语速要求时用 ffmpeg 的 atempo 变速（没有就照原速接上，记一条）；非 WAV 的句子要 ffmpeg 解码。纯计算，不调能力，不花钱 |
 | `convert.mjs` | `convertAudio(env, pack, audio, options)`：变声和唱歌（`voice-conversion`、`singing-voice-conversion`）：把一段音频换成包的声音，内容、节奏、旋律不变 |
-| `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；没有任何标签的句子，环境有 `text-generation` 就让它判（一次收费的调用，只规划的调用方传 `judge: false` 不调） |
+| `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；没有任何标签的句子，环境有 `text-generation` 就让它判（收费的调用：适配器声明了一次请求的输入上限就按它分几次发，没声明一次发完；回答被截断的那一批对半分开再问；只规划的调用方传 `judge: false` 不调） |
 | `line-hints.mjs` | 从一句台词读出提示（纯计算）：`readDirections` 读舞台提示（（耳语）、*笑*……）和停顿，`detectLanguages` 按文字系统认语种，`canonicalLabel`、`primaryLanguage`、`normalizeLanguage` 整理情绪、风格和语言标签。词表是 `../vocab/cues.json` |
 | `pause-in-request.mjs` | 一段话里的停顿交给模型（纯计算）：`requestsOf` 把相邻的段并成几次请求（停顿 ≤ 2.5 秒、标点、`<speak>` 和 `<break>`），`renderRun`、`endsMidSentence`、`JOIN_PUNCTUATION_PAUSE_MS`。app 和配音（`dub.mjs` 第 5c 步）都用它 |
 | `pronunciation-lexicon.mjs` | 读音词表（W3C 的 PLS）：`parseLexicon`、`lexiconRules`、`applyLexicon`：合成之前把台词里的词换成期望的读法；拼音音素（`x-pinyin`）由 `applyPhonemes` 在发送前换成 `<phoneme>` 标签（环境声明了 phoneme-in-text 才用）。解析器是自己写的，不引第三方依赖 |
@@ -41,7 +41,7 @@
 |---|---|
 | `make-pack.mjs` | `makePack(env, input, options)`：做包的流程，一步一步调下面的文件：读输入、筛片段、试装和规划（花钱之前）、转写、打标签、挑参考、发新版本、调响度、装包、试合成和量还原度、写报告。`options.describeChanges` 让调用方自己把变化写成一句话，不给就是 `pack-version.mjs` 的中文写法；`options.textLanguage`（`'zh'` 或 `'en'`，不给是中文）是包里 `SKILL.md` 骨架的语言 |
 | `make-pack-input.mjs` | 读 `input` 和 `options`，写错了在花钱之前报 `make_pack_input_invalid`（点名字段），整理成后面各步读写的条目 |
-| `make-pack-screen.mjs` | 筛片段（不花钱）：认格式、查重、量音质，淘汰用不上的；发新版本时上一版带来的段只量不淘汰 |
+| `make-pack-screen.mjs` | 筛片段（不花钱）：认格式、查重、量音质（只提醒，不淘汰），淘汰认不出的、重复的和解不开的；发新版本时上一版带来的段只量不淘汰 |
 | `make-pack-plan.mjs` | 规划（不花钱）：筛完以后各项能力最多调几次、有几段素材能用（`plan`，用户在第一次调能力之前确认的就是它） |
 | `make-pack-transcribe.mjs` | 转写没有文本的片段；转写以后定每段的文本从哪来，一个词都没有的淘汰 |
 | `make-pack-tags.mjs` | 打标签：语言（调用方给的、转写报的、从文字认的）、情绪和风格（让听者听着打，暂时出错的段按 `call-attempts.mjs` 的规则再听，每段最多 3 次）、能量（响度跟这一批的中位数比），以及每个标签是谁定的 |
@@ -101,6 +101,7 @@
 | 文件 | 干什么 |
 |---|---|
 | `capability-calls.mjs` | 调所需能力时共用的几个小函数：`isServiceError`（能力抛的错是不是「服务暂时出错」，看 `details.transient`）、`summarizeError`（收进报告的错误摘要）、`badResult`（能力的返回不合约定，造 `capability_result_invalid`）、`pool`（一批事分给几个并发的工人，出错就不再开始新的） |
+| `input-batches.mjs` | 一份很长的输入分成几次请求（纯计算）：`splitBatches` 按模型一次请求能收的输入上限（环境声明的 `limits.maxPromptTokens`）把输入装成几批，量法按提示的 UTF-8 字节数，单独就超限的单列；`askBatches` 一批一批地问，回答被截断的那一批对半分开再问；`utf8Length`。判情绪（`reference-pick.mjs`）和 app 的文字功能用的是同一份 |
 | `manifest-limits.mjs` | 清单里长短文字字段的长度上限（`LONG_TEXT_MAX`、`SHORT_TEXT_MAX`），读自协议核心的清单 schema，流程层不另抄一份数；语言标签的写法留在 `language-tag.mjs`（不引别的模块），要和 schema 里的写法保持一致 |
 | `event-loop.mjs` | 让事件循环转一圈：`turnEventLoop`（等一个宏任务，用 `MessageChannel`）、`nowMs`（量「连续做了多久」的钟）、`YIELD_AFTER_MS`（50，连续做了这么久就让一圈）。长录音切段编段（`long-recording.mjs`）、做包筛片段（`make-pack-screen.mjs`）都用它：一段同步的活做久了页面就卡，浏览器里 `await crypto.subtle.digest` 不让事件循环转，要自己让 |
 | `call-attempts.mjs` | 一段录音的一次能力调用最多试几次、暂时出错等多久再来，规则只在这里写一份，做包的转写（`make-pack-transcribe.mjs`）、打标签（`make-pack-tags.mjs`、`segment-tags.mjs`）和试合成（`make-pack-trial.mjs` 的 `envForTrial`）、长录音（`long-recording.mjs`）和 app 听试听都用它：`callWithRetries`（每段最多 `MAX_ATTEMPTS` 次，暂时出错才再来，两次之前各等 `RETRY_DELAYS_MS`：5 秒、15 秒）、`extraAttempts`（多听的上限，写进「确认费用」里用户同意的次数）、`spent`（把一个已经用完次数的失败原样交回去）。文件头还写着为什么是这几个数、失败的转写收不收费是怎么量的 |

@@ -13,9 +13,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { sniffAudio } from '../protocol/lib/audio.mjs';
+import { reportable, scrubbedCause } from '../protocol/lib/scrub.mjs';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
-const STDERR_CAP = 4 * 1024 * 1024;
 
 /**
  * 在 PATH 上找一个可以直接运行的程序，返回完整路径，找不到返回 null。
@@ -46,7 +46,8 @@ export function findExecutable(name, { pathEnv = process.env.PATH ?? '', pathExt
   return null;
 }
 
-const tail = (text) => String(text ?? '').trim().slice(-400);
+/** 程序（ffmpeg）写在标准错误里的话：全文，打过码（令牌形状的串和签名地址去掉，别的字不动）。 */
+const reportedText = (text) => reportable(String(text ?? '').trim());
 
 /**
  * 输入文件的名字。ffmpeg 会参考后缀挑解封装器：后缀是 .bin 时它先试 bin（文本画的解封装器，没有音频流），有的 mp3 因此被当成 bin，
@@ -68,11 +69,11 @@ function runFfmpeg(executable, args, input, timeoutMs) {
       await fs.promises.writeFile(inputFile, input);
       const argv = ['-y', ...args.map((a) => (a === '{input}' ? inputFile : a === '{output}' ? outputFile : a))];
       await new Promise((resolve, reject) => {
-        execFile(executable, argv, { timeout: timeoutMs, maxBuffer: STDERR_CAP, windowsHide: true }, (error, _stdout, stderr) => {
+        execFile(executable, argv, { timeout: timeoutMs, maxBuffer: Number.POSITIVE_INFINITY, windowsHide: true }, (error, _stdout, stderr) => {
           if (!error) return resolve();
-          if (error.killed) return reject(new Error(`ffmpeg 超过 ${Math.round(timeoutMs / 1000)} 秒没有结束，已被结束`, { cause: error }));
-          if (error.code === 'ENOENT') return reject(new Error(`ffmpeg 启动不了（${executable}）：${error.message}`, { cause: error }));
-          reject(new Error(`ffmpeg 退出码 ${error.code}：${tail(stderr) || error.message}`, { cause: error }));
+          if (error.killed) return reject(new Error(`ffmpeg 超过 ${Math.round(timeoutMs / 1000)} 秒没有结束，已被结束`, { cause: scrubbedCause(error) }));
+          if (error.code === 'ENOENT') return reject(new Error(reportable(`ffmpeg 启动不了（${executable}）：${error.message}`), { cause: scrubbedCause(error) }));
+          reject(new Error(reportable(`ffmpeg 退出码 ${error.code}：${reportedText(stderr) || error.message}`), { cause: scrubbedCause(error) }));
         });
       });
       let output;

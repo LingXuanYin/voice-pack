@@ -51,7 +51,7 @@ function isPlainSpeech(text) {
 
 /**
  * 作者明说的默认参考段，这次当不了的，在花钱之前就报（field 是 defaultSegment）：
- *   这次没能用上（筛片段淘汰了：音质被拒、重复……）；
+ *   这次没能用上（筛片段淘汰了：重复、解不了……）；
  *   或者是新补的，而上一版的参考已经占满参考上限：规则 4 不裁它，但已有的参考保持原来的角色，它进不了参考集（lib/pack-material.mjs）。
  * materialOptions 是调用方给的挑素材选项（这里只用 maxReferences；没给就是 lib/pack-material.mjs 的默认值）。
  */
@@ -128,8 +128,8 @@ export async function pickMaterial(env, items, { previous, version, materialOpti
   const candidates = usable.map((item) => ({
     id: item.id,
     order: item.index,
-    // 上一版带过来的段按现在的阈值可能是 reject：它们不淘汰（见 screen），排优先级时按 warn 看；报告里的 quality 还是真实的结论
-    verdict: item.quality?.status === 'checked' ? (item.quality.verdict === 'reject' ? 'warn' : item.quality.verdict) : 'unchecked',
+    // 音质结论只有 ok 和 warn（tools/audio-quality.mjs）；上一版带过来的段也不淘汰（见 screen），排优先级时就用它
+    verdict: item.quality?.status === 'checked' ? item.quality.verdict : 'unchecked',
     durationSec: item.quality?.metrics?.durationSec ?? null,
     tokens: tokenizeTranscript(item.text).length,
     textChars: [...item.text].length,

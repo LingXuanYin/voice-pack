@@ -97,7 +97,7 @@
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   make_pack_input_invalid     输入不合约定。details.field 是出问题的字段（segments[2].audio、labels.energy……），details.problem 说哪里不对
-//   make_pack_no_material       没有一段能用，做不出包。details.unused 是没用上的原因和条数（{ no_text: 2, quality_rejected: 1 }）
+//   make_pack_no_material       没有一段能用，做不出包。details.unused 是没用上的原因和条数（{ no_text: 2, audio_undecodable: 1 }）
 //   make_pack_nothing_changed   发新版本，却和上一版比什么都没变（新补的素材没一段用得上、别的也没改）。details: { previous, unused }，不发空的新版本
 //   make_pack_version_invalid   明说的版本号不比上一版大。details: { previous, version }
 //   make_pack_previous_invalid  上一版读不了。details.reason 见 lib/pack-version.mjs 的文件头
@@ -105,6 +105,8 @@
 //                               做包停下来，不拿对不上的东西去量还原度。details: { holdouts, units }
 //   capability_result_invalid   转写（automatic-speech-recognition）的返回不合约定：不是 { text: 字符串, … }。details: { capability, problem }。
 //                               别的能力的返回不合约定也是这个 code；都抛在各自的模块里（lib/make-pack-transcribe.mjs、lib/dub.mjs、lib/fidelity.mjs、lib/segment-tags.mjs）
+//   参考集的段数、包解开以后的总大小撞上格式写明的上限：在转写之前就报，一个付费步骤都不走，dryRun 也报（lib/make-pack-assemble.mjs 的 assertFitsFormat，按切出的段数和估算的大小，估法写在那里）。
+//                               报的是格式那一条的原话，码和装包时一样：manifest_invalid（details.problems[0].details 是 { pointer: '/reference/segments', keyword: 'maxItems' }）、total_too_large；details.estimated 为真
 //   另外 pack_invalid、manifest_invalid 来自 protocol/lib/pack.mjs；所需能力自己抛的错原样往上传（401 之类要让调用方看见），
 //   服务暂时出错（details.transient）的那一项记在报告里，不让整件事作废。上一版的文件和它自己的清单对不上（file_modified、external_hash_mismatch……）
 //   来自 lib/voice-pack.mjs（读上一版时用 verify: true），原样抛出：不在被改过的东西上发新版本。
@@ -128,7 +130,7 @@
 // makePack 只管次序，一步一步调下面的模块；每一步的规则、读写条目的哪些字段、抛哪些错误，写在那一步的模块的文件头里（一个模块只为一件事改动，规则只在那里写一遍）：
 //   读输入和选项      lib/make-pack-input.mjs       输入和选项写错了，在花钱之前报 make_pack_input_invalid
 //   筛片段（不花钱）   lib/make-pack-screen.mjs      认格式、查重、量音质
-//   试装、规划（不花钱） lib/make-pack-assemble.mjs、lib/make-pack-plan.mjs   试装一遍；算各项能力最多调几次（plan）；onPlan 和 dryRun 在这里
+//   试装、规划（不花钱） lib/make-pack-assemble.mjs、lib/make-pack-plan.mjs   试装一遍；算各项能力最多调几次（plan）；参考集的段数和包的总大小撞上格式上限就在这里报（assertFitsFormat）；onPlan 和 dryRun 在这里
 //   转写             lib/make-pack-transcribe.mjs  没有文本的片段转写成文本
 //   打标签           lib/make-pack-tags.mjs        语言、情绪、风格、能量
 //   句子合段         lib/make-pack-sentences.mjs   长录音的句子按情绪并成段（不花钱，在打标签之后；没有句子就不做）
@@ -150,7 +152,7 @@ import { resolveLanguages, tagAll, assembleTags } from './make-pack-tags.mjs';
 import { mergeSentences } from './make-pack-sentences.mjs';
 import { assertDefaultUsable, pickMaterial } from './make-pack-pick.mjs';
 import { adjustLoudness } from './make-pack-loudness.mjs';
-import { preflight, placeMaterial, assembler } from './make-pack-assemble.mjs';
+import { preflight, assertFitsFormat, placeMaterial, assembler } from './make-pack-assemble.mjs';
 import { evaluatePack, verificationOf } from './make-pack-trial.mjs';
 import { buildPlan } from './make-pack-plan.mjs';
 import { dryRunOf, resultOf } from './make-pack-report.mjs';
@@ -184,6 +186,7 @@ export async function makePack(env, input, options = {}) {
   const context = { effective, input, previous, versionNumber, changelog: version.changelog, textLanguage: settings.textLanguage };
   await preflight(items, context);
   const plan = buildPlan(env, items, settings, materialOptions);
+  assertFitsFormat(env, items, plan, context, { maxReferences: materialOptions.maxReferences, reencoded: settings.loudness !== null }); // 参考集的段数、包解开的总大小撞上格式的上限：转写之前就报（dryRun 也报）
   if (settings.dryRun === true) return dryRunOf({ plan, items, fresh, previous, versionNumber, steps, notes: input.notes });
   await settings.onPlan?.(plan); // 花钱之前：不花钱的几步都做完了，调用方在这里说明费用，抛错就停
 

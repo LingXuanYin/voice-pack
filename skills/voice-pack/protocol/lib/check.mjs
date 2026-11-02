@@ -97,8 +97,11 @@ const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 const join = (prefix, path) => (prefix === '' ? path : `${prefix}/${path}`);
 
-/** 读 Response，最多读 maxBytes 个字节；超了给 { tooLarge: true, actual }，没超给 { bytes }。（releases.mjs 读已发布的文件也用它） */
-export async function readCapped(response, maxBytes) {
+/**
+ * 读 Response，最多读 maxBytes 个字节；超了给 { tooLarge: true, actual }，没超给 { bytes }。（releases.mjs 读已发布的文件也用它）
+ * options.onChunk 每收到一块正文调一次（releases.mjs 用它给空闲计时器续命）。
+ */
+export async function readCapped(response, maxBytes, { onChunk } = {}) {
   const encoding = response.headers?.get?.('content-encoding');
   const declared = encoding && encoding !== 'identity' ? Number.NaN : Number(response.headers?.get?.('content-length')); // 压缩过的，声明的是压缩后的大小，不能拿来比
   if (Number.isFinite(declared) && declared > maxBytes) return { tooLarge: true, actual: declared };
@@ -110,6 +113,7 @@ export async function readCapped(response, maxBytes) {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      onChunk?.();
       total += value.length;
       if (total > maxBytes) { await reader.cancel?.(); return { tooLarge: true, actual: total }; }
       chunks.push(value);

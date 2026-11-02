@@ -3,6 +3,7 @@
 // 装包（流程层）：把挑好的素材和作者给的描述装成角色部分，用 protocol/lib/pack.mjs 的 packRolePart（它自带自检：清单合不合规、协议核心封没封印、基础部分对不对得上）。
 // 包里的文件怎么摆（路径、外部资源只记网址）、packRolePart 的参数里和素材无关的那一半怎么拼，只在这里写一遍。
 //
+//   assertFitsFormat(env, items, plan, context, { maxReferences, reencoded })   格式写明的两条上限（参考集的段数、包解开以后的总大小），在转写之前按估算核一遍，撞上就报，不等花完钱（规则在函数上面）
 //   preflight(items, context)                          试装：用真实的输入和一段占位的参考走一遍 packRolePart，输入里不合清单规矩的地方（设计来源、脚本和增强件的登记、
 //                                                      功能声明、没封印的协议核心、基础部分对不上……）在花钱之前就报，不等转写、打标签、试合成、盲听都做完了才在最后一步抛错
 //   placeMaterial({ chosen, byId, effective })         给挑好的每一段定在包里的路径，返回 { reference, holdout, files, externals }：
@@ -19,7 +20,11 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { packRolePart } from '../protocol/lib/pack.mjs';
+import { VoicePackError } from '../protocol/lib/errors.mjs';
+import { validateManifest, MANIFEST_SCHEMA } from '../protocol/lib/manifest.mjs';
+import { DEFAULT_LIMITS, totalSizeProblem } from '../protocol/lib/limits.mjs';
 import { invalid } from './make-pack-input.mjs';
+import { usableItems } from './make-pack-plan.mjs';
 
 const FORMAT_EXTENSION = { wav: 'wav', mp3: 'mp3', flac: 'flac', ogg: 'ogg', m4a: 'm4a' };
 
@@ -64,6 +69,48 @@ export async function preflight(items, context) {
     files: new Map([...context.effective.files, [path, stub.audio.bytes]]),
     random: (length) => new Uint8Array(length), // 占位的包 ID，不动调用方注入的 idRandom
   });
+}
+
+/** 一段调响度存成 16 位 PCM 的 WAV 的头（RIFF、fmt、data）的字节数。 */
+const WAV_HEADER_BYTES = 44;
+/** 清单和 SKILL.md 的余量（字节）：清单是 JSON，格式给它的上限在 DEFAULT_LIMITS.maxJsonBytes；SKILL.md 的骨架和指引，另给 64 KiB。 */
+const DOCUMENT_ROOM = DEFAULT_LIMITS.maxJsonBytes + 64 * 1024;
+const sizeOf = (files) => [...(files ?? new Map()).values()].reduce((sum, bytes) => sum + bytes.length, 0);
+
+/**
+ * 做得下做不下（不花钱，在转写之前）：格式写明的两条上限，一条是参考集的段数，一条是包解开以后的总大小（protocol/FORMAT.md「解包上限」）。
+ * 以前要到装包才报，那时转写、打标签、试合成都已经花完了；这里按切出的段数和估算的大小先核一遍，撞上就报格式那一条的原话（码和装包时一样：
+ * 段数是 manifest_invalid，大小是 total_too_large），一个付费步骤都不走。两条数都出自格式本身（清单 schema、DEFAULT_LIMITS），这里不另写一份。
+ * 估法：
+ *   段数  能用的段（lib/make-pack-plan.mjs 的 usableItems）去掉最多能留出的留出录音（plan.holdouts），再和 maxReferences（没给就是不限）比小的一个。
+ *         转写以后发现没有话的段、挑素材时不用的段会让实际更少：这里数的是多的一边。
+ *   大小  每一段能用的、不是外部资源的（外部资源包里只记网址）：原字节数，和调响度存成 16 位 PCM 的 WAV 以后的大小（lib/make-pack-loudness.mjs：
+ *         音质检查量出的时长 × 采样率 × 声道 × 2 字节，再加头）取大的；调响度关了（reencoded 为假）、或者量不出时长的（没有 ffmpeg 又不是 WAV 的）调响度不动它，就是原字节数。
+ *         再加已知的固定部分（协议核心、基础部分、其他文件）和清单、SKILL.md 的余量。估不准的地方都往大的一边估，所以报错的话里写明这是转写之前的估算。
+ * @returns {void} 撞上上限抛 VoicePackError
+ */
+export function assertFitsFormat(env, items, plan, context, { maxReferences, reencoded }) {
+  const usable = usableItems(env, items);
+  const references = Math.min(usable.length - plan.holdouts, maxReferences ?? Number.POSITIVE_INFINITY);
+  const limit = MANIFEST_SCHEMA.$defs.referenceSet.properties.segments.maxItems;
+  if (references > limit) {
+    // 清单检查自己的话：拿一份只有这么多段的草稿去过它，取说参考集段数的那一条
+    const draft = { part: 'role', reference: { defaultSegment: 'x', segments: Array.from({ length: references }, () => ({})) } };
+    const problem = validateManifest(draft, { schemaOnly: true }).problems.find((entry) => entry.details?.pointer === '/reference/segments' && entry.details?.keyword === 'maxItems');
+    if (problem !== undefined) throw new VoicePackError(problem.code, `${problem.message}（转写之前按切出的段数估的：${usable.length} 段能用，最多留出 ${plan.holdouts} 条留出录音）`, { details: { ...problem.details, problems: [problem], estimated: true } });
+  }
+  const packed = usable.filter((item) => item.externalUrl === null);
+  const audio = packed.reduce((sum, item) => {
+    const metrics = item.quality?.metrics;
+    const known = reencoded && typeof metrics?.durationSec === 'number' && typeof metrics?.sampleRate === 'number';
+    const pcm16 = known ? Math.ceil(metrics.durationSec * metrics.sampleRate) * (metrics.channels ?? 1) * 2 + WAV_HEADER_BYTES : 0;
+    return sum + Math.max(item.audio.bytes.length, pcm16);
+  }, 0);
+  const total = audio + sizeOf(context.input.protocolCore) + sizeOf(context.input.base) + sizeOf(context.effective.files) + DOCUMENT_ROOM;
+  if (total > DEFAULT_LIMITS.maxTotalBytes) {
+    const problem = totalSizeProblem(total, DEFAULT_LIMITS);
+    throw new VoicePackError(problem.code, `${problem.message}（转写之前估的：${packed.length} 段音频按存成 16 位 WAV 算约 ${audio} 字节，加上固定的部分；估不准的地方往大的一边估）`, { details: { ...problem.details, problems: [problem], estimated: true } });
+  }
 }
 
 /** 给挑好的素材定路径：参考、留出录音放进 files（外部资源只记网址，字节留在 externals），再并上其他文件（effective.files）。 */

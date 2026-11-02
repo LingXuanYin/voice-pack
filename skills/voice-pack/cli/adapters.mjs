@@ -9,7 +9,8 @@
 //
 // 合并（applyAdapters）：这是合并规则唯一的正本。适配器按给的先后一个一个接进命令已有的环境：后给的盖过先给的，命令行上明说的盖过命令自己的默认。每个适配器的工厂拿到的 env 是「命令已有的加上前面的适配器」，
 // 它返回的 capabilities、runtimes 并进去，同名的盖过已有的；它给了 fetch 就换成它的。billing、limits 和 previewCard 不进环境，留在返回的 adapters 里给命令用
-// （费用说明、一次合成的字数上限、分享文件的预览卡片上的产品名和入口）。
+// （费用说明、一次合成的字数上限、合成能力的字数下限、text-generation 一次请求的输入上限、分享文件的预览卡片上的产品名和入口）。
+// limits 的每一个键各自合并：最后一个给了这个键的适配器的算数，后给的盖过先给的，没有适配器给就没有（undefined）。
 //
 // 信任：适配器在本进程里直接运行，不隔离，不让用户确认——和包里的脚本一样。用不用、用哪个适配器，是命令行上这个人的决定。
 //
@@ -22,6 +23,7 @@
 //   billingSentence(adapters)             费用说明的开头一句（给了 billing 的适配器各一句，「要……，也要……」，不带句末的标点），没有就是 null
 //   maxCharsOf(adapters)                  一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的，没有就是 undefined
 //   minCharsOf(adapters)                  合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的，没有就是 undefined（dub、make-pack 的 minChars 选项）
+//   maxPromptTokensOf(adapters)           text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的，没有就是 undefined（dub 的 maxPromptTokens 选项：判情绪按它分批发，没有就一次发完）
 //   previewCardOf(adapters)              分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
 //   environmentName(adapters)             验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来，没有就是 null
 //   describeRequests(requests)            把适配器的参数写回命令行的样子（补做提示用）
@@ -339,6 +341,11 @@ export function maxCharsOf(adapters) {
 /** 合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
 export function minCharsOf(adapters) {
   return adapters.findLast((adapter) => adapter.limits?.minChars !== undefined)?.limits.minChars;
+}
+
+/** text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxPromptTokensOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxPromptTokens !== undefined)?.limits.maxPromptTokens;
 }
 
 /** 验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来；没有适配器是 null。 */

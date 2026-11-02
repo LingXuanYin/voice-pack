@@ -22,7 +22,7 @@
 //     （2026-10-15 在 Windows 上实测：宿主被 TerminateProcess，程序和它自己起的子进程 250 毫秒内也没了，程序没来得及做收尾）。所以 Windows 上 exit 事件里这一步是兜底；别的系统没有这个兜底，这一步是主要的办法。
 //   - 超时、违反进程协议这类「宿主还活着，程序不行了」的结束：Windows 上用 taskkill /T（venv 里的 python.exe 是个启动器，会再起真正的解释器，只结束启动器会留下解释器）；
 //     别的系统只结束程序本身（不另开进程组：那样终端上的 Ctrl-C 到不了程序）。程序自己起的子进程（多进程的推理、数据加载）归程序管，README 里写了。
-//   - 程序的标准错误不转给命令（会弄脏 --json 的输出），只留最后一段，放进错误的 details.stderr。
+//   - 程序的标准错误不转给命令（会弄脏 --json 的输出），写到的全文都留着，放进错误的 details.stderr（打过码：令牌形状的串和签名地址去掉，别的字不动）。
 //
 // 抛出的错误（VoicePackError；details 里放什么在抛出处写明，什么时候出现见 ../README.md「出错」）：
 //   process_spawn_failed          起不来。details: { command, reason }
@@ -35,15 +35,13 @@
 //   process_response_invalid      回应是进程协议的消息，但内容不对（缺 ok、result 不是对象、Base64 不对）。details: { capability, problem }。只这一个请求报错，程序不动
 //   程序自己报的 error 原样变成 VoicePackError（见 ../wire.mjs 的 programError）。
 // 超时和退出不标 details.transient：适配器分不清一个卡住的程序和一个必现的 bug，宁可马上停下来让人看；程序知道自己的某个失败是暂时的，在自己的 error 里写 transient。
-// output 是程序写在标准输出里的、不是进程协议消息的最后几行（日志，没把标准输出让给进程协议的 print），帮人找原因。
+// output 是程序写在标准输出里的、不是进程协议消息的全部行（日志，没把标准输出让给进程协议的 print；打过码），帮人找原因。
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { VoicePackError } from '../../../protocol/lib/errors.mjs';
+import { reportable, scrubbedCause } from '../../../protocol/lib/scrub.mjs';
 import { decodeClips, encodeRequest, parseProgramLine, programError } from '../wire.mjs';
 
-const STDERR_KEEP = 2000; // 错误里带的标准错误的末尾（字符数）
-const NOISE_KEEP = 5; // 错误里带的「不是进程协议消息」的标准输出行数
-const NOISE_LINE = 200;
 const GRACE_MS = 3000; // 关了标准输入以后，等程序自己退出多久
 
 const sessions = new Set();
@@ -64,7 +62,6 @@ export function killTree(pid) {
 }
 
 const alive = (child) => child.pid !== undefined && child.exitCode === null && child.signalCode === null;
-const tail = (text, keep) => (text.length > keep ? text.slice(text.length - keep) : text);
 const seconds = (ms) => Math.round((ms / 1000) * 100) / 100;
 
 function installHooks() {
@@ -95,8 +92,9 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   let closing = false; // close() 在请程序退出：它的退出不是出了错
   let nextId = 1;
 
-  const context = () => ({ stderr: tail(stderr, STDERR_KEEP).trim(), output: noise.slice(-NOISE_KEEP) });
-  const stderrNote = () => (context().stderr === '' ? '' : `。它写在标准错误里的最后一段：${tail(context().stderr, 400)}`);
+  // 程序的话（标准错误的全文，标准输出里的日志行）都过打码再交出去：令牌形状的串和签名地址去掉，别的字不动
+  const context = () => ({ stderr: reportable(stderr.trim()), output: noise.map((line) => reportable(line)) });
+  const stderrNote = () => (context().stderr === '' ? '' : `。它写在标准错误里的话：${context().stderr}`);
 
   /** 程序不行了：先拒掉在等的 ready 和在途的请求，再结束它。why 是为什么（也是以后的调用看到的原因），itemError 给在途的请求各自的错（默认同 why）。 */
   function die(why, itemError = () => why, { kill = true } = {}) {
@@ -125,15 +123,14 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
     });
   };
   const closedError = () => new VoicePackError('process_not_running', '会话已经关了（命令结束时收尾）', { details: { reason: 'closed' } });
-  const protocolError = (why, message, more = {}) => new VoicePackError('process_protocol_error', `程序违反了进程协议：${message}`, { details: { reason: why, ...more, ...context() } });
+  const protocolError = (why, message, more = {}) => new VoicePackError('process_protocol_error', `程序违反了进程协议：${reportable(message)}`, { details: { reason: why, ...more, ...context() } });
 
   function onLine(line) {
     const parsed = parseProgramLine(line);
     if (parsed.kind === 'noise') {
       const text = line.trim();
       if (text !== '') {
-        noise.push(tail(text, NOISE_LINE));
-        if (noise.length > NOISE_KEEP * 4) noise.splice(0, noise.length - NOISE_KEEP);
+        noise.push(text);
       }
       return;
     }
@@ -196,7 +193,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       try {
         child = spawn(command, args, { cwd, env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
       } catch (cause) {
-        die(new VoicePackError('process_spawn_failed', `起不来程序 ${command}：${cause?.message ?? cause}`, { details: { command, reason: cause?.code ?? 'unknown' }, cause }), undefined, { kill: false });
+        die(new VoicePackError('process_spawn_failed', reportable(`起不来程序 ${command}：${cause?.message ?? cause}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
         return;
       }
       const wasStarting = () => startSettle !== null;
@@ -217,7 +214,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
         const why = cause?.code === 'ENOENT'
           ? (fs.existsSync(cwd) ? '找不到它（检查 PATH，或者把完整路径写进命令）' : `程序的当前目录 ${cwd} 不存在（cwd 选项）`)
           : (cause?.message ?? cause);
-        die(new VoicePackError('process_spawn_failed', `起不来程序 ${command}：${why}`, { details: { command, reason: cause?.code ?? 'unknown' }, cause }), undefined, { kill: false });
+        die(new VoicePackError('process_spawn_failed', reportable(`起不来程序 ${command}：${why}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
       });
       child.on('exit', (code, signal) => setTimeout(() => settleExit(code, signal), 200).unref()); // 标准输出里可能还有没读完的回应；close 先到就不用等
       child.on('close', (code, signal) => settleExit(code, signal));
@@ -229,7 +226,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       child.stdout.on('data', onData);
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
-        stderr = tail(stderr + chunk, STDERR_KEEP * 2);
+        stderr += chunk; // 标准错误全文留着，打码在交出去的时候做（context）
       });
       child.unref();
       startTimer = setTimeout(() => {

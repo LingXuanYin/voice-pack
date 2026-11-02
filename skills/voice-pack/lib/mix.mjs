@@ -18,6 +18,8 @@
 //   7. 换人处（相邻两句的包 unit.pack 不同）：上一句的尾、下一句的头，静音各削到 TURN_EDGE_MS（50 毫秒），再插这一处标的停顿（规则 2）。
 //      只削、不补：头或尾本来就不到 50 毫秒的，原样。同一个包接着说的两句不削。只有一个包（没有换人处）时，成品和没有这一条以前一字节不差。
 //      静音的判法：每 SILENCE_FRAME_MS（10 毫秒）取一次 RMS，低于 SILENCE_DBFS（-40 dBFS）的算静音。整句都低于门限的不削，notes 里记 silent_unit。
+//   8. 长度：停顿没有上限，写多长停多长。成品超过一份 16 位 WAV 能装的（RIFF 长度字段 32 位，单声道 44.1 kHz 时约 13.5 小时），抛 mix_too_long，
+//      details 点名是哪一句、哪一边、多长。先按长度查，再分配：超大的停顿只是一个数字，不占内存。
 //
 // 输入的 dub.json 形状（dub 命令写的）：{ units: [{ index, status, file, audio?… , pauseBeforeMs, pauseAfterMs, speed, pack, stoppedBy? }], pack?, packs?, stoppedBy? }。
 // 这里只用 units 里的 status、file、pauseBeforeMs、pauseAfterMs、speed、pack；音频字节由命令行层按 file 读出来，作为 parts 传进来。
@@ -29,7 +31,7 @@
 //                            report 见第 6 条（不含文件名，文件名由命令行层加）。
 //   resampleChannel、remixChannels：内部用，导出给测试。
 import { decodeAudio } from '../tools/audio-decode.mjs';
-import { encodeWav } from '../tools/wav.mjs';
+import { encodeWav, RIFF_SIZE_MAX, wavFileBytes } from '../tools/wav.mjs';
 import { VoicePackError } from '../protocol/lib/errors.mjs';
 
 /**
@@ -53,6 +55,25 @@ export function planMix(report) {
   const incomplete = units.filter((unit) => unit.status !== 'ok').map((unit) => ({ number: unit.index + 1, status: unit.status, ...(unit.error === undefined ? {} : { error: unit.error }) }));
   if (incomplete.length > 0) return { ok: false, stopped: null, incomplete, units: [] };
   return { ok: true, stopped: null, incomplete: [], units: units.map((unit) => ({ number: unit.index + 1, file: unit.file, pack: unit.pack ?? null, pauseBeforeMs: unit.pauseBeforeMs ?? 0, pauseAfterMs: unit.pauseAfterMs ?? 0, speed: unit.speed ?? null })) };
+}
+
+/**
+ * 计划阶段核长度（规则 8 的下限，dub 的 --dry-run 和正式运行在花钱之前都核）：照拼接的次序（每一句前面的停顿、一句的声音、后面的停顿）只加停顿的帧数。
+ * 句子的声音要生成了才知道有多长，所以这里是下限：停顿加起来已经放不下，成品就一定放不下；放得下的，拼接时照常核。
+ * 放不下，抛 mix_too_long，和拼接时抛的是同一个错（tooLongError）：点名是哪一句、哪一边的停顿、多长。
+ * @param {{ number: number, pauseBeforeMs: number, pauseAfterMs: number }[]} units 按台本的次序；number 是句号（从 1 数）
+ * @param {{ sampleRate: number, channels: number }} format 成品的采样率和声道（计划阶段按参考段估的）
+ */
+export function checkPausesFit(units, { sampleRate, channels }) {
+  let frames = 0;
+  for (const unit of units) {
+    for (const [side, ms] of [['before', unit.pauseBeforeMs ?? 0], ['after', unit.pauseAfterMs ?? 0]]) {
+      if (ms <= 0) continue;
+      const pieceFrames = framesOf(ms, sampleRate);
+      if (!fitsWav(frames + pieceFrames, channels)) throw tooLongError({ number: unit.number, pause: { side, ms } }, frames, channels, sampleRate);
+      frames += pieceFrames;
+    }
+  }
 }
 
 /** 线性插值的窗口 sinc 重采样，单声道。from、to 是采样率。长度按时长取整（四舍五入）。 */
@@ -92,10 +113,63 @@ export function remixChannels(channels, to) {
   return Array.from({ length: to }, (_, c) => channels[Math.min(c, channels.length - 1)]);
 }
 
-/** 静音：frames 帧，每个声道 0。 */
-const silence = (frames, channels) => Array.from({ length: channels }, () => new Float32Array(frames));
 /** 毫秒换成帧（四舍五入）。 */
 const framesOf = (ms, rate) => Math.round((ms * rate) / 1000);
+/** 一份 16 位 PCM 的 WAV 能装的最多帧数：RIFF 长度字段是 32 位，数据最多 4294967258 字节，单声道是 2147483629 帧（见 tools/wav.mjs 的 wavFileBytes）。 */
+const maxFramesOf = (channels) => Math.floor((RIFF_SIZE_MAX + 8 - wavFileBytes(0, channels, 'pcm16')) / (2 * channels));
+/** 接上以后的总帧数装得下一份 WAV 吗（和 encodeWav 查的是同一条）。 */
+const fitsWav = (frames, channels) => frames <= maxFramesOf(channels);
+/** 秒数的读法：毫秒换成秒；超出浮点数能表示的范围（解析器已经挡住，这里是直接递进来的）就照实说。 */
+const secondsOf = (ms) => (Number.isFinite(ms) ? Math.round(ms) / 1000 : '超出能表示的范围');
+
+/**
+ * 放不下：piece（一处停顿，或一句的声音）接在 framesBefore 帧后面，成品超过一份 WAV。按长度查出来的，不分配。
+ * details：number（句号）、side（停顿在这一句的前面 'before' 还是后面 'after'；是一句的声音时为 null）、pauseMs（停顿毫秒，同上为 null）、
+ * framesBefore（放这一段之前已经有的帧数）、maxFrames（一份 WAV 最多的帧数）、sampleRate、channels。
+ */
+function tooLongError(piece, framesBefore, channels, sampleRate) {
+  const maxFrames = maxFramesOf(channels);
+  const limit = Math.floor(maxFrames / sampleRate);
+  const before = framesBefore >= sampleRate ? `前面已经有 ${Math.floor(framesBefore / sampleRate)} 秒，` : '';
+  const what = piece.pause
+    ? `第 ${piece.number} 句${piece.pause.side === 'before' ? '前面' : '后面'}的停顿（${secondsOf(piece.pause.ms)} 秒）放不下`
+    : `第 ${piece.number} 句放不下`;
+  const message = `${what}：${before}接上它以后，成品超过一份 WAV 能装的长度（${sampleRate} Hz、${channels} 声道时最长 ${limit} 秒）。请把停顿写短，或者把稿子分成几份出（每份装得下）。`;
+  const details = {
+    number: piece.number,
+    side: piece.pause ? piece.pause.side : null,
+    pauseMs: piece.pause ? piece.pause.ms : null,
+    framesBefore,
+    maxFrames,
+    sampleRate,
+    channels,
+  };
+  return new VoicePackError('mix_too_long', message, { details });
+}
+
+/**
+ * 长度上装得下，可是这台机器的内存放不下（拼的时候分配失败，是 RangeError）：也是 mix_too_long，details.reason 为 'memory'，
+ * 点名最长的一处停顿（没有停顿就是 null），frames 是成品的总帧数。
+ */
+function outOfMemoryError(pieces, frames, channels, sampleRate, cause) {
+  let longest = null;
+  for (const piece of pieces) {
+    if (piece.pause && (longest === null || piece.pause.ms > longest.pause.ms)) longest = piece;
+  }
+  const where = longest ? `最长的一处停顿是第 ${longest.number} 句${longest.pause.side === 'before' ? '前面' : '后面'}的 ${secondsOf(longest.pause.ms)} 秒。` : '';
+  const message = `成品有 ${Math.round(frames / sampleRate)} 秒，长度上装得下一份 WAV，可是这台机器的内存放不下它（${cause.message}）。${where}请把停顿写短，或者把稿子分成几份出（每份装得下）。`;
+  const details = {
+    reason: 'memory',
+    number: longest ? longest.number : null,
+    side: longest ? longest.pause.side : null,
+    pauseMs: longest ? longest.pause.ms : null,
+    frames,
+    maxFrames: maxFramesOf(channels),
+    sampleRate,
+    channels,
+  };
+  return new VoicePackError('mix_too_long', message, { details, cause });
+}
 
 /** 有声的范围（样本）：第一帧的开头、最后一帧的末尾（超过门限的）。整句都低于门限就是 null。每帧按各声道平均后的 RMS 算。 */
 function activeSpan(channels, rate) {
@@ -195,29 +269,42 @@ export async function mixParts(env, parts) {
   const sampleRate = decoded[0].audio.sampleRate;
   const channels = decoded[0].audio.channels;
   const converted = decoded.filter((item) => item.audio.sampleRate !== sampleRate || item.audio.channels !== channels).map((item) => item.number);
+  // 段：一句的声音（samples），或者一处停顿（只记长度，不分配：静音要到拼的时候才写成零）。
+  // 长度按段加起来查：哪一段接上以后，成品就超过一份 WAV 能装的，就在那一段报错（点名是哪一句、哪一边、多长）。这一步在分配成品的数组之前。
   const pieces = [];
   let silences = 0;
   let silenceMs = 0;
-  const pushSilence = (ms) => {
+  const pushSilence = (ms, number, side) => {
     if (ms <= 0) return;
     silences += 1;
     silenceMs += ms;
-    pieces.push(silence(framesOf(ms, sampleRate), channels));
+    pieces.push({ number, frames: framesOf(ms, sampleRate), pause: { side, ms } });
   };
   for (const item of decoded) {
     const samples = remixChannels(item.audio.samples, channels).map((channel) => resampleChannel(channel, item.audio.sampleRate, sampleRate));
-    pushSilence(item.pauseBeforeMs ?? 0);
-    pieces.push(samples);
-    pushSilence(item.pauseAfterMs ?? 0);
+    pushSilence(item.pauseBeforeMs ?? 0, item.number, 'before');
+    pieces.push({ number: item.number, frames: samples[0].length, samples });
+    pushSilence(item.pauseAfterMs ?? 0, item.number, 'after');
   }
-  const frames = pieces.reduce((sum, piece) => sum + piece[0].length, 0);
-  const total = Array.from({ length: channels }, () => new Float32Array(frames));
-  let at = 0;
+  let frames = 0;
   for (const piece of pieces) {
-    for (let c = 0; c < channels; c++) total[c].set(piece[c], at);
-    at += piece[0].length;
+    if (!fitsWav(frames + piece.frames, channels)) throw tooLongError(piece, frames, channels, sampleRate);
+    frames += piece.frames;
   }
-  const wav = encodeWav({ sampleRate, samples: total }, { encoding: 'pcm16' });
+  let wav;
+  try {
+    const total = Array.from({ length: channels }, () => new Float32Array(frames));
+    let at = 0;
+    for (const piece of pieces) {
+      if (piece.samples) for (let c = 0; c < channels; c++) total[c].set(piece.samples[c], at);
+      at += piece.frames;
+    }
+    wav = encodeWav({ sampleRate, samples: total }, { encoding: 'pcm16' });
+  } catch (error) {
+    // 长度上装得下，可是这台机器的内存放不下（分配失败是 RangeError）：说成同一个错，点名最长的一处停顿，不当成程序崩了
+    if (!(error instanceof RangeError)) throw error;
+    throw outOfMemoryError(pieces, frames, channels, sampleRate, error);
+  }
   const report = {
     sampleRate,
     channels,

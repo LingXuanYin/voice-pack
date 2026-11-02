@@ -35,7 +35,7 @@
 //   container_not_object      capabilities 或 runtimes 不是对象。details.key
 //   fetch_not_function        fetch 不是函数
 //   billing_invalid           billing 不是非空字符串
-//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数。details.key
+//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数、maxPromptTokens 不是不小于 1 的整数。details.key
 //   preview_card_invalid      previewCard 不是对象、里面有不认识的键、productName 或 links 里的链接不是非空字符串。details.key
 //   capability_unknown        能力名不在能力词表里（多半拼错了）。details.capability
 //   capability_not_function   能力的值不是函数。details.capability
@@ -89,13 +89,14 @@ import { assertAudioClip } from '../protocol/lib/audio-clip.mjs';
 import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { DECLARED_CAPABILITIES, hasCapability } from '../protocol/lib/env.mjs';
 import { isVoicePackError } from '../protocol/lib/errors.mjs';
+import { reportable } from '../protocol/lib/scrub.mjs';
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { isServiceError } from './capability-calls.mjs';
 
 /** 适配器的返回值里认的键。 */
 export const ADAPTER_KEYS = Object.freeze(['capabilities', 'runtimes', 'fetch', 'billing', 'limits', 'previewCard']);
-/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）。 */
-export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars']);
+/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）、maxPromptTokens（text-generation 一次请求最多收多少输入，判情绪按它分批，见 lib/reference-pick.mjs）。 */
+export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptTokens']);
 /** previewCard 里认的键，和 links 里认的键（形状同核心层 buildShareFile 的 card 选项）。 */
 export const PREVIEW_CARD_KEYS = Object.freeze(['productName', 'links']);
 export const PREVIEW_LINK_KEYS = Object.freeze(['open', 'make']);
@@ -116,6 +117,7 @@ const DESIGN_TEXT = 'This is a short audition of a designed voice.';
 const DESIGN_PROMPT = 'A calm adult woman with a warm, clear voice.';
 const MIN_MAX_CHARS = 10; // 同 lib/dub.mjs 的 maxChars
 const MIN_MIN_CHARS = 1; // 同 lib/dub.mjs 的 minChars：一个字也算下限
+const MIN_PROMPT_TOKENS = 1; // 同 lib/dub.mjs 的 maxPromptTokens
 /** VAD 给的区间末尾可以比录音长这么多秒（同 lib/long-recording.mjs）。 */
 const SPEECH_TOLERANCE_SECONDS = 0.05;
 /** mimeType（去掉参数、小写）对应 sniffAudio 认的格式。不在表里的，没法核对字节。 */
@@ -131,10 +133,6 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 const issue = (level, code, message, details = {}) => ({ level, code, message, details });
 const hasErrors = (issues) => issues.some((item) => item.level === 'error');
 const mediaType = (mimeType) => String(mimeType).split(';')[0].trim().toLowerCase();
-const short = (value, limit = 300) => {
-  const text = String(value);
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-};
 const round = (value, digits) => {
   const k = 10 ** digits;
   return Math.round(value * k) / k;
@@ -165,12 +163,15 @@ function shapeIssues(adapter) {
       for (const key of Object.keys(adapter.limits)) {
         if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits 里有不认识的键 ${JSON.stringify(key)}（只认 ${LIMIT_KEYS.join('、')}）`, { key }));
       }
-      const { maxChars, minChars } = adapter.limits;
+      const { maxChars, minChars, maxPromptTokens } = adapter.limits;
       if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxChars 要是不小于 ${MIN_MAX_CHARS} 的整数（一次合成最多多少个字），收到 ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
       }
       if (minChars !== undefined && (!Number.isInteger(minChars) || minChars < MIN_MIN_CHARS)) {
         issues.push(issue('error', 'limits_invalid', `limits.minChars 要是不小于 ${MIN_MIN_CHARS} 的整数（合成能力一次至少要多少个字），收到 ${JSON.stringify(minChars)}`, { key: 'minChars' }));
+      }
+      if (maxPromptTokens !== undefined && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < MIN_PROMPT_TOKENS)) {
+        issues.push(issue('error', 'limits_invalid', `limits.maxPromptTokens 要是不小于 ${MIN_PROMPT_TOKENS} 的整数（text-generation 一次请求最多收多少输入），收到 ${JSON.stringify(maxPromptTokens)}`, { key: 'maxPromptTokens' }));
       }
     }
   }
@@ -295,7 +296,7 @@ async function audioProblems(clip, field, env) {
     if (isVoicePackError(error, 'runtime_missing')) {
       issues.push(issue('warning', 'audio_decode_skipped', `${field} 不是自己能解的 WAV，环境又没有 ffmpeg，没法解码核对（只核对了 mimeType 和字节）`, { field }));
     } else {
-      issues.push(issue('error', 'audio_undecodable', `${field} 解不开：${short(error?.message ?? error)}`, { field, errorCode: isVoicePackError(error) ? error.code : undefined }));
+      issues.push(issue('error', 'audio_undecodable', `${field} 解不开：${reportable(error?.message ?? error)}`, { field, errorCode: isVoicePackError(error) ? error.code : undefined }));
     }
   }
   return { issues, summary };
@@ -471,8 +472,8 @@ export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT,
       const status = isVoicePackError(error) && Number.isInteger(error.details?.status) ? error.details.status : undefined;
       results.push({
         capability, status: 'failed', calls: 1, model: null, elapsedMs: Date.now() - started,
-        issues: [issue('error', 'call_failed', `调用 ${capability} 抛了错：${short(error?.message ?? error)}`, {
-          capability, ...(typeof error?.code === 'string' ? { errorCode: error.code } : {}), transient: isServiceError(error), ...(status === undefined ? {} : { status }), message: short(error?.message ?? error),
+        issues: [issue('error', 'call_failed', `调用 ${capability} 抛了错：${reportable(error?.message ?? error)}`, {
+          capability, ...(typeof error?.code === 'string' ? { errorCode: error.code } : {}), transient: isServiceError(error), ...(status === undefined ? {} : { status }), message: reportable(error?.message ?? error),
         })],
       });
       continue;

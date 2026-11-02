@@ -170,6 +170,24 @@ export function parseWav(bytes) {
 
 const BYTES = { pcm16: 2, pcm24: 3, pcm32: 4, float32: 4 };
 
+// 出处（Microsoft 文档）：fileSize 是 4 字节，写的是文件里数据的大小，不含「RIFF」和 fileSize 本身的 8 字节
+//   https://learn.microsoft.com/en-us/windows/win32/xaudio2/resource-interchange-file-format--riff-
+// 块的 cksize 是无符号 32 位 DWORD（所以上限是 0xffffffff）
+//   https://learn.microsoft.com/en-us/windows/win32/api/mmiscapi/ns-mmiscapi-mmckinfo
+/** RIFF 的长度字段是 32 位：文件总长减去开头的 8 个字节，不能超过它。encodeWav 写之前查的就是这一条；拼接（lib/mix.mjs）和台本的停顿上限也从这里算。 */
+export const RIFF_SIZE_MAX = 0xffffffff;
+
+/**
+ * 写出 frames 帧（每帧 channels 个声道，编码 encoding）的 WAV，文件总共有多少字节（和 encodeWav 写的一样）：
+ * RIFF 头 12 字节，fmt 块 8 字节加 16（extensible 时 40），data 块的 8 字节加采样；采样的字节数是奇数时补一个字节。
+ * 只算数，不分配。
+ */
+export function wavFileBytes(frames, channels, encoding = 'pcm16', extensible = false) {
+  const dataSize = frames * channels * BYTES[encoding];
+  const pad = dataSize & 1;
+  return 12 + 8 + (extensible ? 40 : 16) + 8 + dataSize + pad;
+}
+
 /**
  * 写出 WAV。
  * @param {{ sampleRate: number, samples: ArrayLike<number>[] }} audio 每个声道一个数组，长度相同；值按 [-1, 1] 理解，整数编码超出的部分削掉
@@ -186,10 +204,9 @@ export function encodeWav({ sampleRate, samples }, { encoding = 'pcm16', extensi
   const channels = samples.length;
   const frames = samples[0].length;
   const dataSize = frames * channels * bytesPerSample;
-  const pad = dataSize & 1; // RIFF：奇数长度的块后面补一个字节（只有 24 位、采样总数是奇数时才会）；RIFF 的长度算上它，data 块自己的长度不算
   const fmtSize = extensible ? 40 : 16;
-  const total = 12 + 8 + fmtSize + 8 + dataSize + pad;
-  if (total - 8 > 0xffffffff) throw new RangeError('音频太长，装不进一个 WAV（4 GiB）');
+  const total = wavFileBytes(frames, channels, encoding, extensible);
+  if (total - 8 > RIFF_SIZE_MAX) throw new RangeError('音频太长，装不进一个 WAV（4 GiB）');
   const out = new Uint8Array(total);
   const view = new DataView(out.buffer);
   const put = (at, text) => [...text].forEach((ch, i) => (out[at + i] = ch.charCodeAt(0)));

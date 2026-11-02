@@ -19,7 +19,7 @@
 //             输入和输出是管道、临时文件还是虚拟文件系统，由运行环境决定。库不假设是管道：解 m4a 这类要往回读的格式，管道不行。
 //     input   输入文件的全部字节
 //     返回    输出文件的全部字节
-//     出错    ffmpeg 失败（退出码非 0）时抛错，错误信息里带 ffmpeg 说的话（最后几行）；库把它包成 audio_decode_failed。
+//     出错    ffmpeg 失败（退出码非 0）时抛错，错误信息里带 ffmpeg 说的话（全文，打过码：令牌形状的串和签名地址去掉）；库把它包成 audio_decode_failed。
 //   这里用的参数是固定的：
 //     -hide_banner -nostdin -v error -protocol_whitelist file -i {input} -map 0:a:0 -f wav -acodec pcm_f32le {output}
 //     只读本地文件（-protocol_whitelist file：输入是不可信的字节，播放列表、拼接文件不能借 ffmpeg 去读别的路径或网址）；
@@ -38,6 +38,7 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { requireRuntime } from '../protocol/lib/env.mjs';
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
+import { reportable, scrubbedCause } from '../protocol/lib/scrub.mjs';
 import { isWav, parseWav } from './wav.mjs';
 
 const FFMPEG_ARGS = Object.freeze([
@@ -50,10 +51,10 @@ const FFMPEG_ARGS = Object.freeze([
 ]);
 
 const failed = (reason, decoder, message, cause) =>
-  new VoicePackError('audio_decode_failed', message, { details: { reason, decoder }, cause });
+  new VoicePackError('audio_decode_failed', message, { details: { reason, decoder }, cause: scrubbedCause(cause) });
 
-// 运行环境抛的错里的话，只留一行的长度，免得 ffmpeg 一大段输出塞满信息
-const said = (error) => String(error?.message ?? error).trim().slice(-400);
+// 运行环境抛的错里的话：全文，打过码（运行环境报的是程序的原话，令牌形状的串和签名地址去掉）
+const said = (error) => reportable(String(error?.message ?? error).trim());
 
 /**
  * 解码抛的错分哪一种：调用方（做包、查重……）按它决定怎么办，不各自再列一遍错误码。

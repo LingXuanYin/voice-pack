@@ -14,6 +14,7 @@
 - 能力自己抛的错原样往上传（库不吞）。库自己抛的错分哪两类、`code` 怎么起，见 `../protocol/README.md` 的「错误」一节。唯一的例外是下一条标出来的「服务暂时出错」。
 - **服务暂时出错要标出来**：能力因为服务一时出错（上游 5xx、网关超时、网络错误、超时……）没做成时，抛 `VoicePackError`，在 `details.transient` 里写 `true`（有 HTTP 状态就放 `details.status`）。一次要调很多次能力的功能（目前是还原度）据此把这一条记下来、接着做别的，调用方事后再决定要不要补做，而不是整件事作废。缺能力、参数错、401、返回的形状不对这类重来也没用的不标；没标的错，库一律原样往上抛，不按 HTTP 状态去猜。适配器怎么标，见 `../adapters/README.md`「出错的约定」。库不替能力重试：会计费的调用（建任务、补全）重试可能重复计费；转写和打标签（`audio-text-to-text` 给一段录音打情绪、风格标签）是例外，做包时每段最多问 3 次、暂时出错才再来（规则在 `../lib/call-attempts.mjs`，为什么是这几个数见它的文件头；某个环境上失败的调用收不收费，写在那个环境的适配器里；盲听出错不在这里重试）。
 - **只和这一次的文字有关的拒绝要标出来**：能力因为这一次要说的文字（`text`）本身被拒，换一句文字可能就成（字数太短或太长、有环境处理不了的字、服务商对这句话的说法），抛 `VoicePackError`，在 `details.textRejected` 里写 `true`，**不标 `transient`**（同一句原样再发还是一样）。库据此把这一段记成失败、别的段照常做（配音，`lib/dub.mjs`）。**调用之前就查出来的**（适配器自己的检查：空白、太长、有处理不了的字，code 是 `capability_input_invalid`）只记这一句，不计数；**服务商拒的**（code 不是 `capability_input_invalid`）连着 3 句、还没有一句成功的，配音停下来，见那里的文件头；没有这个标的错照旧往上抛、停下来。参考、凭据、参数形状、声音的描述（`voice_prompt`）这类对每一句都一样的错不标：换一句也还是这个错，要停下来。适配器怎么标，见 `../adapters/README.md`「出错的约定」。
+- **回答没正常结束或是空的要标出来**：听音频（`audio-text-to-text`）的能力，回答被截断（`stopReason` 是 `length`）、中途出错（`error`、`aborted`），或者回答里没有文字，抛 `VoicePackError`，在 `details.unusable` 里写 `true`，`details.problem` 写是哪一种（`stop_reason` 或 `text_missing`；`stop_reason` 时 `details.stopReason` 写原值）。**不标 `transient`**：每问一次都花钱，再问也可能还是这样，不是「服务暂时出错」。库（`lib/capability-calls.mjs` 的 `isUnusableAnswer`）据此把那一条记成「作废」，不重试、不停下整次：打标签的那一段记成 `tag_answer_unusable`（带 problem、stopReason、模型，`lib/segment-tags.mjs`）；盲听的那一条见下面 `audio-text-to-text` 一节。没标的错照常往上抛。适配器怎么标，见 `../adapters/README.md`「出错的约定」第 8 点。
 - 环境缺这项能力时不用假装有：不提供这个键就行，用到它的功能会抛 `capability_missing` 并点名。
 
 ## 合成
@@ -116,7 +117,8 @@ await env.capabilities['audio-text-to-text']({
 - `text` 是模型的回答原文，库自己解析（盲听要求回答是一个 JSON 对象，见 `lib/fidelity.mjs` 的 `parseBlindAnswer`）。
 - 不给温度、最大长度之类的参数：用环境自己的默认值，同一段音频答得稳一点更好。
 - 暂时出错（连不上、HTTP 5xx、网关超时、网络错误）按「通用约定」标 `details.transient: true`；服务明确报的错不标。适配器只管标对，不自己重试；重试由库做，**只有打标签那种用法**（一次一段音频，`lib/segment-tags.mjs`）：做包时每段最多问 3 次，暂时出错才再来，两次之前各等 5 秒、15 秒，3 次都没成这一段才记成「没听成」，不打标签（规则只在 `../lib/call-attempts.mjs` 写一份，命令行和 app 共用；「确认费用」里写明最多多听几次）。盲听（两段音频）出错不重试，记成「没听成」，事后补做（`lib/fidelity.mjs`）。补全可能已经计费，失败的补全收不收费没有量过：写费用的调用方按最多的次数写，用户同意的是上限；换一个会为失败的补全收费的服务，要在适配器说明里写明。
-- **服务商拦下了回答**（服务商用内容过滤把这次回答截断或换掉，回答的位置上是服务商自己的一句说明，不是模型的回答）：抛 `VoicePackError('provider_blocked', 给人看的一句话, { details: { capability: 'audio-text-to-text', provider, reply, model? } })`，`provider` 是服务商的名字（小写），`reply` 是回答里服务商那句说明的前 300 个字符。这是适配器的事：认的是服务商的原话，哪家服务商说了什么只写在适配器里，换了服务商就在那里加它的说法；不要把这句说明当成回答的 `text` 交给库，库会把它当成「不是 JSON」。不标 `transient`：同一段录音再问还是被拦，不是「服务暂时出错」，不要标成能重来。给人看的那一句话建议写成「模型的服务商拦下了这一段的回答（多半因为台词是现成的文章），这一段不算数」，报告和命令行直接用它。库（`lib/fidelity.mjs`、`lib/segment-tags.mjs`）**只认 `provider_blocked` 这个 code**：盲听那一条、打标签那一段记成「作废」（不记成「没听成」，补做也不会重做它），另外数有几条是被拦下的（`blocked`），写明是被拦下而不是「回答不是固定格式」，不进任何比例（读法第 5 点）。别的写法（能力自己起的码）库不认，照常往上抛。
+- **服务商拦下了回答**（服务商用内容过滤把这次回答截断或换掉，回答的位置上是服务商自己的一句说明，不是模型的回答）：抛 `VoicePackError('provider_blocked', 给人看的一句话, { details: { capability: 'audio-text-to-text', provider, reply, model? } })`，`provider` 是服务商的名字（小写），`reply` 是回答里服务商那句说明的原话全文（打过码：令牌形状的串和签名地址去掉，别的字不动）。这是适配器的事：认的是服务商的原话，哪家服务商说了什么只写在适配器里，换了服务商就在那里加它的说法；不要把这句说明当成回答的 `text` 交给库，库会把它当成「不是 JSON」。不标 `transient`：同一段录音再问还是被拦，不是「服务暂时出错」，不要标成能重来。给人看的那一句话建议写成「模型的服务商拦下了这一段的回答（多半因为台词是现成的文章），这一段不算数」，报告和命令行直接用它。库（`lib/fidelity.mjs`、`lib/segment-tags.mjs`）**只认 `provider_blocked` 这个 code**：盲听那一条、打标签那一段记成「作废」（不记成「没听成」，补做也不会重做它），另外数有几条是被拦下的（`blocked`），写明是被拦下而不是「回答不是固定格式」，不进任何比例（读法第 5 点）。别的写法（能力自己起的码）库不认，照常往上抛。
+- **回答没正常结束或是空的**（被截断、中途出错、没有文字）：适配器抛它自己的错误码，`details.problem` 写 `stop_reason` 或 `text_missing`，`details.unusable` 为 `true`（写法见「通用约定」，不标 `transient`）。库（`lib/fidelity.mjs` 的 `blindListen`）把那一条盲听转成 `blind_answer_unusable` 记成「作废」，不记成「没听成」，补做不重做它，不计进任何比例；被拦下（`blocked`）只数 `provider_blocked`，这一种不数进去。打标签那一段记成作废，原因是 `tag_answer_unusable`，带 problem、stopReason、模型（`lib/segment-tags.mjs`）。两处都不重试，也不停下整次。
 
 ### `automatic-speech-recognition`
 
@@ -214,7 +216,8 @@ await env.capabilities['text-generation']({
 
 - `text` 是模型的回答原文，库自己解析：按台词挑参考要求回答是一个 JSON 数组，读不出来就不采纳、不猜（`judge.status` 是 `unusable`）。
 - 环境没有这项能力时，按台词挑参考不判断，用默认参考；这不是错误。
-- 回答不能用（没有文字，或者没有正常结束）：抛 `capability_result_invalid`，`details.capability` 写 `text-generation`，`details.problem` 写是哪一种（`text_missing`、`stop_reason`）。库把那几句落到默认参考（`judge.status` 是 `unusable`，它们的 `picks[i].judgeFailed` 为 true），配音接着做。别的错（401、输入不对、服务暂时出错）照旧往上抛。
+- **一次请求的输入上限**：模型一次能收多少输入，由环境的适配器声明（`limits.maxPromptTokens`，见 `../adapters/README.md`）。声明了，按台词挑参考把没带标签的句子分几次发（量法和理由见 `../lib/input-batches.mjs`，单独超限的句子怎么办见 `../lib/reference-pick.mjs` 的文件头）。没声明，一次发完。超过上限的请求，平台回 400，是普通的平台错误，照下面的规则往上抛：所以要声明上限，不要靠平台拦。
+- 回答不能用（没有文字，或者没有正常结束）：抛 `capability_result_invalid`，`details.capability` 写 `text-generation`，`details.problem` 写是哪一种（`text_missing`、`stop_reason`）；没有正常结束的，`details.stopReason` 写平台报的原因（`length` 是回答被截断，`error`、`aborted` 是中途出错）。回答被截断（`stopReason` 是 `length`）时，库把那一批对半分开再问（走法见 `../lib/input-batches.mjs`），分到一句还被截断的才落到默认参考。别的情况，库把那几句落到默认参考（`judge.status` 是 `unusable`，它们的 `picks[i].judgeFailed` 为 true），配音接着做；分几次发的，只有回答不能用的那一次的句子这样处理，别的次照常采纳。别的错（401、输入不对、服务暂时出错）照旧往上抛。
 
 ## 怎么念
 

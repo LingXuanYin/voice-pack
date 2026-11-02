@@ -41,25 +41,28 @@
 //                             调用方可以告诉用户。结构规则认出的（（认真地说））两种选法下读法一样（一个词也没有，recognized 为 false）。只给明确拿到配音台本的调用方用：agent 配音（lib/dub.mjs）、变声（lib/convert.mjs）、
 //                             做包时判断文本能不能原样配音（lib/make-pack-pick.mjs）。
 //            app 生成和别的读正文的地方用默认的 'keep'。选项由 lib/reference-pick.mjs 的 pickReferences 原样传下来；这条规则只在这里写。
-//   上限     一行里最多认 1000 处舞台提示（两种选法一样；不算舞台提示的括号不计数）。第 1001 处起，连同后面的话到这一行结束，当正文，
-//            原样留着，不再认。因为每一段都带着它前面所有提示的一份清单，提示多到几万处时内存和提示数的平方成正比，进程会崩；
-//            正常的台本一行里没有这么多。
-//   范围     一个提示管从它出现的地方，到这一行结束，或者下一个提示出现为止；换一行就清掉。一个新的情绪或风格提示整个换掉旧的
-//            （先（耳语）再（生气），后面是生气，不再是耳语）。停顿、放慢、加快不改变情绪和风格。不算舞台提示的括号（'keep'）不管什么范围。
+//   上限     不设上限：一行里认几处都认（两种选法一样；不算舞台提示的括号不计数）。每一段只带它前面自己那一段的提示（见「段带的」），
+//            每个提示只在一段里，所以几万处提示的一行，内存和输出跟提示数成线性。
+//   范围     提示管到哪里的规则，正本是 tools/markup.mjs 的文件头「舞台提示的范围」，这里不再写一份。这个模块怎么做到：台本标记 [pause …] 把一行切成几段时，调用方把前一段的状态
+//            （readDirections 返回的 carry）带给同一行的下一段（carried；换一行、换声音就不带），两边读出来的范围一样。不算舞台提示的括号（'keep'）不管什么范围。
+//   段带的   每一段的 directions 只列它前面、同一行里还没挂到前一段上的提示（前一段之后、这一段之前写的）。每个提示只在一段里，
+//            所以段的 directions 加起来是整段的提示数，不随段数重复。同一行里更早的提示，说明带最近的一处情绪或风格（要顺着段从前往后找）、还在管着的那一处放慢或加快（也是顺着段找），以及这一段自己前面那一截排在最后一个情绪或风格之后的停顿；
+//            前面几段的停顿不带过来（lib/dub.mjs 的说明就是这么拼的）。
+//            整段台词的全部提示在顶层的 directions 里，按出现的次序，每个只一份。
 //   意思     词表里 emotion（情绪）、style（说话的方式）、actions（对节奏的要求：停顿、放慢、加快）三类。
 //            一处提示里可以既有情绪又有风格（（生气地大喊））；同一类里有几个，取最前面的一个。
 //            认词：拉丁字母整词匹配、不分大小写（danger 里的 anger 不算），汉字和假名按子串匹配；重叠时取最长的（微笑是 happy，不是 laugh）。
 //   停顿     （停顿）算在前一段的后面；在一行开头就算在第一段的前面。停多久：括号里写了时长的按写的时长停，没写的每个停顿的词 600 毫秒
-//            （见「停顿的时长」）。挨着的几处停顿加起来，封顶，和台本标记 [pause] 一样。放慢、加快只是这一段台词的语速标记（speed）。
+//            （见「停顿的时长」）。挨着的几处停顿加起来，和台本标记 [pause] 一样，没有上限。放慢、加快设的是语速（speed）：一行里从它出现起，管到下一个放慢、加快或者行尾，情绪或风格变了也不清，停顿（包括 [pause …] 切开的段）也不清；拼接的人照 unit.speed 变速，说明里也写着这一处（见 lib/dub.mjs 文件头第 7 步）。
 //            一行里只有停顿（单独一行的（停顿 3 秒），可以夹着别的提示，没有要念的话）时，停顿放在前一句的后面（前一句可以在上一行），
-//            没有前一句就放在后一句的前面，两种选法都一样；几行这样的行挨着，加起来，封顶。整段台词里一句要念的话都没有、只有停顿时，pieces 是空的，
+//            没有前一句就放在后一句的前面，两种选法都一样；几行这样的行挨着，加起来。整段台词里一句要念的话都没有、只有停顿时，pieces 是空的，
 //            停顿一共多少毫秒写在返回值的 unattachedPauseMs 里，没处可挂，调用方自己挂到相邻的一句上（lib/dub.mjs 就这么做）；有要念的话时它总是 0。
 //   停顿的时长  括号里有停顿的词时，后面可以写时长，数字加单位：（停顿 2 秒）、（停顿半秒）、（停顿 500 毫秒）、(pause 500ms)、(pause for 2 seconds)。
 //            数字是阿拉伯数字（可带小数，小数点前可以不写 0）或汉字数字（一、两、十二、一百二十、半）；单位是秒、秒钟、毫秒、s、ms、sec、second
 //            （也认 secs、seconds、millisecond、milliseconds）；数字和单位之间可以有空白；数字前面和英文单位后面都不能紧跟字母或数字：
 //            (pause x2s) 不算，(pause 2s二s)（两个时长连着写）不算，(pause 2sx) 不算，(pause 2 slowly) 也不算（s 是 slowly 的头一个字母，不是单位）。
-//            按写的时长停。单位的换算、取整、上限和挨着的相加封顶，都是台本标记 [pause 2s] 的规则：正本是 tools/markup.mjs 的文件头「停顿」，
-//            代码从那里引 PAUSE_MAX_MS 和 pauseMs，这里不再写一份；写得比上限长，就按上限停。
+//            按写的时长停，写多长停多长。单位的换算、取整和挨着的相加，都是台本标记 [pause 2s] 的规则：正本是 tools/markup.mjs 的文件头「停顿」，
+//            代码从那里引 pauseMs，这里不再写一份。
 //            一处提示里读得出的时长有几个，停顿就是它们加起来（（停顿 1 秒，停顿 2 秒）停 3 秒）；时长管整处提示：（沉默，停顿 3 秒）停 3 秒，不再加每个词的 600 毫秒。
 //            没有读得出的时长，每个停顿的词 600 毫秒：没写数字（（停顿））；数字没带单位（(pause 2)：[pause 2] 是 2 毫秒，写台词的人不是这个意思，所以不当时长）；
 //            不是一个确定的数（几秒、三五秒、十几秒）。不写时长的默认值和 [pause] 的不一样，两处各管各的。
@@ -74,7 +77,8 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import cues from '../vocab/cues.json' with { type: 'json' };
-import { PAUSE_MAX_MS, pauseMs } from '../tools/markup.mjs';
+import { pauseMs, pauseOutOfRange, placeOfMarker } from '../tools/markup.mjs';
+import { isVoicePackError } from '../protocol/lib/errors.mjs';
 import { isLanguageTag } from './language-tag.mjs';
 
 // ---------------------------------------------------------------- 词表
@@ -169,8 +173,6 @@ const EMPHASIS_RE = /(\*{2,3})([^\s*](?:[^*\n]*[^\s*])?)\1|\*([^\s*](?:[^*\n]{0,
 const LINE_BREAK_RE = /\r\n|[\r\n]/;
 /** 认不出的括号内容怎么处理（选项 unrecognized）：'keep' 留在要念的话里（默认），'remove' 拿掉。规则见文件头。 */
 const UNRECOGNIZED = Object.freeze(['keep', 'remove']);
-/** 一行里最多认几处舞台提示，超过的部分当正文。理由和规则见文件头。 */
-const MAX_DIRECTIONS_PER_LINE = 1000;
 /**
  * 连接成分：舞台提示的词和词之间可以夹的字和词（规则见文件头「哪些算」）：单个的字（地、的、着、和、说、道、了、声）、空白、标点和符号，
  * 加上两个字的一下、起来、说话；英文的 and 另外按整词认（AND_RE），停顿的时长另外认（DURATION_RE）。
@@ -223,10 +225,13 @@ function hanNumber(text) {
   return bare ? null : total + (digit ?? 0);
 }
 
-/** 一处时长写的毫秒数（单位的换算、取整、上限是台本标记 [pause …] 的，用 tools/markup.mjs 的 pauseMs）；写的不是一个确定的数给 null。 */
-function durationMs(match) {
+/**
+ * 一处时长写的毫秒数（单位的换算、取整是台本标记 [pause …] 的，用 tools/markup.mjs 的 pauseMs）；写的不是一个确定的数给 null。
+ * marker：括号的原文，时长超出一份 WAV 能装的时报错时说是哪一个舞台提示（没有就不说）。
+ */
+function durationMs(match, marker) {
   const number = match[1] ?? hanNumber(match[2]);
-  return number === null ? null : pauseMs(String(number), match[3] !== undefined ? 'ms' : 's');
+  return number === null ? null : pauseMs(String(number), match[3] !== undefined ? 'ms' : 's', marker === null ? undefined : { marker });
 }
 
 /**
@@ -238,8 +243,9 @@ function durationMs(match) {
  *   durations 括号里有停顿的词时，写的时长：读得出的一个一个列出毫秒数（见 durationMs）；没有停顿的词、或没写时长，是空的。
  * @param {string} inner
  * @param {boolean} [structural] 用不用结构规则：括号（（…）、(…)、【…】）用，*…* 不用（强调的副词是正文：他*慢慢地*走）
+ * @param {string|null} [marker] 括号连原文（时长超出一份 WAV 能装的时报错说是哪一个舞台提示）；没有就不说
  */
-function readCue(inner, structural = false) {
+function readCue(inner, structural = false, marker = null) {
   const haystack = normalizeText(inner);
   const found = occurrencesIn(haystack, KINDS);
   const meaning = { emotion: null, style: null, actions: [] };
@@ -258,7 +264,7 @@ function readCue(inner, structural = false) {
   if (meaning.actions.includes('pause')) {
     for (const m of haystack.matchAll(DURATION_RE)) {
       covered.fill(1, m.index, m.index + m[0].length);
-      const ms = durationMs(m);
+      const ms = durationMs(m, marker);
       if (ms !== null) durations.push(ms);
     }
   }
@@ -309,7 +315,7 @@ function withoutEmphasis(line, unrecognized) {
   return line.replace(EMPHASIS_RE, (whole, stars, boldInner, inner) => {
     if (stars !== undefined) return boldInner;
     if (unrecognized === 'remove') return whole;
-    return readCue(inner).whole ? whole : inner;
+    return readCue(inner, false, whole).whole ? whole : inner;
   });
 }
 
@@ -318,61 +324,97 @@ function withoutEmphasis(line, unrecognized) {
  * @param {string} text
  * @param {{ unrecognized?: 'keep'|'remove' }} [options]
  *   unrecognized 括号里不是整个都认得的内容怎么处理：'keep'（默认）留在要念的话里，不切段，不算舞台提示；'remove' 拿掉，只给明确拿到配音台本的调用方用
+ * @param {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean }|null} [carried]
+ *   前一段在同一行里留下的状态（上一次调用的 carry）：第一行接着它读，情绪、风格、放慢或加快、还没挂上的提示都带过来。
+ *   换行的、换声音的一段不传（null）：一行从头算。
+ * @param {{ script?: string }} [where] script：这段台词所在的整份台本（没规范化的原文）。只用来说清报错的位置：舞台提示里的停顿装不下一份 WAV（pause_out_of_range）时，
+ *   报错的 details 里有这个提示在台本里的行和列（tools/markup.mjs 的 placeOfMarker：第一次写它的地方）；不给就只有提示的原文，行和列是 null。
  * @returns {{
  *   pieces: { text: string, hints: { emotion: string|null, style: string|null }, directions: object[], speed: 'slow'|'fast'|null, line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
  *   directions: { raw: string, recognized: boolean, emotion: string|null, style: string|null, actions: string[], line: number }[],
- *   unattachedPauseMs: number
- * }} unattachedPauseMs：整段台词里一句要念的话都没有（pieces 是空的）、只有停顿时，这些停顿一共多少毫秒，没处可挂；有要念的话时总是 0
+ *   unattachedPauseMs: number,
+ *   headPauseMs: number,
+ *   carry: { emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean }
+ * }} unattachedPauseMs：整段台词里一句要念的话都没有（pieces 是空的）、只有停顿时，这些停顿一共多少毫秒，没处可挂；有要念的话时总是 0。
+ *   headPauseMs：第一行开头、前一段（carried 里的）后面的停顿，挂在前一段后面，不挂在这里的第一段前面（carried 有前一段时才可能有）。
+ *   carry：最后一行读完时的状态，给同一行的下一段接着读；hasPiece 是同一行里前面有没有一段要念的话。
  */
-export function readDirections(text, options) {
+export function readDirections(text, options, carried = null, where = {}) {
+  try {
+    return readDirectionsOf(text, options, carried);
+  } catch (error) {
+    throw withPlace(error, where?.script);
+  }
+}
+
+/** 舞台提示的停顿装不下一份 WAV 的报错：台本给了，就补上这个提示在台本里的行和列；找不到位置、不是这个错的原样往上抛。 */
+function withPlace(error, script) {
+  if (script === undefined || !isVoicePackError(error, 'pause_out_of_range')) return error;
+  const { marker, line } = error.details;
+  if (typeof marker !== 'string' || line !== null) return error;
+  const place = placeOfMarker(script, marker);
+  return place === null ? error : pauseOutOfRange({ marker, place });
+}
+
+function readDirectionsOf(text, options, carried) {
   if (typeof text !== 'string') throw new TypeError('台词必须是字符串');
   const { unrecognized } = readDirectionOptions(options);
   const pieces = [];
   const directions = [];
   let waiting = 0; // 前面还没有一句、等着挂到后一句前面的停顿：一行里只有停顿，又没有前一句
-  text.split(LINE_BREAK_RE).forEach((original, lineNumber) => {
+  let headPauseMs = 0; // 第一行开头的停顿，挂在 carried 里的前一段后面
+  /** @type {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean }|null} */
+  let carry = null;
+  const lines = text.split(LINE_BREAK_RE);
+  lines.forEach((original, lineNumber) => {
     const line = withoutEmphasis(original, unrecognized);
-    let state = { emotion: null, style: null };
-    let speed = null;
+    // 第一行接着前一段说的同一行（carried）；其余各行是新的一行，从头算
+    const before = lineNumber === 0 && carried !== null ? carried : null;
+    let state = { emotion: before?.emotion ?? null, style: before?.style ?? null };
+    let speed = before?.speed ?? null;
     let pendingPause = 0;
-    let lineDirections = []; // 这一行里到目前为止读到的提示
+    let gap = before !== null ? [...before.gap] : []; // 这一段前面、同一行里还没挂到前一段上的提示（前一段之后、这一段之前写的）
+    let hasPiece = before !== null && before.hasPiece; // 同一行里前面有没有一段要念的话（前一段也算）
     let last = 0;
     const push = (chunk) => {
       const spoken = chunk.trim();
       if (spoken === '') return;
-      pieces.push({ text: spoken, hints: { ...state }, directions: [...lineDirections], speed, line: lineNumber, pauseBeforeMs: Math.min(pendingPause + waiting, PAUSE_MAX_MS), pauseAfterMs: 0 });
+      pieces.push({ text: spoken, hints: { ...state }, directions: gap, speed, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
+      gap = [];
       pendingPause = 0;
       waiting = 0;
+      hasPiece = true;
     };
     for (const m of line.matchAll(DIRECTION_RE)) {
       const raw = (m[1] ?? m[2] ?? m[3]).trim();
       if (raw === '') continue; // 括号里只有空白：不是提示，留在台词里
-      const { meaning, whole, durations } = readCue(raw, m[2] === undefined); // 结构规则只管括号，不管 *…*（m[2]）
+      const { meaning, whole, durations } = readCue(raw, m[2] === undefined, m[0]); // 结构规则只管括号，不管 *…*（m[2]）；m[0] 是括号连原文，报错时说是哪一个
       if (unrecognized === 'keep' && !whole) continue; // 整个不是舞台提示（词表里的提示，或者「副词 + 地」的写法）：不动，留在要念的话里，不切段，不记
-      if (lineDirections.length >= MAX_DIRECTIONS_PER_LINE) break; // 超过上限：从这一处起到行尾当正文，不再认
       push(line.slice(last, m.index));
       last = m.index + m[0].length;
       const direction = { raw, recognized: isRecognized(meaning), emotion: meaning.emotion, style: meaning.style, actions: meaning.actions, line: lineNumber };
       directions.push(direction);
-      lineDirections.push(direction);
+      gap.push(direction);
       if (meaning.emotion !== null || meaning.style !== null) state = { emotion: meaning.emotion, style: meaning.style };
       for (const action of meaning.actions) if (action === 'slow' || action === 'fast') speed = action;
       const pause = pauseOf(meaning, durations);
       if (pause > 0) {
-        // 停顿算在前一段后面；挨着的几处加起来，封顶，和台本标记 [pause] 一样
+        // 停顿算在前一段后面；挨着的几处加起来（和台本标记 [pause] 一样，没有上限）
         const previous = pieces.length > 0 && pieces[pieces.length - 1].line === lineNumber ? pieces[pieces.length - 1] : null;
-        if (previous !== null) previous.pauseAfterMs = Math.min(previous.pauseAfterMs + pause, PAUSE_MAX_MS);
-        else pendingPause = Math.min(pendingPause + pause, PAUSE_MAX_MS);
+        if (previous !== null) previous.pauseAfterMs += pause;
+        else if (before !== null && before.hasPiece && pieces.length === 0) headPauseMs += pause; // 前一段（前面的调用里）后面的停顿
+        else pendingPause += pause;
       }
     }
     push(line.slice(last));
     // 这一行没有要念的话，停顿还没处挂：整行只有提示（（停顿 3 秒））。放在前一句后面（前一句可以在上一行）；没有前一句，等后一句，放在它前面
     if (pendingPause > 0) {
-      if (pieces.length > 0) pieces[pieces.length - 1].pauseAfterMs = Math.min(pieces[pieces.length - 1].pauseAfterMs + pendingPause, PAUSE_MAX_MS);
-      else waiting = Math.min(waiting + pendingPause, PAUSE_MAX_MS);
+      if (pieces.length > 0) pieces[pieces.length - 1].pauseAfterMs += pendingPause;
+      else waiting += pendingPause;
     }
+    if (lineNumber === lines.length - 1) carry = { emotion: state.emotion, style: state.style, speed, gap, hasPiece };
   });
-  return { pieces, directions, unattachedPauseMs: waiting };
+  return { pieces, directions, unattachedPauseMs: waiting, headPauseMs, carry };
 }
 
 // ---------------------------------------------------------------- 文字的语种

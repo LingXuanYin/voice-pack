@@ -34,13 +34,13 @@
 //               下限的上界是 (maxSeconds - 2 * paddingSeconds) / 2，不是 maxSeconds / 2：切段时，一段剩下的长度超过 maxSeconds - 2 * paddingSeconds 才要切（留边占去的那部分不算），
 //               切开以后剩下的两截都要不短于下限，所以剩下的至少是下限的两倍。两段都够长的最大下限就是这个数（留边为零时才是 maxSeconds / 2）。
 //   6 留边      每段前后各留 paddingSeconds（0.15 秒）的静音；两段之间的停顿不够留，就各留一半；录音的头尾夹在录音里。硬切的边界没有留边（两段首尾相接）。
-//   7 零头      没够 minSeconds、也并不进上一段的：够 shortestSeconds（3 秒，音质检查的「拒绝」线）留着，标 short: true；不够就丢掉，写进 dropped（too_short）。
+//   7 零头      没够 minSeconds、也并不进上一段的：整段留着，标 short: true。只有调用方给了 shortestSeconds，不够它的才丢掉，写进 dropped（too_short）。默认不丢：一段录音本身就短，就整段当一段。
 //
 // ---------------------------------------------------------------- 选项（都可选，单位秒；写错名字抛 TypeError）
 //   minSeconds            一段至少多长，默认 5（REFERENCE_THRESHOLDS.duration.warnBelow）
 //   forcedMinSeconds      硬切出来的每段至少多长，不给就同 minSeconds（只管硬切，停顿处的切不看它）；给了不能超过 (maxSeconds - 2 * paddingSeconds) / 2（第 5 条）
 //   maxSeconds            一段至多多长，默认 20（…warnAbove）
-//   shortestSeconds       短于 minSeconds 的零头最短留多长，默认 3（…rejectBelow）
+//   shortestSeconds       短于 minSeconds 的零头最短留多长，默认 0（不丢零头；说话的区间在第 3 步已经滤掉了 0.1 秒以下的声音）
 //   paddingSeconds        前后各留多长的静音，默认 0.15
 //   minPauseSeconds       短于它的静音是字词之间的间隙，默认 0.3
 //   sentencePauseSeconds  不短于它的停顿是句间停顿，默认 0.5
@@ -72,11 +72,11 @@ const NO_SPEECH_DBFS = -50;
 const BLIP_SECONDS = 0.1;
 const SMOOTH_FRAMES = 5;
 
-/** 选项的默认值。时长的三个数取自音质检查，不另写一份。 */
+/** 选项的默认值。时长的两个数取自音质检查的提醒线，不另写一份；零头默认不丢（shortestSeconds 0）。 */
 export const DEFAULTS = Object.freeze({
   minSeconds: REFERENCE_THRESHOLDS.duration.warnBelow,
   maxSeconds: REFERENCE_THRESHOLDS.duration.warnAbove,
-  shortestSeconds: REFERENCE_THRESHOLDS.duration.rejectBelow,
+  shortestSeconds: 0,
   paddingSeconds: 0.15,
   minPauseSeconds: 0.3,
   sentencePauseSeconds: 0.5,

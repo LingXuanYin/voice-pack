@@ -7,7 +7,8 @@
 // 输出目录：dub 写的那一个（里面有 dub.json 和每一句的音频文件）。
 // --out：成品写到这个 .wav 文件。已经存在就拒绝（file_exists），不覆盖。
 // 不出成品（退出 1，错误码 mix_incomplete）：有句子没做成（details.failed 列出是哪几句，提示先用 dub --only 重做）；dub 中途停下来了（details.stoppedBy）。
-// 其他错误：mix_input_invalid（没有 dub.json，或它不是 dub 的报告）；file_unreadable（某一句的文件读不了）；runtime_missing（句子是 mp3 等非 WAV，要 ffmpeg，点名 ffmpeg）。
+// 其他错误：mix_input_invalid（没有 dub.json，或它不是 dub 的报告）；file_unreadable（某一句的文件读不了）；runtime_missing（句子是 mp3 等非 WAV，要 ffmpeg，点名 ffmpeg）；
+//   mix_too_long（成品超过一份 WAV 能装的长度，或内存放不下它：details 点名是哪一句、哪一边的停顿、多长，见 lib/mix.mjs 规则 8）。
 // 退出码：0 成品写好了；1 出错（错误码在标准错误）；2 用法错误。
 import fs from 'node:fs';
 import path from 'node:path';

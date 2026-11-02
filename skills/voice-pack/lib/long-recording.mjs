@@ -90,7 +90,7 @@
 //                               tools/silence-split.mjs 返回的（丢掉了哪些块、这段录音自己的电平、阈值、硬切了几处）
 //                transcription  { status: 'done', transcribed, empty, failed, retried, models } | { status: 'skipped', reason } | { status: 'not_needed' }（没有片段）；retried 是为暂时出错多转写了几次
 //                segments       每段一条：{ id, startSec, endSec, durationSec, short, cut: { start, end }, transcription: 'done' | 'empty' | 'failed' | 'skipped', error? }
-//                               short 是不够 5 秒的零头（够 3 秒才留着）；error 是转写最后一次失败的 { code, message, details }
+//                               short 是不够 5 秒的零头（默认都留着；调用方给了 shortestSeconds，不够它的才丢，记 pieces_dropped）；error 是转写最后一次失败的 { code, message, details }
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   long_recording_input_invalid  输入不合约定。details.field 是出问题的字段（recording.name、concurrency、split……）

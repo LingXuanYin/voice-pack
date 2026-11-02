@@ -29,7 +29,7 @@
 //   「量不了」是 { status: 'unmeasurable', label: '量不了', reason, capability?, message }：缺能力时 reason 是 capability_missing，
 //   capability 是缺的那一项；数据不够时 reason 写明原因（no_holdout_recordings、not_enough_real_recordings、baseline_not_positive）。
 //   items 里每一条留出录音的 speakerSimilarity、blindListening，各是 { status: 'measured', ... }、{ status: 'voided', label: '作废', error }（只有盲听；
-//   error.code 说明为什么作废：listening_check_failed、blind_answer_invalid、provider_blocked）
+//   error.code 说明为什么作废：listening_check_failed、blind_answer_invalid、blind_answer_unusable、provider_blocked）
 //   或「没听成」{ status: 'not_heard', label: '没听成', item, error: { code, message, details }, attempts }；盲听的没听成还带 firstX
 //   （第一次问的时候放在 X 的是 'a' 真人还是 'b' 生成的，补做沿用它，顺序就不会因为补做而变）；
 //   说话人相似度还可能是「量不到」{ status: 'no_speech', label: '量不到', item: 'speaker-similarity', which: 'generated' | 'holdout', error }
@@ -75,8 +75,8 @@
 //      校验只比每段音频开头的 OPENING_WORDS 个词。这一次（2026-11-01，就是这个提示收的）：380 段转写（另有 2 问没有转写：一问回答格式不对，一问被模型的服务商拦下），开头的词 335 段逐字对上，
 //      错误率均值 0.026、最大 0.57，超过 0.3 的 4 段正是 4 问收音校验没过的（K 组第一遍 2 问，M 组 2 问），其余 186 问两段都在 0.3 以下。
 //      没给音频时的错误率这一次没有重量（旧记录，2026-10-19：1.00，作废）。换了音频和静音时的错误率另量过，量法和数不随基础部分发布。
-//      作废的条数单独报，不进以上任何比例。作废有三种原因，error.code 里分得开：收音校验没过（listening_check_failed）、
-//      回答不是固定格式（blind_answer_invalid）、回答被模型的服务商拦下（provider_blocked）。被拦下的另外报条数（blocked，是作废的一部分），
+//      作废的条数单独报，不进以上任何比例。作废有四种原因，error.code 里分得开：收音校验没过（listening_check_failed）、
+//      回答不是固定格式（blind_answer_invalid）、回答没正常结束或是空的（blind_answer_unusable：截断、出错中断、没有文字，能力标 details.unusable）、回答被模型的服务商拦下（provider_blocked）。被拦下的另外报条数（blocked，是作废的一部分），
 //      写明是被拦下，不写成「不是 JSON」：服务商拦的是这一段录音的这次问答，再问多半还是被拦（旧记录，整段转写的旧提示 2026-10-14：同一批录音再问一遍，
 //      上一次被拦的 49 次里 46 次又被拦；上一次问成的 261 次里 9 次这次被拦），所以记成作废，不记成没听成，补做多半没有用。
 //   6. 没听成：某条的盲听或说话人相似度碰到服务出错（上游 5xx、网关超时、网络错误、超时），那一项记成「没听成」，单独报：
@@ -84,12 +84,21 @@
 //      显示时写条数，例如「5 条里 2 条没听成，可以补做」，再列是哪几条、什么错、试了几次；有效的不到 5 条，照第 1 点只列比例和条数，
 //      写「条数不够，不下结论」，补做完再读。没听成可以补做：库不自动重试（建任务和补全可能已经计费），
 //      由调用方明确地要（redoNotHeard，命令行是 --redo），只重新调用没听成的那几项，调用几次事先写明（planRedo）。
-//   7. 说话人相似度的比值本身就是分数，照数显示（1 表示和这个人自己的真录音之间一样像）。这一次（2026-11-01）每组 12 条的比值，中位数（最小到最大）：
+//   7. 说话人相似度的比值本身就是分数，照数显示（1 表示和这个人自己的真录音之间一样像）。这一次（2026-11-01）M 组每组 12 条的比值，中位数（最小到最大）：
 //      同一个人的两段真录音（M 组）1.09（0.87 到 1.22）；同语言同性别的不同人（M 组）0.32（0.01 到 0.59）；
 //      用本人的参考录音克隆（M 组）0.95（0.70 到 1.16）；用别人的参考录音克隆（M 组）0.21（0.05 到 0.74）。
+//      角色语音（第 8 点）这一次（2026-11-01 UTC）的比值，同样是中位数（最小到最大）：同一个角色的两段真录音（6 条）1.05（0.87 到 1.23）；
+//      不同角色的两段真录音（6 条，性别未标，不设限）0.37（0.20 到 0.56）；用本角色的参考录音克隆（12 条）0.94（0.37 到 1.08）；
+//      用别的角色的参考录音克隆（12 条）0.28（0.10 到 0.82）。标签是数据集给的，没核过。
+//      按比值排，同一个角色的 6 条都高过不同角色的 6 条（AUC 1.00）；用本角色参考的克隆高过用别的角色参考的克隆（12 条对 12 条，AUC 0.97）。
+//      这两个 AUC 只是描述：样本小，没有标定过的线，不当成「像不像」的分界。
 //      两种方法不合成一个总分；两个对不上时，两个都照实列出，不替人选一个。
 //   8. 适用范围：标定用的是朗读语料（中文 AISHELL-1 测试集、英文 LibriSpeech clean 验证集，各 6 人、每人 8 段）、一个克隆模型（单段参考）、一个听者模型，用的是哪两个写在记录里；
-//      这一次每组有效的 11 或 12 条（盲听，按条数）。换了合成模型、听者或语料类型，要重新标定，这几条读法不能照搬。
+//      这一次 M 组每组有效的 11 或 12 条（盲听，按条数）。换了合成模型、听者或语料类型，要重新标定，这几条读法不能照搬。
+//      角色语音是另一种语料：Hugging Face 上的 AnimeVox 数据集（英文动画配音，标签是数据集给的，没核过）。取前 3 片（共 7 片）里合格段最多的 6 个角色，
+//      合格段是 4.5 秒以上、转写非空、没有敏感词的真录音：Frieren、Rin Tohsaka、Marin Kitagawa、Makima、Homura Akemi、Fern；每个角色 8 段（1 段参考、2 段留出、5 段其余）。
+//      盲听只列次数（每条问两遍，问法没分得开，第 1 点）：同一个角色 12/12 次判成同一人，不同角色 6/12 次，用本角色参考的克隆 21/24 次，用别的角色参考的克隆 13/24 次。
+//      这一组只能照数看，没有标定过的线，不能拿来判包像不像本人；要拿它判，先用更多角色和条数标定，再照上面的读法用。
 //   9. 量不到：某一条的说话人相似度，生成的或留出的那一段录音里没有能嵌出声纹的语音（短到嵌不出、近乎静音；说话人验证报
 //      capability_input_invalid、details.problem 是 no_speech，写法见 vocab/capability-signatures.md）。这是那一段录音自己的事，
 //      不是环境坏了，也不是服务出错：那一条的说话人相似度记成「量不到」，写明是生成的还是留出的那一段、能力报的原话，单独报，
@@ -108,6 +117,7 @@
 //   fidelity_text_empty            已知文本里一个词也没有，没法拿它核对转写。details.field
 //   listening_check_failed         收音校验没过：模型写出来的开头和已知文本的开头对不上，说明它没听到。这次盲听作废
 //   blind_answer_invalid           模型的回答不是固定格式，解析不了，不猜。这次盲听作废
+//   blind_answer_unusable         模型的回答没有正常结束（截断、出错中断）或是空的：适配器标了 details.unusable，这里转成这个码。这次盲听作废，不补做（同一段录音再问也可能还是这样，而且每问一次都花钱）。details 有 order、problem（stop_reason 或 text_missing）、stopReason、model
 //   provider_blocked               回答被模型的服务商拦下了。这个码是能力抛的（适配器认服务商的原话，写法见 vocab/capability-signatures.md 的 audio-text-to-text 一节），
 //                                  库只认这个码；blindListen 原样往上抛，measureFidelity 和 redoNotHeard 接住它，那一条盲听记成作废（读法第 5 点），不往外抛
 //   capability_result_invalid      所需能力的返回不是约定的形状。details.capability
@@ -122,8 +132,9 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { requireCapability } from '../protocol/lib/env.mjs';
+import { reportable } from '../protocol/lib/scrub.mjs';
 import { assertAudioClip } from '../protocol/lib/audio-clip.mjs';
-import { isServiceError, summarizeError, badResult } from './capability-calls.mjs';
+import { isServiceError, isUnusableAnswer, summarizeError, badResult } from './capability-calls.mjs';
 
 const isWordChar = /[\p{L}\p{N}\p{M}]/u;
 const isSeparator = /[\p{P}\p{S}\p{Z}\p{C}]/u;
@@ -276,14 +287,14 @@ const FENCED = /^```[A-Za-z0-9_-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/;
  * @param {string} reply 模型回答的文字
  * @param {number} [order] 这是第几次问，写进报错里
  * @returns {{ transcriptX: string, transcriptY: string, sameSpeaker: boolean, whereAlike: string, whereUnlike: string }}
- * @throws {VoicePackError} blind_answer_invalid：回答不符合固定格式，这次盲听作废。details.reason 说哪里不对，details.reply 是原话的前 300 个字符，details.order 是第几次问
+ * @throws {VoicePackError} blind_answer_invalid：回答不符合固定格式，这次盲听作废。details.reason 说哪里不对，details.reply 是原话全文（打过码，规则见 protocol/lib/scrub.mjs），details.order 是第几次问
  */
 export function parseBlindAnswer(reply, order) {
   const fail = (reason) =>
     new VoicePackError(
       'blind_answer_invalid',
       `盲听作废：${order ? `第 ${order} 次问的时候，` : ''}模型的回答不符合固定格式（${reason}），不猜，这次不算数`,
-      { details: { ...(order ? { order } : {}), reason, reply: String(reply).slice(0, 300) } },
+      { details: { ...(order ? { order } : {}), reason, reply: reportable(reply) } },
     );
   let body = String(reply).trim();
   const fenced = FENCED.exec(body);
@@ -346,7 +357,7 @@ function drawFirstX(random) {
  * @param {{ random?: () => number, maxErrorRate?: number, firstX?: 'a' | 'b' }} [options] random：返回 [0, 1) 的随机数，注入它测试才能固定顺序，省略用 Math.random；
  *   maxErrorRate：收音校验的阈值，省略用 DEFAULT_MAX_ERROR_RATE；
  *   firstX：第一次问的时候放在 X 的是 a 还是 b。给了就不抽随机数（补做沿用第一次的顺序用），省略就抽一次
- * @throws {VoicePackError} capability_missing（点名缺 audio-text-to-text）、listening_check_failed、blind_answer_invalid、provider_blocked（能力报的，原样往上抛）、
+ * @throws {VoicePackError} capability_missing（点名缺 audio-text-to-text）、listening_check_failed、blind_answer_invalid、blind_answer_unusable（能力标了 details.unusable 的，这里转成它）、provider_blocked（能力报的，原样往上抛）、
  *   capability_result_invalid，输入不对时的 fidelity_input_invalid、audio_clip_invalid、fidelity_text_empty
  */
 export async function blindListen(env, trial, options = {}) {
@@ -362,9 +373,16 @@ export async function blindListen(env, trial, options = {}) {
   const asks = [];
   for (const [index, [x, y]] of orders.entries()) {
     const order = index + 1;
-    const reply = await listen({
-      parts: [{ text: BLIND_PROMPT }, { text: '音频 X：' }, { audio: clips[x].audio }, { text: '音频 Y：' }, { audio: clips[y].audio }],
-    });
+    let reply;
+    try {
+      reply = await listen({
+        parts: [{ text: BLIND_PROMPT }, { text: '音频 X：' }, { audio: clips[x].audio }, { text: '音频 Y：' }, { audio: clips[y].audio }],
+      });
+    } catch (error) {
+      // 回答没正常结束或是空的（能力标 details.unusable）：这一次的回答不能用，这一条盲听作废（码见 unusableBlindAnswer）。别的错（服务出错、401……）原样往上抛
+      if (isUnusableAnswer(error)) throw unusableBlindAnswer(order, error);
+      throw error;
+    }
     if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', '必须返回 { text: 字符串, model?: 字符串 }');
     if (reply.model !== undefined && typeof reply.model !== 'string') throw badResult('audio-text-to-text', 'model 必须是字符串');
     const answer = parseBlindAnswer(reply.text, order);
@@ -400,6 +418,19 @@ export async function blindListen(env, trial, options = {}) {
     consistent: asks[0].sameSpeaker === asks[1].sameSpeaker,
     models: [...models],
   };
+}
+
+/**
+ * 回答没正常结束（截断、出错中断）或是空的（能力标 details.unusable，适配器怎么标见 adapters/README.md 第 8 点）：这一次的回答不能用，这一条盲听作废。
+ * 码是 blind_answer_unusable，不是服务出错：不标 transient，不补做（同一段录音再问也可能还是这样，而且每问一次都花钱）。details 写第几次问和原因（problem、stopReason、model）。
+ */
+function unusableBlindAnswer(order, error) {
+  const { problem, stopReason, model } = error.details ?? {};
+  const why = problem === 'stop_reason' ? `没有正常结束（stopReason：${stopReason}）` : '是空的';
+  return new VoicePackError('blind_answer_unusable', `盲听作废：第 ${order} 次问的时候，模型的回答${why}，这一条不算数`, {
+    cause: error,
+    details: { order, ...(problem === undefined ? {} : { problem }), ...(stopReason === undefined ? {} : { stopReason }), ...(model === undefined ? {} : { model }) },
+  });
 }
 
 // ---------------------------------------------------------------- 量不了
@@ -551,8 +582,9 @@ function normalizeFidelityInput(input, { only } = {}) {
   };
 }
 
-// 作废：开头的转写和已知文本的开头对不上，回答不是固定格式，或回答被模型的服务商拦下（能力抛 provider_blocked）。别的错误（输入不对、401……）不算作废，照常抛出。
-const VOIDING_CODES = ['listening_check_failed', 'blind_answer_invalid', 'provider_blocked'];
+// 作废：开头的转写和已知文本的开头对不上，回答不是固定格式，回答没正常结束或是空的（blind_answer_unusable，blindListen 把能力标的 details.unusable 转成它），
+// 或回答被模型的服务商拦下（能力抛 provider_blocked）。别的错误（输入不对、401……）不算作废，照常抛出。
+const VOIDING_CODES = ['listening_check_failed', 'blind_answer_invalid', 'blind_answer_unusable', 'provider_blocked'];
 /** 作废里被模型的服务商拦下的那一种：另外数条数（blocked）。 */
 const BLOCKED_CODE = 'provider_blocked';
 
@@ -628,7 +660,7 @@ async function measureSpeakerItem(env, holdout, baselineValue, attempts) {
 }
 
 /**
- * 一条留出录音的盲听这一项：量出来了是 measured；收音校验没过、回答格式不对或被模型的服务商拦下（provider_blocked）是 voided；碰到服务暂时出错是 not_heard（记着 firstX，补做时沿用）；
+ * 一条留出录音的盲听这一项：量出来了是 measured；收音校验没过、回答格式不对、回答没正常结束或是空的、或被模型的服务商拦下（provider_blocked）是 voided；碰到服务暂时出错是 not_heard（记着 firstX，补做时沿用）；
  * 别的错误照常抛出。被拦下的不是服务暂时出错（适配器不标 transient）：同一段录音再问还是被拦，补做也没用。
  * @returns {Promise<{ blindListening: object, models: string[] }>}
  */
@@ -751,7 +783,7 @@ async function baselineOrUnmeasurable(env, real) {
  * 量还原度，出一份报告。两种方法都量，缺哪项评测能力，那一项就报「量不了」并点名缺的能力，别的照常。
  *
  * 说话人相似度：生成的录音和对应的留出录音之间的相似度，除以真人基线。
- * 盲听：见 blindListen。收音校验没过、回答不是固定格式、或回答被模型的服务商拦下（provider_blocked）的那一条作废，记在 voided 里，不计入比例，别的条照常。
+ * 盲听：见 blindListen。收音校验没过、回答不是固定格式、回答没正常结束或是空的、或回答被模型的服务商拦下（provider_blocked）的那一条作废，记在 voided 里，不计入比例，别的条照常。
  * 单条服务出错不让整份报告作废：某条留出录音的盲听或说话人相似度碰到服务暂时出错（能力在 details.transient 里标出来的，见 lib/capability-calls.mjs 的 isServiceError），
  *   这一项记成「没听成」（notHeard）：写明是哪项、错误码、试了几次，不计入任何比例，接着做下一条。库不自动重试
  *   （建任务和补全可能已经计费），要补做由调用方用 planRedo 看要花多少次调用，再用 redoNotHeard 只补做没听成的那几项。

@@ -19,6 +19,7 @@
 //   程序自己报的合格的 code 原样用，不在这里定义。
 import { toBase64, fromBase64 } from '../../protocol/lib/bytes.mjs';
 import { VoicePackError } from '../../protocol/lib/errors.mjs';
+import { reportable } from '../../protocol/lib/scrub.mjs';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -104,11 +105,19 @@ export function decodeClips(value) {
 
 export function programError(error, capability) {
   const code = CODE_RE.test(error.code) ? error.code : 'process_program_error';
-  const message = typeof error.message === 'string' && error.message !== '' ? error.message : `程序报了错 ${error.code}`;
+  const message = reportable(typeof error.message === 'string' && error.message !== '' ? error.message : `程序报了错 ${error.code}`);
   const { transient, ...given } = isPlainObject(error.details) ? error.details : {};
   void transient; // 只认 error 上的 transient，details 里夹带的不算
-  const details = { ...given, capability };
-  if (code !== error.code) details.programCode = error.code;
+  const details = { ...maskedStrings(given), capability };
+  if (code !== error.code) details.programCode = reportable(error.code);
   if (error.transient === true) details.transient = true;
   return new VoicePackError(code, message, { details });
+}
+
+/** 程序给的 details 里的字符串（深处的也算）过打码：程序的原话里可能有令牌。数字、布尔、null 照抄。 */
+function maskedStrings(value) {
+  if (typeof value === 'string') return reportable(value);
+  if (Array.isArray(value)) return value.map(maskedStrings);
+  if (isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, maskedStrings(item)]));
+  return value;
 }
