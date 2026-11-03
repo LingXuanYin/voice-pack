@@ -144,6 +144,7 @@
 | `enhancers` | 可选 | 增强件：只对某个模型有效、在那个模型上还原度更高的文件：`{ id, path, model, modelVersion, capability, referenceVersion }`。`referenceVersion` 是做它时用的那一版参考集（semver）。包不依赖增强件。最多 100 项 |
 | `direction` | 可选 | 配音指引里的结构化部分：`{ description?, tags?, scenes? }`：一句音色描述（最长 500 个字符）、音色标签（每个 1–64 个字符，最多 32 个，不重复）、适合的场景（最多 16 个，不重复） |
 | `sampleLines` | 可选 | 示例台词：说明这个声音平时说什么、怎么说，字符串数组，每条是一句台词。最多 50 条，每条 1–500 个字符（按码点算），每条不能只有空白或看不见的字符（「语义规则」第 11 条）；同一句写两遍不算错。台词里可以带舞台提示，例如（耳语）、*笑*，写法和读法同基础部分的舞台提示（`lib/line-hints.mjs` 的文件头，词表 `vocab/cues.json`）；格式只存这条字符串、不解析它，所以不另设标签字段。字段叫 `sampleLines`，不叫 `samples`：有的音色社区的数据里 `samples` 指试听音频的网址 |
+| `setups` | 可选 | 几套设定：把配音时「怎么说」的固定值写进包里（固定到音色中）。数组，每项是一套：`{ name, labels?, speed?, instructions?, default? }`，最多 500 套。`name` 是名字，1–100 个字符，同一个包里不能重名（「语义规则」第 13 条）；`labels` 是固定的标签 `{ language?, emotion?, style?, energy? }`，写法和参考段的 `tags` 一样（见下；情绪、风格的名字取 `vocab/cues.json`，和参考段的标签是同一批）；`speed` 是语速，正数，意思和台本里的语速一样（1 是不变，0.85 放慢，1.15 加快）；`instructions` 是一段给模型的说明，例如口音、方言，1–4000 个字符；`default: true` 的那一套是配音时不点名就用的，最多一套（第 14 条）。换设定的值，就发包的新版本（包一经发布就不变，见第 6 节）；配音时用哪一套是配音的参数（点名选一套，不点名就用带 `default` 的那一套），不写进清单。配音怎么用设定，规则只在 `lib/reference-pick.mjs` 的文件头写。老版本的基础部分读到这个字段不报错、也不理会它（已发布的 1.0.9、2.0.0、2.5.0、2.6.0 的程序实测过：`check` 通过，`dub` 的计划和没有这个字段时一字不差），所以固定值在老版本上会悄悄不生效；带 `setups` 的包要把 `requires.baseMin` 写成不低于 `2.7.0`（认 `setups` 的第一版）：基础部分的做包程序会写好，别的写包的程序照做 |
 | `verification` | 可选 | 验证记录：`{ environment, model, date, fidelity: { ratio?, measuredBy? } }`：在哪个环境、用哪个模型、哪天（`YYYY-MM-DD`）测的、还原度比值（非负数）。`measuredBy` 是量这个比值时用的评测模型：`{ speakerVerification?, blindListening? }`，说话人验证和盲听各用的模型名，每个 1–200 个字符（和 `model` 一样的短文字）；不知道是哪个模型就不写那个键，两个都不知道就不写 `measuredBy`。最多 100 项 |
 | `designSource` | 可选 | 设计来源：设计出来的音色，记下描述、用的模型和设计时试听用的台词：`{ description?, model?, modelVersion?, date?, auditionLines? }`。`auditionLines` 是试听台词：字符串数组，每项是一段试听的原文，最多 10 项，每项 1–4000 个字符（按码点算，和 `description` 一样），每项不能只有空白或看不见的字符（「语义规则」第 12 条） |
 
@@ -175,6 +176,8 @@ schema 通过以后，下面这些规则也必须成立，否则清单不合格�
 10. 参考段的 `text` 不能只有空白或看不见的字符（空格、换行、零宽空格、控制字符……，`text_blank`；空串由 schema 的 `minLength` 管）。再加上 schema 要求参考集至少 1 段、每段都有 `audio`，规则 4 要求 `audio` 有着落，就是校验里「内容」那一条：至少有一段参考音频和对应的文本。这一条只在清单这里判定、报告，互相校验不再查第二遍。
 11. 示例台词（`sampleLines`）的每一条，同样不能只有空白或看不见的字符：和第 10 条是同一套判断，reason 也是 `text_blank`，`details.pointer` 是 `/sampleLines/<序号>`（序号从 0 起）。条数和每条的长度由 schema 管（空串由 `minLength` 管）。只有舞台提示的一条（例如「（耳语）」）有看得见的字，不算空：格式不去判断一条台词「有没有话」。
 12. 设计来源里的试听台词（`designSource.auditionLines`）的每一项，同样不能只有空白或看不见的字符：和第 10 条是同一套判断，reason 也是 `text_blank`，`details.pointer` 是 `/designSource/auditionLines/<序号>`（序号从 0 起）。项数和每项的长度由 schema 管（空串由 `minLength` 管）。
+13. 设定（`setups`）的 `name` 在同一个包里不重名（`duplicate_setup`，`details.pointer` 是 `/setups/<序号>/name`，序号是后出现的那一套，从 0 起）。
+14. 最多一套设定带 `default: true`（`duplicate_default_setup`，`details.pointer` 是后出现的那一套的 `/setups/<序号>/default`）。`speed` 是不是正数、`labels` 的写法对不对，由 schema 管。
 
 另有两种读不了的情况：不是合法的 UTF-8 JSON、带字节序标记、嵌套深得不正常（`manifest_not_json`）；协议主版本不是这一版认得的（`protocol_unsupported`，这时不去猜别的字段）。
 

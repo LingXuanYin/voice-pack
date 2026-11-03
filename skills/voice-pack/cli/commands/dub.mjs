@@ -4,7 +4,7 @@
 // 组装运行环境、把每一句的音频写成文件、把报告写出来。
 //
 //   node cli.mjs dub <包目录> <台本文件|-> --out <目录> [--adapter <名字|模块文件>]... [--adapter-option <键=值>]...
-//                    [--language <标签>] [--emotion <标签>] [--style <标签>] [--energy low|medium|high]
+//                    [--language <标签>] [--emotion <标签>] [--style <标签>] [--energy low|medium|high] [--setup <名字>|<包>=<名字>]...
 //                    [--instructions <文字>] [--only <序号,序号>] [--max-chars <数>] [--concurrency <1-8>] [--dry-run] [--json]
 //
 // 包目录：角色部分的根（里面有 manifest.json、SKILL.md、reference/……）。放进环境以后就是 .agents/skills/<包 ID>/，见 install 命令。
@@ -16,13 +16,17 @@
 //                目录可以已经存在（重做时往里补）；同名文件会被盖掉。--dry-run 时不要。
 //   --dry-run    只规划，不合成：每一句要说什么、挑哪段参考、为什么、读音词表换了什么、缺什么运行时。不花钱，不写文件。
 //   --language --emotion --style --energy
-//                调用方给的标签，用在每一句上（这是最优先的一层：台本里的舞台提示和 text-generation 的判断都不再看）。
+//                调用方给的标签，用在每一句上。「怎么说」的每一项（情绪、风格、能量）怎么和台本里的提示、设定、text-generation 的判断配合，次序和规则只在 lib/reference-pick.mjs 的文件头写。
+//   --setup      用音色包里的哪一套设定（清单的 setups，protocol/FORMAT.md 4.4）：设定里固定的标签、语速、说明补在台本没写的那一项上。不给，用带 default 的那一套，没有就不用设定；
+//                名字对不上，报 setup_unknown 并列出包里有哪几套（每个包在自己的设定里找）。--dry-run 和 dub.json 都写明用的是哪一套。
+//                两种写法：--setup <名字>，每个包都按这个名字找（只给一个，不和下一种混着给）；--setup <包>=<名字>，点某一个包的（包名或包 ID，不分大小写，和 [voice:] 认包的写法一样），
+//                可以重复，几个包时每个包点各自的，没点的包用它自己的默认。名字取第一个 = 后面的全部：设定的名字里有 =，就写成 <包>=<名字>。
 //   --instructions
 //                用这段文字代替包里的配音指引，作为通过 instructions 传给模型的说明（环境有 style-instruction 才传）。
 //   --only       只合成这几句（序号从 1 起，和输出里、文件名里的一致）。重做失败的几句用它：已经做好的文件原样留着，dub.json 把上一次的结果合进来。
 //   --max-chars  一次合成最多多少个字，超过的按句子切开。不给就不切；接进来的适配器给了 limits.maxChars 就默认取它的（规则见 adapters/README.md）。
 //   --concurrency 并发数，默认 2。
-//   判情绪的请求   台本里没带标签的句子让 text-generation 判情绪。接进来的适配器给了 limits.maxPromptTokens（模型一次能收的输入）就按它分几次发，没给就一次发完（规则和 judge 的形状见 lib/reference-pick.mjs 的文件头，limits 见 adapters/README.md）。
+//   判情绪的请求   哪些句子要判、判什么，规则只在 lib/reference-pick.mjs 的文件头写。接进来的适配器给了 limits.maxPromptTokens（模型一次能收的输入）就按它分几次发，没给就一次发完（规则和 judge 的形状见 lib/reference-pick.mjs 的文件头，limits 见 adapters/README.md）。
 //   --adapter, --adapter-option, 官方适配器声明的简写和参数
 //                模型从适配器接进来：官方的给名字，自己的给模块文件，可以给多个，后给的盖过先给的（统一的入口和合并规则只在 cli/adapters.mjs 写）。
 //                适配器给了费用说明（billing）时，合成开始之前会在标准错误里说明要生成几次（--json 时不说，免得弄脏机器读的输出）。
@@ -44,21 +48,46 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { VoicePackError } from '../../protocol/lib/errors.mjs';
 import { planDub, dubScript, TEXT_TOO_SHORT } from '../../lib/dub.mjs';
-import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, maxCharsOf, maxPromptTokensOf, minCharsOf, quoteArgument, takeAdapterArguments } from '../adapters.mjs';
+import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, maxCharsOf, maxPauseInTextMsOf, maxPromptTokensOf, minCharsOf, quoteArgument, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 import { openPackDirectory } from '../pack-directory.mjs';
 import { createScriptRuntimes } from '../script-runtimes.mjs';
 import { extensionOfMime } from '../audio-files.mjs';
 
 export const summary = '用音色包给台本配音：每句挑参考，读音词表，配音指引，增强件，包里的脚本';
-export const usage = `dub <包目录>|--pack <包目录>... <台本文件|-> --out <目录> ${ADAPTER_USAGE} [--language|--emotion|--style|--energy <标签>] [--instructions <文字>] [--only <序号,序号>] [--max-chars <数>] [--concurrency <1-8>] [--dry-run] [--json]`;
+export const usage = `dub <包目录>|--pack <包目录>... <台本文件|-> --out <目录> ${ADAPTER_USAGE} [--language|--emotion|--style|--energy <标签>] [--setup <名字>|<包>=<名字>]... [--instructions <文字>] [--only <序号,序号>] [--max-chars <数>] [--concurrency <1-8>] [--dry-run] [--json]`;
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {
   out: 'string', 'dry-run': 'boolean', only: 'string', 'max-chars': 'number', concurrency: 'number',
-  language: 'string', emotion: 'string', style: 'string', energy: 'string', instructions: 'string', pack: 'strings',
+  language: 'string', emotion: 'string', style: 'string', energy: 'string', setup: 'strings', instructions: 'string', pack: 'strings',
 };
 const LABEL_FLAGS = ['language', 'emotion', 'style', 'energy'];
+
+/**
+ * --setup 的值（给了几次，就有几个）：不带 = 的是设定的名字，每个包都按这个名字找，只能给一个；带 = 的是 <包>=<名字>，点某一个包的，可以重复。两种不混着给。
+ * 返回 { setup }（库的 options.setup：字符串，或者 { 包: 名字 } 的表；没给就没有这个键），写法不对返回 { problem }（用法错误）。
+ */
+function readSetupFlag(values) {
+  if (values === undefined) return {};
+  const entries = values.map((value) => {
+    const at = value.indexOf('=');
+    return at === -1 ? { name: value } : { pack: value.slice(0, at).trim(), name: value.slice(at + 1) };
+  });
+  const empty = entries.find((entry) => entry.name === '' || entry.pack === '');
+  if (empty !== undefined) return { problem: '--setup 要跟设定的名字（--setup <名字>），或者 <包>=<名字>（包和名字都不能是空的）' };
+  const bare = entries.filter((entry) => entry.pack === undefined);
+  const tabled = entries.filter((entry) => entry.pack !== undefined);
+  if (bare.length > 0 && tabled.length > 0) return { problem: '--setup 不带包的名字（每个包都按这个名字找）和 <包>=<名字>（点某一个包的）不要混着给' };
+  if (bare.length > 1) return { problem: '--setup 不带包的名字只能给一个；要几个包各点各的，写成 --setup <包>=<名字>，给几次都行' };
+  if (bare.length === 1) return { setup: bare[0].name };
+  const table = {};
+  for (const { pack, name } of tabled) {
+    if (Object.hasOwn(table, pack)) return { problem: `--setup 给包 ${pack} 点了两次：每个包只点一个名字` };
+    table[pack] = name;
+  }
+  return { setup: table };
+}
 
 /** 读音词表里做不到的一条，写成一句话说明原因（reason 的写法见 lib/pronunciation-lexicon.mjs 的 lexiconRules）。 */
 function unappliedReason(item) {
@@ -119,12 +148,25 @@ function pickLabel(unit, many) {
   return `[${parts.join(' · ')}]`;
 }
 
+/** 用了哪一套设定：包里有设定的才说（几个包时每个包一行）。 */
+function setupLines(report) {
+  const many = report.packs !== undefined;
+  return (report.packs ?? [report.pack]).filter((item) => item.setups !== undefined).map((item) => {
+    const who = many ? `${item.name}：` : '';
+    const available = item.setups.join('、');
+    return item.setup === undefined
+      ? `设定：${who}这次没用设定（包里有 ${available}，没有默认的；用 --setup <名字> 点名）`
+      : `设定：${who}${item.setup.name}（${item.setup.by === 'option' ? '--setup 点的名' : '包里的默认设定'}）；包里有 ${available}`;
+  });
+}
+
 function render(report, { packArguments, scriptArgument, out, planOnly, redo }) {
   const lines = [];
   const many = report.packs !== undefined;
   lines.push(many
     ? `包：${report.packs.map((item) => `${item.name}（${item.id} ${item.version}）`).join('、')}（开头的声音是 ${report.pack.name}）`
     : `包：${report.pack.name}（${report.pack.id} ${report.pack.version}）`);
+  lines.push(...setupLines(report));
   const { lexicon } = report;
   const phonemes = lexicon.phonemes ?? [];
   if (lexicon.applied.length > 0 || lexicon.unapplied.length > 0 || phonemes.length > 0) {
@@ -156,11 +198,11 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
   if (report.scripts.length > 0) lines.push(`脚本：${report.scripts.map((item) => `${item.pack === undefined ? '' : `${item.pack} `}${item.entry}（${item.runtime}）`).join('、')}`);
   if (report.missingRuntimes.length > 0) lines.push(`缺运行时：${report.missingRuntimes.map((item) => `${item.runtime}（脚本 ${item.pack === undefined ? '' : `${item.pack} `}${item.entry}）`).join('、')}；真合成会在开始前报 runtime_missing`);
   if (!report.capabilities['voice-cloning']) lines.push('缺所需能力：voice-cloning；真合成会在开始前报 capability_missing');
-  if (report.judge.status === 'used') lines.push(`情绪判断：台本里没有提示的句子，让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}${report.judge.calls > 1 ? `，分 ${report.judge.calls} 次发` : ''}`);
-  else if (report.judge.status === 'unavailable') lines.push('情绪判断：台本里有句子没有任何提示，环境没有 text-generation，用了默认参考');
+  if (report.judge.status === 'used') lines.push(`情绪判断：情绪、风格或能量没取全的句子，缺的项让 text-generation 判断了${report.judge.model ? `（${report.judge.model}）` : ''}${report.judge.calls > 1 ? `，分 ${report.judge.calls} 次发` : ''}`);
+  else if (report.judge.status === 'unavailable') lines.push('情绪判断：台本里有句子的情绪、风格或能量没取全，环境没有 text-generation，缺的项用了默认参考');
   else if (report.judge.status === 'planned') {
     const { calls, tooLong } = report.judge;
-    if (calls > 0) lines.push(`情绪判断：正式运行会用 text-generation 判 ${report.judge.lines} 句（台本里没有提示的句子）${calls > 1 ? `，分 ${calls} 次发` : ''}（${CUT_SHORT_NOTE}）；试运行不调它（要计费），这几句现在用默认参考`);
+    if (calls > 0) lines.push(`情绪判断：正式运行会用 text-generation 判 ${report.judge.lines} 句（情绪、风格或能量没取全的句子）${calls > 1 ? `，分 ${calls} 次发` : ''}（${CUT_SHORT_NOTE}）；试运行不调它（要计费），这几句缺的项现在用默认参考`);
     if (tooLong !== undefined) lines.push(`情绪判断：${tooLongSentence(tooLong)}，用默认参考：${numbersOf(report.units.filter((unit) => unit.pick.judgeFailed === true))}`);
   } else if (report.judge.status === 'unusable') {
     const { tooLong } = report.judge;
@@ -204,10 +246,11 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo }) 
   return `${lines.join('\n')}\n`;
 }
 
-/** 重做命令里跟在适配器后面的选项：这次命令行上给了的（标签、说明、切句、并发），按它原来的样子写回去；--only、--out、--json、--dry-run 另有位置，不在这里。 */
+/** 重做命令里跟在适配器后面的选项：这次命令行上给了的（标签、设定、说明、切句、并发），按它原来的样子写回去；--only、--out、--json、--dry-run 另有位置，不在这里。 */
 function redoFlags(options) {
   const parts = [];
   for (const name of ['language', 'emotion', 'style', 'energy', 'instructions']) if (options[name] !== undefined) parts.push(`--${name} ${quoteArgument(String(options[name]))}`);
+  for (const value of options.setup ?? []) parts.push(`--setup ${quoteArgument(value)}`); // --setup 可以给几次，次序照命令行上的
   if (options['max-chars'] !== undefined) parts.push(`--max-chars ${options['max-chars']}`);
   if (options.concurrency !== undefined) parts.push(`--concurrency ${options.concurrency}`);
   return parts;
@@ -222,7 +265,7 @@ function costNote({ billing, plan, calls }) {
   const lines = [`${billing}：`, `  ${times}（voice-cloning）`];
   if (plan.judge.status === 'planned' && plan.judge.calls > 0) {
     const asked = plan.judge.calls === 1 ? `判一次情绪（这一次不算在上面的次数里；${CUT_SHORT_NOTE}）` : `判情绪，分 ${plan.judge.calls} 次发（一次请求装不下，按模型一次能收的输入分批；这几次不算在上面的次数里；${CUT_SHORT_NOTE}）`;
-    lines.push(`  台本里有 ${plan.judge.lines} 句没有提示要判，先让 text-generation ${asked}`);
+    lines.push(`  台本里有 ${plan.judge.lines} 句的情绪、风格或能量没取全，要判，先让 text-generation ${asked}`);
   }
   if (plan.judge.tooLong !== undefined) lines.push(`  ${tooLongSentence(plan.judge.tooLong)}，用默认参考`);
   return `${lines.join('\n')}\n`;
@@ -260,6 +303,8 @@ export async function run(args, ctx) {
     packArguments = [packArgument];
     scriptArgument = script;
   }
+  const setupFlag = readSetupFlag(options.setup);
+  if (setupFlag.problem !== undefined) return usageProblem(ctx, usage, setupFlag.problem);
   const dryRun = options['dry-run'] === true;
   if (!dryRun && options.out === undefined) return usageProblem(ctx, usage, '要给 --out <目录>（音频和 dub.json 放这里）；只想看规划用 --dry-run');
   let only;
@@ -280,14 +325,17 @@ export async function run(args, ctx) {
   const labels = Object.fromEntries(LABEL_FLAGS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]]));
   const adapterMaxChars = maxCharsOf(adapters);
   const adapterMaxPromptTokens = maxPromptTokensOf(adapters); // text-generation 一次请求最多收多少输入（环境声明的）：判情绪按它分批发（lib/reference-pick.mjs）
+  const adapterMaxPauseInTextMs = maxPauseInTextMsOf(adapters); // 一个请求里写进文字的停顿加起来最多多少毫秒（环境声明的，声明了 pause-in-text 才用）：不给就不限（lib/dub.mjs 第 5c 步）
   const adapterMinChars = minCharsOf(adapters); // 合成能力一次至少多少个字（环境声明的）：短句并段，并不了的记成没做（lib/dub.mjs 第 5b 步）
   const dubOptions = {
     ...(Object.keys(labels).length > 0 ? { labels } : {}),
+    ...(setupFlag.setup === undefined ? {} : { setup: setupFlag.setup }),
     ...(options.instructions === undefined ? {} : { guidance: options.instructions }),
     ...(only === undefined ? {} : { only }),
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     ...(options['max-chars'] !== undefined ? { maxChars: options['max-chars'] } : adapterMaxChars !== undefined ? { maxChars: adapterMaxChars } : {}),
     ...(adapterMinChars !== undefined ? { minChars: adapterMinChars } : {}),
+    ...(adapterMaxPauseInTextMs !== undefined ? { maxPauseInTextMs: adapterMaxPauseInTextMs } : {}),
     ...(adapterMaxPromptTokens !== undefined ? { maxPromptTokens: adapterMaxPromptTokens } : {}),
     ...(packs.length > 1 ? { runtimesOf: (pack) => runtimes.get(pack.manifest.id) } : {}),
   };

@@ -3,9 +3,10 @@
 // 用音色包给一段台本配音（流程层）。
 //   @capability voice-cloning       按挑中的参考合成每一句（签名在 vocab/capability-signatures.md）
 //   @capability style-instruction   可选：环境声明有它，才把配音指引、这一句的说明通过 instructions 传给模型
-//   @capability style-cues          可选：环境声明有它，才把这一句自己的舞台提示认出来的名字（情绪、风格）通过 cues 传给模型；语速、停顿和配音指引都不进去
-//   @capability pause-in-text       可选：环境声明有它，才把段落里不超过 2.5 秒的停顿并进一次请求，写在文字里（<speak> 和 <break>，规则在 lib/pause-in-request.mjs）
-//   @capability text-generation     可选：台本里没有任何提示时，让它判断每句的情绪、风格（在 lib/reference-pick.mjs 里用）
+//   @capability style-cues          可选：环境声明有它，才把这一句的情绪、风格的名字（挑参考读到的那两项，只留词表里的名字）通过 cues 传给模型；语速、停顿和配音指引都不进去
+//   @capability pause-in-text       可选：环境声明有它，才把段落里的停顿并进一次请求（一个请求里加起来不超过 options.maxPauseInTextMs，没给就不限），写在文字里（<speak> 和 <break>，规则在 lib/pause-in-request.mjs）
+//   @capability cue-in-text         可选：环境声明有它，才把一下子的声音（笑、叹气）写在它在台词里的位置（<speak> 里面的 <cue style="laugh"/>，不进说明和 cues），一行不被它切开（第 5c 步）
+//   @capability text-generation     可选：一句话的情绪、风格、能量还有没取到的项时，让它判断，只补缺的项（在 lib/reference-pick.mjs 里用）
 //
 //   const plan   = await planDub(env, pack, script, options);   只规划，不合成：每一段话挑了哪一段参考、为什么、读音词表换了什么。不花钱：不调任何要计费的能力，
 //                                                               text-generation 也不调（要判情绪的句子，plan.judge 是 planned，写明正式运行会判几句、调几次，这几句现在用默认参考；形状见 lib/reference-pick.mjs 的文件头）
@@ -16,12 +17,21 @@
 //   每个 unit 记着包 ID（unit.pack），plan.packs 列出几个包。只给一个包时，这两样都不出现，输出和以前一字不差。
 //   text-generation 的判断按包分开调（每个包的参考集里有的标签不一样），judge 把它们合在一个对象里（combineJudges，在 lib/reference-pick.mjs）。
 //
+// 设定（清单的 setups，protocol/FORMAT.md 4.4）：作者写进包里的几套固定值 { name, labels?, speed?, instructions?, default? }。这一次用哪一套：options.setup 点名，不点名就用 default 那一套，都没有就不用设定；
+//   每个包在自己的设定里选。几个包时，options.setup 可以是一张表 { 包: 名字 }，每个包点各自的（键认包的写法同 [voice:]：包名或包 ID，不分大小写），表里没列的包用它自己的默认。「怎么说」每一项从哪取，次序只在 lib/reference-pick.mjs 的文件头写，这里只写设定在配音里多管的三样，都是「台本没写的才用设定」：
+//   语速（台本的标记和提示先用，没有就用设定的 speed，记在 unit.speed）、说明（调用方给这一项的、设定的 instructions、这一句的舞台提示，三样都交给模型，第 7 步）、
+//   情绪和风格的名字（cues，第 7 步，读的是挑参考的结果）。报告：units[i].pick.sources 里 'setup' 标出哪一项来自设定；plan.pack（几个包时 plan.packs 的每一项）有设定时多 setups（包里有哪几套的名字）
+//   和 setup: { name, by }（这一次用了哪一套，by 是 'option' 或 'default'；没用设定就没有 setup）。
+//
 // 台本（script）：一个字符串（带台本标记的整段台本），或者一个数组，每项是
 //   { text, labels?, instructions? }   text 是带标记的台本；labels 是调用方给这一项的标签 { language, emotion, style, energy }；
 //                                      instructions 是调用方给这一项的说明（agent 读了配音指引以后想补的话）。
 // options：labels（给所有项的默认标签，项自己的盖过它）、concurrency（并发数，默认 2，1–8）、maxChars（一次合成最多多少个字，
 //   超过的按句子切开；默认不切）、minChars（合成能力一次至少多少个字，环境声明的；默认没有下限，见第 5b 步）、
-//   maxPromptTokens（text-generation 一次请求最多收多少输入，环境声明的；判情绪按它分几次发，默认一次发完；规则在 lib/reference-pick.mjs 的文件头）、joinShort（默认 true；
+//   setup（用音色包里的哪一套设定：清单 setups 里的 name；不给就用带 default 的那一套，没有就不用设定；对不上报 setup_unknown，每个包在自己的 setups 里找。
+//   给字符串是每个包都按这个名字找；给一张表 { 包名或包 ID: 名字 } 是每个包点各自的，表里没列的包用它自己的默认；见下面的「设定」）、
+//   maxPromptTokens（text-generation 一次请求最多收多少输入，环境声明的；判情绪按它分几次发，默认一次发完；规则在 lib/reference-pick.mjs 的文件头）、
+//   maxPauseInTextMs（一个请求里写下的停顿加起来最多多少毫秒，环境声明的；声明了 pause-in-text 才用；不给就不限，见第 5c 步）、joinShort（默认 true；
 //   false 就不并短句，只按下限认：试合成用，每条留出录音一段）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped；失败后重做用）、
 //   runtimesOf（几个包时，每个包的脚本运行时：runtimesOf(pack) 返回这个包的 { 运行时名字: 函数 }；命令行层给每个包目录各建一份（cli/script-runtimes.mjs）；
 //   不给就用 env.runtimes。脚本在它自己的包目录里运行，所以要分开）、
@@ -38,12 +48,14 @@
 //   2 读舞台提示（lib/line-hints.mjs）：括号里的（耳语）、*笑* 变成这一段的情绪、风格、停顿、语速，从要说的话里拿掉。
 //     提示管到哪里，规则见 tools/markup.mjs 文件头「舞台提示的范围」。段与段之间的状态由 readDirections 的 carry 带过去（同一行才带，换一行、换声音就清掉）。
 //     括号里词表认不出的内容（（画外音））配音时也拿掉，不念；如实记在这一段的 pick.directions 里（recognized 为 false），并进这一句的说明（第 7 步），交给模型。
-//   3 每一段挑参考（lib/reference-pick.mjs）：调用方的标签、台本里的提示、text-generation 的判断、默认参考。理由放在 units[i].pick 里。
+//   3 每一段挑参考（lib/reference-pick.mjs）：「怎么说」每一项从哪取、什么时候送去 text-generation 判，只在那个文件头写。理由放在 units[i].pick 里。
 //     text-generation 的判断是计费的，在 onPlan 之后才调（见上面的 onPlan）。
 //   4 读音词表（包里的 lexicon.pls，lib/pronunciation-lexicon.mjs）：换掉要说的话里的词，只换标记之间的文字。做不到的如实报在 lexicon.unapplied。
 //     拼音音素（字母表 x-pinyin）：环境声明了 phoneme-in-text 才用，句子里用上的记在 unit.phonemes 和 lexicon.phonemes，从 unapplied 去掉；
 //     没声明的，照旧报在 unapplied（reason 是 phoneme，和没有这一项时一样）；声明了、音节数等对不上的，reason 是 phoneme_format。
 //   5 超过 maxChars 的按句子切成几段，同一句的几段共用同一段参考。
+//   5c 一行一个请求：环境声明了 pause-in-text，段落里的停顿并进一次请求（一个请求里加起来不超过 maxPauseInTextMs）；声明了 cue-in-text，一下子的声音（笑、叹气）只写成它位置上的 <cue/>（不进说明，也不进名字），也不切开。
+//     一行只有这几处切：换了参考段、换了语速、换了说明（环境收说明时）、换行（以及章节、续接）；规则写在 joinIntoRequests 上。并起来的那一段，plan 里的 pick.directions 列着每个成员的舞台提示。
 //   5b 有下限（minChars，环境声明的；没有就跳过这一步）：一段的字数不到下限，就和后面的一段并成一段（joinShort 为 true 时），直到够下限或者没有可并的。
 //     并段的规则和 app 的 fitMinLength 一样：同一个声音（台本里的声音都是这个包，voice_unknown 保证），
 //     中间没有停顿（前一段没有停顿要求，后一段前面也没有），语速一样；这里还多两条，因为配音的句子各有各的说明：参考段一样（同一个声音说这句的参考，见第 3 步），
@@ -56,14 +68,14 @@
 //     说明这次没有运行和原因。
 //   7 合成：voice-cloning，参数 { text, ref_audio, ref_text, instructions?, cues?, enhancers?, continues? }。
 //      continues：这一段是接着下一段说的（句子被标记切开，unit.join 为 'continue'）时才有，能力不到最短字数补「，」而不是「。」（补字的规则只在适配器一处）。
-//      text：unit.ssml 有的（一次请求里有停顿，pause-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
+//      text：unit.ssml 有的（一次请求里有停顿或一下子的声音，pause-in-text、cue-in-text，第 5c 步）用它，没有就是 unit.spoken；声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着）。
 //      拼接的人怎么处理 unit 的停顿、续接、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
-//      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明和这一句的舞台提示），没有就整个不传这个键，
+//      instructions：环境有 style-instruction 才传（配音指引，加上调用方给这一项的说明、设定的 instructions 和这一句的舞台提示，次序是这三样），没有就整个不传这个键，
 //      返回值里说明没传和原因；plan.guidance.sent 写明交出去的那段指引这次有没有传（只有每句自己的说明传了，不算）。配音指引是新式（有三个小节中的任何一个）的，只传演法一节（没有演法就不传）；旧式整段；配音指引不截，超长的照样交给适配器：平台超了报错，那个错对每一句都一样，照旧往上抛、停下来（见 vocab/capability-signatures.md 的「通用约定」）。
 //      这一句的舞台提示怎么拼（按原文去重，次序是情绪、语速、停顿）：同一行里最近的一处情绪或风格（有就一处，跨过 [pause] 也算，换一行、换声音就清掉；一下子的声音（笑、叹气）例外：它只管紧跟着它的这一句，下一句回到它出现以前管着的那一处，没有就没有）；还在管着的那一处放慢或加快（有就一处，管到下一个放慢、加快或行尾，情绪变了也不清，停顿也不清，和 unit.speed 一致）；
 //      这一段自己前面那一截里排在最后一个情绪或风格之后的停顿。同一截里被后面的放慢、加快替掉的不带。
 //      前面几段的停顿不带过来：停顿算在前一段的后面（一行开头的算在这一段前面），见 lib/line-hints.mjs 文件头「停顿」。
-//      cues：环境有 style-cues 才传，是这一句自己的 { emotion, style }（词表的规范名字）：情绪、风格：调用方在 labels 里给的先用，没给的取读这一句的舞台提示。
+//      cues：环境有 style-cues 才传，是这一句的 { emotion, style }（词表的规范名字）：读的就是第 3 步挑参考的结果（pick.wanted，判断补上的项也在里面），只留词表里的名字，词表外的那一项是空的，不退到别的层（每一项从哪一层取，正本在 lib/reference-pick.mjs 的文件头）。
 //      配音指引不进 cues，语速和停顿也不进（见下面「语速和停顿」）。一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只在写它的那一处带：紧跟在它后面的那一段话（停顿标记、舞台提示切开的几段里的第一段），
 //      后面的几段不带（读舞台提示时就不给，规则见 lib/line-hints.mjs 文件头「范围」）；那一段又被 maxChars 切成几段的，只在第一段带。情绪、风格每段都带。
 //      返回值的 units[i].cues 写明没传和原因（style_cues_missing、nothing_to_send）。
@@ -101,19 +113,22 @@
 //
 // 说明（返回值里的 notes：[{ code, message, details }]，规划和正式运行都有；message 是给人看的中文，details 是它说的那些事实，没有要说的数就是空对象）：
 //   （配音指引超长，这里不截，超长的照样交给适配器：平台超了报错，那个错对每一句都一样，照旧往上抛、停下来，不算成某一句的失败）
-//   speed_not_applied        台本有语速要求，合成能力不收语速，要拼接的人按 unit.speed 处理。details: {}
+//   speed_not_applied        台本或设定有语速要求，合成能力不收语速，要拼接的人按 unit.speed 处理。details: {}
 //   scripts_without_feature  包里有没登记功能的脚本，这次没有运行。details: { scripts }，scripts 是 [{ entry, runtime }]；note.scripts 是同一份，是原来的写法，留着给已有的读者
 //   short_lines_joined       有几段比合成能力的下限短，并进了相邻的句子（第 5b 步）。details: { min, units }：下限是多少个字，并成的段有几段
+//   pauses_in_request        有几处停顿并进了一次请求（第 5c 步）。details: { joins }
+//   cues_in_request          有几处一下子的声音（笑、叹气）写在了文字里它的位置，没有把一行切开（第 5c 步，环境声明了 cue-in-text）。details: { joins }
 //   pause_length_unchecked   台本里有停顿，可是参考段里一段也读不出采样率，计划阶段估不出成品的格式，停顿加起来放不放得下一份 WAV 这一次没核（拼接时照常核）。details: { reason: 'no_reference_format' }
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
-//   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 maxPromptTokens 或 concurrency 不对。details.field
+//   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、only 或 maxChars 或 maxPromptTokens 或 concurrency 或 setup（不是非空字符串，也不是 { 包: 非空字符串 } 的表，或者表里同一个包点了两次）不对。details.field
 //   dub_nothing_to_say       台本里没有可说的话（只有标记和提示）
 //   dub_text_rejected        还没有一句成功、已经有 3 句被服务商拒了（见上面「一段失败了怎么办」）：停下。details: { limit, rejected: [{ unit, line }] }，
 //                            被服务商拒的段（unit，同 only 的编号）和它的句子（line，同 lines[i].index），都从 0 起
-//   voice_unknown            台本里的 [voice:名字] 不是给出的包。只给一个包时 details: { voices（台本里不认识的名字）, pack: { id, name } }；
-//                            几个包时 details: { voices, packs: [{ id, name }] }（给了哪些包）
-//   voice_ambiguous          台本里的 [voice:名字] 对上不止一个包（几个包的名字一样）：用包 ID 指定。details: { voices, packs }
+//   setup_unknown            options.setup 点的名字，这个包的 setups 里没有（字符串：每个包都要有；表：表里点了名字的包要有）（花钱之前就报，规划也报）。details: { setup（点的名字）, pack: { id, name }（对不上的那个包）, setups（这个包里有哪几套的名字，没有就是空数组）}
+//   voice_unknown            台本里的 [voice:名字]、或者 options.setup 表里的键，不是给出的包。台本里只给一个包时 details: { voices（不认识的名字）, pack: { id, name } }；
+//                            几个包时（options.setup 的表一律）details: { voices, packs: [{ id, name }] }（给了哪些包）
+//   voice_ambiguous          台本里的 [voice:名字]、或者 options.setup 表里的键，对上不止一个包（几个包的名字一样）：用包 ID 指定。details: { voices, packs }
 //   dub_input_invalid        同一个包给了两次（details.field 是 pack）
 //   capability_result_invalid  voice-cloning 的返回不合约定（不是 { bytes, mimeType }、enhancers_used 报了没递给它的增强件）。details: { capability, problem }
 //   另外 pick_input_invalid（标签不对）、lexicon_invalid、script_*、file_missing（清单里列了、包里没有）等来自各自的模块。
@@ -125,7 +140,7 @@ import { fromBase64 } from '../protocol/lib/bytes.mjs';
 import { guidanceForModel } from '../protocol/lib/guidance-sections.mjs';
 import { parseScript, SPEED } from '../tools/markup.mjs';
 import { splitSentences } from '../tools/sentences.mjs';
-import { readDirections, canonicalLabel } from './line-hints.mjs';
+import { readDirections } from './line-hints.mjs';
 import cues from '../vocab/cues.json' with { type: 'json' };
 import { combineJudges, pickReferences } from './reference-pick.mjs';
 import { lexiconRules, applyLexicon, applyPhonemes, PINYIN_ALPHABET } from './pronunciation-lexicon.mjs';
@@ -169,6 +184,12 @@ function readScript(script) {
   });
 }
 
+/** options.setup 的写法：一个非空字符串（每个包都按这个名字找），或者一张表，键是包（包名或包 ID）、值是非空字符串（设定的名字）。 */
+const isSetupOption = (setup) => {
+  const named = (value) => typeof value === 'string' && value !== '';
+  return named(setup) || (isPlainObject(setup) && Object.entries(setup).every(([key, value]) => key.trim() !== '' && named(value)));
+};
+
 function readOptions(options) {
   if (!isPlainObject(options)) throw invalid('options', 'options 必须是对象');
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -178,13 +199,16 @@ function readOptions(options) {
   if (options.onUnit !== undefined && typeof options.onUnit !== 'function') throw invalid('onUnit', 'onUnit 必须是函数');
   if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', 'onPlan 必须是函数');
   if (options.guidance !== undefined && options.guidance !== null && typeof options.guidance !== 'string') throw invalid('guidance', 'guidance 必须是字符串或 null');
+  if (options.setup !== undefined && !isSetupOption(options.setup)) throw invalid('setup', 'setup 必须是字符串（设定的名字，音色包清单里 setups 的 name），或者一张表 { 包名或包 ID: 设定的名字 }（几个包时每个包点各自的），或者不给');
   const minChars = options.minChars ?? null;
   if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars 必须是不小于 1 的整数（合成能力一次至少多少个字），或者不给');
   const maxPromptTokens = options.maxPromptTokens ?? null;
   if (maxPromptTokens !== null && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < 1)) throw invalid('maxPromptTokens', 'maxPromptTokens 必须是不小于 1 的整数（text-generation 一次请求最多收多少输入），或者不给');
+  const maxPauseInTextMs = options.maxPauseInTextMs ?? Number.POSITIVE_INFINITY; // 不给就不限
+  if (options.maxPauseInTextMs !== undefined && options.maxPauseInTextMs !== null && (!Number.isInteger(maxPauseInTextMs) || maxPauseInTextMs < 1)) throw invalid('maxPauseInTextMs', 'maxPauseInTextMs 必须是不小于 1 的整数（环境收得下的一个请求里的停顿加起来最多多少毫秒），或者不给');
   if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort 必须是 true 或 false');
   if (options.runtimesOf !== undefined && typeof options.runtimesOf !== 'function') throw invalid('runtimesOf', 'runtimesOf 必须是函数：runtimesOf(pack) 返回这个包的脚本运行时');
-  return { concurrency, maxChars, minChars, maxPromptTokens, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, guidance: options.guidance, only: options.only, runtimesOf: options.runtimesOf };
+  return { concurrency, maxChars, minChars, maxPromptTokens, maxPauseInTextMs, joinShort: options.joinShort ?? true, onUnit: options.onUnit, onPlan: options.onPlan, labels: options.labels, setup: options.setup ?? null, guidance: options.guidance, only: options.only, runtimesOf: options.runtimesOf };
 }
 
 // ---------------------------------------------------------------- 几个包
@@ -205,26 +229,80 @@ function packsOf(input) {
 const envFor = (env, settings, pack) => (settings.runtimesOf === undefined ? env : { ...env, runtimes: settings.runtimesOf(pack) });
 
 /**
+ * 这个包这一次用的设定（清单的 setups，见 protocol/FORMAT.md 4.4）：点了名（options.setup）就按名字找，对不上报 setup_unknown（在花钱之前，规划就报）；
+ * 没点名就用带 default: true 的那一套，没有就不用设定。返回 { setup, by: 'option' | 'default' }，不用设定是 null。
+ * name 是这个包点的名字（setupNamesOf 按 options.setup 算出来的），没点是 null。每个包在自己的 setups 里找：点的名字这个包没有，就是这个包对不上。
+ */
+function chooseSetup(pack, name) {
+  const setups = pack.manifest.setups ?? [];
+  if (name !== null) {
+    const found = setups.find((setup) => setup.name === name);
+    if (found !== undefined) return { setup: found, by: 'option' };
+    const names = setups.map((setup) => setup.name);
+    throw new VoicePackError('setup_unknown', `包 ${pack.manifest.name}（${pack.manifest.id}）里没有叫 ${JSON.stringify(name)} 的设定：${names.length === 0 ? '这个包里一套设定也没有' : `有 ${names.map((item) => JSON.stringify(item)).join('、')}`}`, { details: { setup: name, pack: { id: pack.manifest.id, name: pack.manifest.name }, setups: names } });
+  }
+  const found = setups.find((setup) => setup.default === true);
+  return found === undefined ? null : { setup: found, by: 'default' };
+}
+
+/** 名字或包 ID（不分大小写）对上的包：台本里的 [voice:] 和 options.setup 的表认包，用的是这同一条规则。 */
+const packsNamed = (packs, name) => packs.filter((pack) => [pack.manifest.id, pack.manifest.name].some((item) => item.trim().toLowerCase() === name.trim().toLowerCase()));
+
+/**
+ * 名字是在哪里写的：报错的话里怎么称呼这些名字。mention(名字列表) 是称呼；onePack（可选）是只给了一个包时单独的说法，没有就和几个包时一样。
+ * 台本里的 [voice:]：只有一个包时，报错和以前一字不差。
+ */
+const NAMED_IN_SCRIPT = {
+  mention: (list) => `台本里的 [voice:${list.join('、')}]`,
+  onePack: (list, pack) => `台本里的 [voice:${list.join('、')}] 不是这个包（${pack.manifest.name}，${pack.manifest.id}）：一个包只有一个声音，换声音的台本需要别的包`,
+};
+const NAMED_IN_SETUP = { mention: (list) => `options.setup 里点的包 ${list.map((item) => JSON.stringify(item)).join('、')}` };
+
+/**
+ * 认包的名字（台本里的 [voice:名字]，或者 options.setup 表里的键）：对不上任何一个包是 voice_unknown，对上不止一个是 voice_ambiguous。
+ * where 是 NAMED_IN_SCRIPT 或 NAMED_IN_SETUP。
+ */
+function checkPackNames(packs, names, where) {
+  const described = (pack) => `${pack.manifest.name}，${pack.manifest.id}`;
+  const { mention } = where;
+  const unknown = [...new Set(names.filter((name) => packsNamed(packs, name).length === 0))];
+  if (unknown.length > 0) {
+    if (packs.length === 1 && where.onePack !== undefined) {
+      const [pack] = packs;
+      throw new VoicePackError('voice_unknown', where.onePack(unknown, pack), { details: { voices: unknown, pack: { id: pack.manifest.id, name: pack.manifest.name } } });
+    }
+    throw new VoicePackError('voice_unknown', `${mention(unknown)} 不是给出的任何一个包（${packs.map((pack) => `${pack.manifest.name}（${pack.manifest.id}）`).join('、')}）：名字或包 ID 对得上才行`, { details: { voices: unknown, packs: packs.map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+  }
+  const ambiguous = [...new Set(names.filter((name) => packsNamed(packs, name).length > 1))];
+  if (ambiguous.length > 0) {
+    throw new VoicePackError('voice_ambiguous', `${mention(ambiguous)} 对上不止一个包（${packsNamed(packs, ambiguous[0]).map(described).join('；')}）：用包 ID 指定`, { details: { voices: ambiguous, packs: packsNamed(packs, ambiguous[0]).map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+  }
+}
+
+/**
  * 每一句属于哪个包（owners[i] 是第 i 句的包）：[voice:名字] 认包名或包 ID（不分大小写）；没有 [voice:] 的句子用第一个包。
  * 对不上：voice_unknown；对上不止一个包：voice_ambiguous。只有一个包时，报错和以前一字不差。
  */
 function ownersOf(packs, lines, voices) {
-  const keyOf = (value) => value.trim().toLowerCase();
-  const matchesOf = (voice) => packs.filter((pack) => [pack.manifest.id, pack.manifest.name].some((name) => keyOf(name) === keyOf(voice)));
-  const described = (pack) => `${pack.manifest.name}，${pack.manifest.id}`;
-  const unknown = [...new Set(voices.filter((voice) => matchesOf(voice).length === 0))];
-  if (unknown.length > 0) {
-    if (packs.length === 1) {
-      const [pack] = packs;
-      throw new VoicePackError('voice_unknown', `台本里的 [voice:${unknown.join('、')}] 不是这个包（${pack.manifest.name}，${pack.manifest.id}）：一个包只有一个声音，换声音的台本需要别的包`, { details: { voices: unknown, pack: { id: pack.manifest.id, name: pack.manifest.name } } });
-    }
-    throw new VoicePackError('voice_unknown', `台本里的 [voice:${unknown.join('、')}] 不是给出的任何一个包（${packs.map((pack) => `${pack.manifest.name}（${pack.manifest.id}）`).join('、')}）：名字或包 ID 对得上才行`, { details: { voices: unknown, packs: packs.map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+  checkPackNames(packs, voices, NAMED_IN_SCRIPT);
+  return lines.map((line) => (line.voice === null ? packs[0] : packsNamed(packs, line.voice)[0]));
+}
+
+/**
+ * 每个包这一次点的设定名字（options.setup）：字符串是每个包都按这个名字找；表 { 包: 名字 } 里的键认包的写法同台本里的 [voice:]，表里没列的包是 null（用它自己的默认）。
+ * 键对不上包是 voice_unknown，对上不止一个包是 voice_ambiguous，同一个包点了两次（名字和 ID 写成了两个键）是 dub_input_invalid。没点是 null。
+ */
+function setupNamesOf(packs, setup) {
+  if (setup === null || typeof setup === 'string') return new Map(packs.map((pack) => [pack, setup]));
+  const keys = Object.keys(setup);
+  checkPackNames(packs, keys, NAMED_IN_SETUP);
+  const names = new Map(packs.map((pack) => [pack, null]));
+  for (const key of keys) {
+    const [pack] = packsNamed(packs, key);
+    if (names.get(pack) !== null) throw invalid('setup', `options.setup 里同一个包点了两次（${pack.manifest.name}，${pack.manifest.id}）：每个包只点一个名字`);
+    names.set(pack, setup[key]);
   }
-  const ambiguous = [...new Set(voices.filter((voice) => matchesOf(voice).length > 1))];
-  if (ambiguous.length > 0) {
-    throw new VoicePackError('voice_ambiguous', `台本里的 [voice:${ambiguous.join('、')}] 对上不止一个包（${matchesOf(ambiguous[0]).map(described).join('；')}）：用包 ID 指定`, { details: { voices: ambiguous, packs: matchesOf(ambiguous[0]).map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
-  }
-  return lines.map((line) => (line.voice === null ? packs[0] : matchesOf(line.voice)[0]));
+  return names;
 }
 
 // ---------------------------------------------------------------- 台本 -> 一句一句
@@ -241,12 +319,10 @@ function buildLines(sources, defaults) {
   let pendingBefore = 0;
   let chapterOffset = 0;
   // 同一行里的舞台提示和前一段留下的状态（readDirections 的 carry）：跨过 [pause …] 接着管，换一行、换声音就清掉。
-  // physical 是物理行编号（每个换行、每个声音的开头加一），hintLine 记着 emotionOnLine、speedOnLine 是哪一行的。
+  // physical 是物理行编号（每个换行、每个声音的开头加一），hintLine 记着 speedOnLine 是哪一行的。
   let carried = null;
   let physical = -1;
   let hintLine = null;
-  let emotionOnLine = null;
-  let emotionBack; // 一下子的声音（笑、叹气）还没被一段话用掉时：用掉以后 emotionOnLine 回到的那一处（读到的原文，或者 null）；没有等着用掉的就是 undefined
   let speedOnLine = null;
   const addPause = (ms) => {
     if (ms <= 0) return;
@@ -285,8 +361,6 @@ function buildLines(sources, defaults) {
           const last = pieceIndex === pieces.length - 1;
           const speed = piece.speed !== null ? SPEED[piece.speed] : span.speed;
           if (firstLine + piece.line !== hintLine) {
-            emotionOnLine = null;
-            emotionBack = undefined;
             speedOnLine = null;
             hintLine = firstLine + piece.line;
           }
@@ -295,27 +369,31 @@ function buildLines(sources, defaults) {
             const isSpeed = direction.actions.includes('slow') || direction.actions.includes('fast');
             if (isSpeed) speedOnLine = direction.raw;
             if (direction.emotion !== null || direction.style !== null) {
-              // 带一下子的声音的提示只管紧跟着它的这一段（和 lib/line-hints.mjs 读 hints 的范围一样）：这一段的说明里有它，下一段回到它出现以前管着的
-              emotionBack = direction.style !== null && ONE_SHOT_STYLES.has(direction.style) ? (emotionBack === undefined ? emotionOnLine : emotionBack) : undefined;
-              emotionOnLine = direction.raw;
               own = [];
             } else own.push({ raw: direction.raw, speed: isSpeed, pause: direction.actions.includes('pause') });
           }
           // 同一截里被后面的放慢、加快替掉的不带（只留最后一个）；停顿照带
           const lastSpeed = own.map((entry) => entry.speed).lastIndexOf(true);
-          const actions = own.filter((entry, index) => !entry.speed || entry.pause || index === lastSpeed).map((entry) => entry.raw);
-          const governing = [...new Set([emotionOnLine, speedOnLine, ...actions].filter((part) => part !== null))];
+          const kept = own.filter((entry, index) => !entry.speed || entry.pause || index === lastSpeed);
+          const actions = kept.map((entry) => entry.raw);
+          const governing = [...new Set([piece.hintRaw, speedOnLine, ...actions].filter((part) => part !== null))];
+          // 不算一下子的声音和停顿时的说明（cue-in-text：这两样不是切点，见 joinIntoRequests）：情绪、风格那一处用 piece.hintRawBase（带一下子的声音的提示，原文不进说明，换成它出现以前管着的；（生气笑）这样还带着情绪的，原文一样不进说明，情绪走名字；规则在 lib/line-hints.mjs），纯停顿的提示去掉
+          const governingBase = [...new Set([piece.hintRawBase, speedOnLine, ...kept.filter((entry) => !entry.pause || entry.speed).map((entry) => entry.raw)].filter((part) => part !== null))];
+          const hintsOf = (hints) => ({ ...(hints.emotion === null ? {} : { emotion: hints.emotion }), ...(hints.style === null ? {} : { style: hints.style }) });
           lines.push({
             index: lines.length,
             source: sourceIndex,
             chapter: chapterOffset + chapterIndex,
             span: spanIndex,
+            row: hintLine, // 物理行：台本里的哪一行（换行、换声音就是新的一行）
             voice: span.voice_id,
             text: piece.text,
             labels,
-            hints: { ...(piece.hints.emotion === null ? {} : { emotion: piece.hints.emotion }), ...(piece.hints.style === null ? {} : { style: piece.hints.style }) },
+            hints: hintsOf(piece.hints),
+            hintsBase: hintsOf(piece.hintsBase),
             directions: piece.directions,
             governing,
+            governingBase,
             instructions: source.instructions,
             speed: speed ?? null,
             pauseBeforeMs: piece.pauseBeforeMs + pendingBefore, // 一开头单独成段的停顿，算在第一句前面
@@ -323,10 +401,6 @@ function buildLines(sources, defaults) {
             ...(last && span.join !== undefined ? { join: span.join } : {}),
           });
           pendingBefore = 0;
-          if (emotionBack !== undefined) {
-            emotionOnLine = emotionBack;
-            emotionBack = undefined;
-          }
         });
       });
     });
@@ -385,10 +459,14 @@ function partsOf(text, max) {
 
 // ---------------------------------------------------------------- 短句并段（第 5b 步）
 
+/** 一段要传给模型的说明和名字（{ instructions, cues }）的比较用的写法：两段这个一样，发出去的这两样就一样。styles 的 oneShot（写在文字里的声音）不在里面，它是第 5c 步的事。 */
+const requestStyle = ({ instructions, cues }) => JSON.stringify({ instructions, cues });
+
 /** 能不能把 before 和后面的 after 并成一段（规则见文件头第 5b 步）。说明（instructions）和名字（cues）都要一样：并起来的段只有一份。 */
 function canJoin(before, beforeStyle, after, afterStyle, max) {
   if (before.join !== undefined || before.pauseAfterMs !== 0 || after.pauseBeforeMs !== 0) return false;
-  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || before.pack !== after.pack || JSON.stringify(beforeStyle) !== JSON.stringify(afterStyle)) return false;
+  if (before.speed !== after.speed || before.pick.segmentId !== after.pick.segmentId || before.pack !== after.pack || requestStyle(beforeStyle) !== requestStyle(afterStyle)) return false;
+  if (afterStyle.oneShot !== null) return false; // 后一段开头写在文字里的声音：并在这里只是把两段话接起来，它没处写
   return max === null || count(joinSpoken(before.spoken, after.spoken)) <= max;
 }
 
@@ -444,9 +522,12 @@ const checkedBeforeCall = (error) => error.code === 'capability_input_invalid';
 
 // ---------------------------------------------------------------- 传给模型的说明
 
-/** 这一句的说明：调用方给的，加上管着这一句的舞台提示（line.governing，buildLines 里算好的，规则见文件头第 7 步）。原样用作者的词。 */
-function noteOf(line) {
-  const parts = [line.instructions, ...line.governing].filter((part) => typeof part === 'string' && part.trim() !== '');
+/**
+ * 这一句的说明：调用方给的，加上设定里的说明，再加上管着这一句的舞台提示（line.governing，buildLines 里算好的，规则见文件头第 7 步），三样都交给模型。原样用作者的词。
+ * inText（这个包的这一句，一下子的声音写在文字里，见 cueInTextOf）：用 line.governingBase，不带一下子的声音和纯停顿的提示（它们写在文字里，不是请求的说明）。
+ */
+function noteOf(line, setup, inText) {
+  const parts = [line.instructions, setup?.instructions, ...(inText ? line.governingBase : line.governing)].filter((part) => typeof part === 'string' && part.trim() !== '');
   return parts.length === 0 ? null : [...new Set(parts)].join('；');
 }
 
@@ -457,28 +538,38 @@ const CUE_EMOTIONS = new Set(Object.keys(cues.emotion));
 const CUE_STYLES = new Set(Object.keys(cues.style));
 const ONE_SHOT_STYLES = new Set(cues.oneShot.style);
 
-/** 调用方给这一项的标签（labels.emotion、labels.style）：规范化以后是词表里的名字才用，认不出的不用（不猜）。 */
-function labelCue(kind, value) {
-  if (typeof value !== 'string' || value.trim() === '') return null;
-  const name = canonicalLabel(kind, value);
-  return (kind === 'emotion' ? CUE_EMOTIONS : CUE_STYLES).has(name) ? name : null;
+/**
+ * 这一句自己的名字（cues，见 vocab/capability-signatures.md「怎么念」）：读的就是挑参考的结果 pick.wanted，不再自己按次序取一遍
+ * （每一项从哪一层来，次序的正本在 lib/reference-pick.mjs 的文件头；调用方给的、台本的、设定的、判断补上的，在 pick 里已经取好）。
+ * 这里只做两件事：只留词表里的名字（挑参考的标签不一定在词表里；不在的那一项是空的，不退到别的层，和挑参考用的一致），和一下子的声音的范围。
+ * 语速和停顿不在这里：它们是 unit.speed、unit.pauseBeforeMs、unit.pauseAfterMs，由拼接的人做一次（见文件头「语速和停顿」）。
+ * part 是第几段（从 1 数）：一下子的声音（oneShot）只在第一段带；情绪、风格（不是一下子的）每段都带。配音指引不进来：这里只看这一句。
+ * inText（一下子的声音写在文字里，见 cueInTextOf）：一下子的声音一律不进名字，只有情绪和持续的风格；一下子的声音是 oneShotOf 的事。
+ * @param {object} pick 这一句挑参考的结果（pickReferences 的 picks[i]，判断补上的项已经在里面）
+ * @param {number} part
+ * @param {boolean} inText
+ * @returns {{ emotion: string|null, style: string|null }}
+ */
+function cuesOf(pick, part, inText) {
+  const emotion = CUE_EMOTIONS.has(pick.wanted.emotion) ? pick.wanted.emotion : null;
+  const style = CUE_STYLES.has(pick.wanted.style) ? pick.wanted.style : null;
+  return { emotion, style: style !== null && ONE_SHOT_STYLES.has(style) && (inText || part > 1) ? null : style };
 }
 
 /**
- * 这一句自己的名字（cues，见 vocab/capability-signatures.md「怎么念」）。
- * 情绪、风格：调用方在 labels 里给的（规范化以后认得出的）先用，和挑参考一样；没给的取读这一句的舞台提示时的状态（line.hints，和 readDirections 的读法一样）。
- * 语速和停顿不在这里：它们是 unit.speed、unit.pauseBeforeMs、unit.pauseAfterMs，由拼接的人做一次（见文件头「语速和停顿」）。
- * part 是第几段（从 1 数）：一下子的声音（oneShot）只在第一段带；情绪、风格（不是一下子的）每段都带。配音指引不进来：这里只看这一句。
- * @param {object} line 台本的一句（buildLines 的结果，带 hints、labels）
- * @param {number} part
- * @returns {{ emotion: string|null, style: string|null }}
+ * 环境声明了 cue-in-text，而且这个包没有配音脚本：一下子的声音（笑、叹气）写在文字里它所在的位置（<cue style="名字"/>，第 5c 步），不进说明，也不进名字。
+ * 有脚本的包不行：脚本的 text 钩子要改要说的话，发出去的是写好的 <speak>，钩子的结果会丢；那样的包照没声明时的做法（笑在名字里）。
  */
-function cuesOf(line, part) {
-  const emotion = labelCue('emotion', line.labels.emotion) ?? line.hints.emotion ?? null;
-  let style = labelCue('style', line.labels.style) ?? line.hints.style ?? null;
-  if (part === 1) return { emotion, style };
-  if (style !== null && ONE_SHOT_STYLES.has(style)) style = null;
-  return { emotion, style };
+const cueInTextOf = (env, scripts) => hasCapability(env, 'cue-in-text') && scripts.length === 0;
+
+/**
+ * 写在文字里的一下子的声音（规范名字，没有就是 null），在这一句的开头：这一句的名字里要的一下子的声音（调用方、设定、判断给的，pick.wanted.style），
+ * 没有就是舞台提示里紧跟着这一句的笑、叹气（line.hints.style；挑参考读的是不带它的 line.hintsBase）。句中的笑是另一段的开头，由那一段带。
+ */
+function oneShotOf(line, pick) {
+  const wanted = CUE_STYLES.has(pick.wanted.style) && ONE_SHOT_STYLES.has(pick.wanted.style) ? pick.wanted.style : null;
+  const hinted = line.hints.style ?? null;
+  return wanted ?? (hinted !== null && ONE_SHOT_STYLES.has(hinted) ? hinted : null);
 }
 
 // ---------------------------------------------------------------- 规划
@@ -486,50 +577,75 @@ function cuesOf(line, part) {
 const emptyEnhancers = (offers) => ({ offered: offers.map(summarizeOffer), used: [], notUsed: [], statement: null });
 
 /**
- * 5c：段落内部的停顿（不超过 2.5 秒）并进一次请求，写在文字里。只在环境声明了 pause-in-text 时做（那样它才收 <speak> 的文字）。
- * 停顿怎么写（<break>、靠标点、整段包 <speak>、转义）是 lib/pause-in-request.mjs 的；这里只决定哪两段能并：
- *   同一章；前一段不是空行（join）接着的；同一个参考段；同一个语速；说明和名字一样（一个请求只有一套，放在前面）；
- *   名字里没有一下子的声音（笑、叹气）：标签要写在各自的字前面，一个请求放不下两套，而且笑、叹气标签在 <speak> 里能不能出声没有测出明确的结论，保守不并。
+ * 5c：一行一个请求。把相邻的段并成一次请求，写在文字里：
+ *   环境声明了 pause-in-text：段落内部的停顿写成 <break>，一个请求里写下的加起来不超过 maxPauseMs（options.maxPauseInTextMs，环境声明的；没给就不限），超了就在那一处切开（那样它才收 <speak> 的文字）；
+ *   环境声明了 cue-in-text：一下子的声音（笑、叹气）写成 <cue style="名字"/>，在它在台词里的位置（一行的开头就在请求的开头，一行中间的在缝上，这个缝的停顿可以是 0），不进请求的说明，也不进名字；一下子的声音所在的段也能并。
+ * 停顿怎么写（<break>、<cue/>、靠标点、整段包 <speak>、转义）是 lib/pause-in-request.mjs 的；这里只决定哪两段能并：
+ *   同一章；前一段不是空行（join）接着的；同一个参考段；同一个语速；说明和名字一样（一个请求只有一套，放在前面）；包里没有配音脚本。
+ *   「说明和名字一样」：没声明 cue-in-text 的环境，名字里有一下子的声音（笑、叹气）的段不并（标签要写在各自的字前面，一个请求放不下两套），说明、名字逐字比；
+ *   声明了的（这个包没有脚本，见 cueInTextOf），一下子的声音和纯停顿的提示不在说明和名字里（它们写在文字里，不改变前后的话），所以比的就是说明和名字：情绪、持续的风格、说明；提示里既有情绪又有一下子的声音的（（生气笑）），情绪算（去掉的只有笑）：前一段不是这个情绪就在这里切开，请求的名字带着生气，笑写在位置上，这个提示的原文（作者的词「生气笑」）不进说明；
+ *   带一下子的声音的缝只在同一行里并，换行不并（零停顿的缝不能跨行；规则在 lib/pause-in-request.mjs，items 的 row、endRow）。
+ *   一行只有这几处切：换了参考段、换了语速、换了说明、换行，以及章节、续接、有脚本；停顿和一下子的声音都不是切点。
  * 包里登记了配音脚本的不并：text 钩子要看到每一句的原话（几个包时，只看这一句所在的包有没有脚本）。
- * 并起来的段：unit.spoken 是原话的词（不带标记），unit.ssml 是发出去的文字（有 <break> 才有）；unit.joined 写明并了哪几句；停顿在它的两头
- * （unit.pauseBeforeMs、unit.pauseAfterMs），中间的已经在文字里，拼接的人不再插静音。
- * @returns {{ units: object[], styles: object[], joins: number }} joins 是并了几处（一句并进前一句算一处）
+ * 并起来的段：unit.spoken 是原话的词（不带标记），unit.ssml 是发出去的文字（有 <break>、<cue/> 才有）；unit.joined 写明并了哪几句；停顿在它的两头
+ * （unit.pauseBeforeMs、unit.pauseAfterMs），中间的已经在文字里，拼接的人不再插静音；名字（cues）、说明是第一段的；
+ * unit.pick 是第一段的，但 pick.directions 列着每个成员的舞台提示（pickOf 取一句台词的挑参考结果），试运行看得出笑去了哪里。
+ * @returns {{ units: object[], styles: object[], joins: { pauses: number, cues: number } }} joins.pauses 是并了几处有停顿的缝，joins.cues 是写了几处 <cue/>
  */
-function pausesInRequest(env, units, styles, { max, hasScripts }) {
-  if (!hasCapability(env, 'pause-in-text') || units.every((unit) => hasScripts(unit))) return { units, styles, joins: 0 };
-  const oneShot = (at) => styles[at].cues !== null && ONE_SHOT_STYLES.has(styles[at].cues.style);
-  const sameStyle = (a, b) => JSON.stringify(styles[a]) === JSON.stringify(styles[b]);
-  // 一个缝的停顿：前一段的后面，加上后一段的前面（照加，没有上限）
-  const items = units.map((unit, at) => ({ text: unit.spoken, pause: at + 1 < units.length ? unit.pauseAfterMs + units[at + 1].pauseBeforeMs : unit.pauseAfterMs, inline: true, at }));
+function joinIntoRequests(env, units, styles, { max, maxPauseMs, hasScripts, lines, pickOf }) {
+  const pauseOn = hasCapability(env, 'pause-in-text');
+  const cueOn = hasCapability(env, 'cue-in-text');
+  if ((!pauseOn && !cueOn) || units.every((unit) => hasScripts(unit))) return { units, styles, joins: { pauses: 0, cues: 0 } };
+  // 名字里有一下子的声音的段（没声明 cue-in-text，或者这个包有脚本）：标签要写在各自的字前面，一个请求放不下两套，不并
+  const soundInCues = (at) => styles[at].cues !== null && ONE_SHOT_STYLES.has(styles[at].cues.style);
+  // 一个段的头、尾在台本的哪一行（并过短句的段，尾是它最后一个成员）
+  const firstRow = (unit) => lines[unit.line].row;
+  const lastRow = (unit) => lines[unit.joined === undefined ? unit.line : unit.joined[unit.joined.length - 1].line].row;
+  // 一个缝的停顿：前一段的后面，加上后一段的前面（照加；上限是 maxPauseMs，在 requestsOf 里）
+  const items = units.map((unit, at) => ({
+    text: unit.spoken,
+    pause: at + 1 < units.length ? unit.pauseAfterMs + units[at + 1].pauseBeforeMs : unit.pauseAfterMs,
+    inline: true,
+    at,
+    row: firstRow(unit),
+    endRow: lastRow(unit),
+    ...(styles[at].oneShot === null ? {} : { cue: styles[at].oneShot }),
+  }));
   const requests = requestsOf(items, {
     max,
     measure: count,
+    maxPauseMs: pauseOn ? maxPauseMs : 0,
     canJoin: (prev, next) => {
       const a = units[prev.at];
       const b = units[next.at];
       return a.status === 'planned' && b.status === 'planned' && a.join === undefined && a.chapter === b.chapter && a.pack === b.pack
-        && a.pick.segmentId === b.pick.segmentId && a.speed === b.speed && sameStyle(prev.at, next.at)
-        && !oneShot(prev.at) && !oneShot(next.at) && !hasScripts(a) && !hasScripts(b);
+        && a.pick.segmentId === b.pick.segmentId && a.speed === b.speed && !hasScripts(a) && !hasScripts(b)
+        && requestStyle(styles[prev.at]) === requestStyle(styles[next.at]) && !soundInCues(prev.at) && !soundInCues(next.at);
     },
   });
-  let joins = 0;
+  const joins = { pauses: 0, cues: 0 };
   const out = [];
   const outStyles = [];
   for (const request of requests) {
     const members = units.slice(request.first, request.last + 1);
     outStyles.push(styles[request.first]);
-    if (members.length === 1) { out.push(members[0]); continue; }
-    joins += members.length - 1;
+    joins.pauses += request.pauseCount;
+    joins.cues += request.cueCount;
+    if (members.length === 1) { out.push(request.ssml ? { ...members[0], ssml: request.text } : members[0]); continue; }
     const head = members[0];
     const last = members[members.length - 1];
     const text = members.reduce((acc, member, k) => (k === 0 || member.line === members[k - 1].line ? acc : joinSpoken(acc, member.text)), head.text);
+    const joined = members.flatMap((member) => member.joined ?? [{ line: member.line, part: member.part }]);
+    // 每个成员的舞台提示都列在 pick.directions 里（一句话的几段共用一份 pick，每句只取一次）
+    const directions = [...new Set(joined.map((member) => member.line))].flatMap((line) => pickOf(line).directions ?? []);
     out.push({
       ...head,
       text,
       spoken: request.words,
       ...(request.ssml ? { ssml: request.text } : {}),
+      pick: { ...head.pick, directions },
       pauseAfterMs: last.pauseAfterMs,
-      joined: members.flatMap((member) => member.joined ?? [{ line: member.line, part: member.part }]),
+      joined,
       ...(last.join === undefined ? {} : { join: last.join }),
     });
   }
@@ -589,9 +705,16 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
   const phonemeOn = hasCapability(env, 'phoneme-in-text');
   // 每个包各自的：挑参考（text-generation 的判断也在这里；计费的那一次在 askJudge 时才调）、读音词表、配音指引、增强件、脚本
   const perPack = new Map();
+  // 每个包用哪一套设定：花钱之前就定下来，名字对不上的在这里报（任何一次计费的调用之前）
+  const setupNames = setupNamesOf(packs, settings.setup);
+  const chosen = new Map(packs.map((pack) => [pack, chooseSetup(pack, setupNames.get(pack))]));
   for (const pack of packs) {
     const own = lines.filter((line) => owners[line.index] === pack);
-    const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: line.hints, directions: line.directions })), { ...(askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY), ...(settings.maxPromptTokens === null ? {} : { maxPromptTokens: settings.maxPromptTokens }), lineNumbers: own.map((line) => line.index) });
+    const setup = chosen.get(pack)?.setup ?? null;
+    const scripts = pack.scripts(FEATURE);
+    const inText = cueInTextOf(env, scripts);
+    // 一下子的声音写在文字里时，挑参考读的是不带它的提示（line.hintsBase）：参考按持续的情绪、风格挑，笑不改变这一行用哪一段参考
+    const { picks: picked, judge } = await pickReferences(env, pack.manifest, own.map((line) => ({ text: line.text, labels: line.labels, hints: inText ? line.hintsBase : line.hints, directions: line.directions })), { ...(askJudge ? REMOVE_UNRECOGNIZED : PLAN_ONLY), ...(settings.maxPromptTokens === null ? {} : { maxPromptTokens: settings.maxPromptTokens }), ...(setup === null ? {} : { setup: { labels: setup.labels } }), lineNumbers: own.map((line) => line.index) });
     const picks = new Map(own.map((line, k) => [line.index, { ...picked[k], index: line.index }]));
     // judge 里提到哪一句台词，用的都是台词自己的编号（lines[i].index）：几个包时，每个包只拿到自己的那几句，编号靠 lineNumbers 带过去（lib/reference-pick.mjs）
     const lexicon = await pack.lexicon();
@@ -601,7 +724,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     // 等适配器在拼好的串里取，演法之后的说明会被切掉，或被并进演法。
     const sentGuidance = guidanceForModel(rawGuidance) ?? rawGuidance;
     // 不截：超长的照样交给适配器，平台超了报错，那个错照旧往上抛（见文件头「说明」）
-    perPack.set(pack, { own, judge, picks, rules, unapplied, phonemes, usedTerms: new Set(), rawGuidance, guidance: sentGuidance, offers: pack.enhancers('voice-cloning'), scripts: pack.scripts(FEATURE) });
+    perPack.set(pack, { own, judge, picks, setup, rules, unapplied, phonemes, usedTerms: new Set(), rawGuidance, guidance: sentGuidance, offers: pack.enhancers('voice-cloning'), scripts, inText });
   }
 
   const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
@@ -617,17 +740,22 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       const seen = applied.get(key);
       applied.set(key, seen === undefined ? { ...replacement } : { ...seen, count: seen.count + replacement.count });
     }
-    const note = noteOf(line);
+    const note = noteOf(line, mine.setup, mine.inText);
     const instruction = [mine.guidance, note].filter((part) => part !== null && part !== '');
     const instructions = instruction.length === 0 ? null : instruction.join('\n\n');
+    const oneShot = mine.inText ? oneShotOf(line, mine.picks.get(line.index)) : null; // 这一句开头写在文字里的声音（第 5c 步）
     const parts = partsOf(replaced.text, settings.maxChars);
     parts.forEach((spoken, partIndex) => {
       const first = partIndex === 0;
       const last = partIndex === parts.length - 1;
-      const partCues = cuesOf(line, partIndex + 1);
+      const partCues = cuesOf(mine.picks.get(line.index), partIndex + 1, mine.inText);
       const cueNames = partCues.emotion !== null || partCues.style !== null;
       if (styled && mine.guidance) carried.add(owner);
-      styles.push({ instructions: styled ? instructions : null, cues: cued && cueNames ? partCues : null });
+      styles.push({
+        instructions: styled ? instructions : null,
+        cues: cued && cueNames ? partCues : null,
+        oneShot: first ? oneShot : null,
+      });
       units.push({
         index: units.length,
         line: line.index,
@@ -641,7 +769,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
         pick: mine.picks.get(line.index),
         instructions: !styled ? { sent: false, reason: 'style_instruction_missing' } : instructions === null ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...(note === null ? {} : { line: note }) },
         cues: !cued ? { sent: false, reason: 'style_cues_missing' } : !cueNames ? { sent: false, reason: 'nothing_to_send' } : { sent: true, ...partCues },
-        speed: line.speed,
+        speed: line.speed ?? mine.setup?.speed ?? null, // 台本的标记和提示先用，没有就用设定的
         pauseBeforeMs: first ? line.pauseBeforeMs : 0,
         pauseAfterMs: last ? line.pauseAfterMs : 0,
         ...(last && line.join !== undefined ? { join: line.join } : {}),
@@ -661,12 +789,14 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     const joined = units.filter((unit) => unit.joined !== undefined).length;
     if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个说明、同一个语速，中间没有停顿）`, details: { min: settings.minChars, units: joined } });
   }
-  // 5c：段落内部的停顿并进一次请求（只在环境声明了 pause-in-text 时，见 pausesInRequest）
+  // 5c：一行一个请求：段落内部的停顿、一下子的声音并进一次请求（只在环境声明了 pause-in-text、cue-in-text 时，见 joinIntoRequests）
   const hasScripts = (unit) => perPack.get(ownerOfUnit(packs, unit)).scripts.length > 0;
-  const paused = pausesInRequest(env, units, styles, { max: settings.maxChars ?? Number.POSITIVE_INFINITY, hasScripts });
+  const pickOf = (lineIndex) => perPack.get(owners[lineIndex]).picks.get(lineIndex);
+  const paused = joinIntoRequests(env, units, styles, { max: settings.maxChars ?? Number.POSITIVE_INFINITY, maxPauseMs: settings.maxPauseInTextMs, hasScripts, lines, pickOf });
   units = paused.units;
   styles = paused.styles;
-  if (paused.joins > 0) notes.push({ code: 'pauses_in_request', message: `有 ${paused.joins} 处停顿并进了一次请求（写在文字里：<speak> 和 <break>，或者标点），这几处的停顿不再交给拼接的人`, details: { joins: paused.joins } });
+  if (paused.joins.pauses > 0) notes.push({ code: 'pauses_in_request', message: `有 ${paused.joins.pauses} 处停顿并进了一次请求（写在文字里：<speak> 和 <break>，或者标点），这几处的停顿不再交给拼接的人`, details: { joins: paused.joins.pauses } });
+  if (paused.joins.cues > 0) notes.push({ code: 'cues_in_request', message: `有 ${paused.joins.cues} 处一下子的声音（笑、叹气）写在了请求的文字里它所在的位置（<speak> 里的 <cue/>，适配器译成模型的标签）：不进请求的说明和名字，一行也不在那里切开`, details: { joins: paused.joins.cues } });
   // 续接的段（unit.join）照旧两次请求，以「，、；：」结尾的，两段之间停 0.5 秒（这一处的 pauseAfterMs 定成 500；不以标点结尾的是 0）
   for (const unit of units) if (unit.join === 'continue' && unit.pauseAfterMs === 0 && endsMidSentence(unit.spoken)) unit.pauseAfterMs = JOIN_PUNCTUATION_PAUSE_MS;
   // 拼音音素：每一句记下用上了哪几个（unit.phonemes，只在用上时才有），用上的词记在它的包里（从 unapplied 去掉）。发送时在 runUnit 里换成标签
@@ -679,7 +809,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
       for (const { term } of replacements) owner.usedTerms.add(term);
     }
   }
-  if (units.some((unit) => unit.speed !== null)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着台本要求的语速（0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
+  if (units.some((unit) => unit.speed !== null && unit.speed !== 1)) notes.push({ code: 'speed_not_applied', message: '合成能力不收语速：unit.speed 记着要求的语速（台本的标记和提示，没有就用设定的 speed；0.85 放慢、1.15 加快），拼接时按它处理', details: {} });
   // 包里没登记功能的脚本：每个包各自说（几个包时点名是哪个包）
   for (const pack of packs) {
     const unregistered = scriptsWithoutFeature(pack.scripts());
@@ -719,7 +849,7 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     });
   }
   const plan = {
-    pack: packInfo(packs[0]),
+    pack: packInfo(packs[0], chosen.get(packs[0])),
     lines: lines.map(({ index, source, chapter, span, voice, text, labels }) => ({ index, source, chapter, span, voice, text, labels })),
     units,
     judge: packs.length === 1 ? perPack.get(packs[0]).judge : combineJudges(packs.map((pack) => perPack.get(pack).judge)),
@@ -728,11 +858,11 @@ async function buildPlan(env, packInput, script, options, { askJudge }) {
     enhancers: emptyEnhancers(mergedOffers(packs.map((pack) => perPack.get(pack).offers))),
     scripts: packs.flatMap((pack) => perPack.get(pack).scripts.map((entry) => ({ entry: entry.entry, runtime: entry.runtime, hooks: [...HOOKS], ...(many ? { pack: pack.manifest.id } : {}) }))),
     missingRuntimes: inUse.flatMap((pack) => missingScriptRuntimes(envFor(env, settings, pack), perPack.get(pack).scripts, FEATURE).map((item) => (many ? { ...item, pack: pack.manifest.id } : item))),
-    // phoneme-in-text 只在环境声明了它的时候才写进来：没有声明的环境，计划和 dub.json 和没有这一项时一字不差
-    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), ...(phonemeOn ? { 'phoneme-in-text': true } : {}), 'text-generation': hasCapability(env, 'text-generation') },
+    // cue-in-text、phoneme-in-text 只在环境声明了它的时候才写进来：没有声明的环境，计划和 dub.json 和没有这一项时一字不差
+    capabilities: { 'voice-cloning': hasCapability(env, 'voice-cloning'), 'style-instruction': styled, 'style-cues': cued, 'pause-in-text': hasCapability(env, 'pause-in-text'), ...(hasCapability(env, 'cue-in-text') ? { 'cue-in-text': true } : {}), ...(phonemeOn ? { 'phoneme-in-text': true } : {}), 'text-generation': hasCapability(env, 'text-generation') },
     notes,
     verification: many ? packs.flatMap((pack) => pack.manifest.verification ?? []) : (packs[0].manifest.verification ?? []),
-    ...(many ? { packs: packs.map(packInfo) } : {}),
+    ...(many ? { packs: packs.map((pack) => packInfo(pack, chosen.get(pack))) } : {}),
   };
   return { plan, styles, unmergedCount, phonemesOf: new Map(packs.map((pack) => [pack, perPack.get(pack).phonemes])) };
 }
@@ -891,8 +1021,20 @@ function packsInUse(packs, units) {
   return packs.filter((pack) => units.some((unit) => ownerOfUnit(packs, unit) === pack));
 }
 
-/** 一个包的身份（plan.pack，几个包时还有 plan.packs 里的每一项）。 */
-const packInfo = (pack) => ({ id: pack.manifest.id, name: pack.manifest.name, version: pack.manifest.version });
+/**
+ * 一个包的身份（plan.pack，几个包时还有 plan.packs 里的每一项）。包里有设定时多两样：setups（包里有哪几套，名字）；这一次用了哪一套时再加 setup: { name, by }，
+ * by 是 'option'（options.setup 点的名）或 'default'（包里带 default 的那一套）。包里没有设定，就和以前一字不差。
+ */
+function packInfo(pack, chosen) {
+  const names = (pack.manifest.setups ?? []).map((setup) => setup.name);
+  return {
+    id: pack.manifest.id,
+    name: pack.manifest.name,
+    version: pack.manifest.version,
+    ...(names.length === 0 ? {} : { setups: names }),
+    ...(chosen === null || chosen === undefined ? {} : { setup: { name: chosen.setup.name, by: chosen.by } }),
+  };
+}
 
 /** 去掉按 JSON 完全一样的项，保留第一次出现的次序。 */
 function uniqueJson(list) {

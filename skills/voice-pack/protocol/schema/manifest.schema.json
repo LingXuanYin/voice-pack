@@ -102,6 +102,12 @@
           "maxItems": 50,
           "items": { "type": "string", "minLength": 1, "maxLength": 500 }
         },
+        "setups": {
+          "description": "几套设定：把配音时「怎么说」的固定值写进包里（情绪、风格、能量、语言、语速、一段给模型的说明），例如一套叫「平静播报」、一套叫「生气」。每套有名字，同一个包里不能重名（语义规则，见 FORMAT.md「语义规则」）；最多一套带 default: true（语义规则），配音时不点名就用它。换设定的值要发新版本（包一经发布就不变）；配音时用哪一套是配音的参数，不在清单里。带 setups 的包对基础部分的最低要求（requires.baseMin）怎么写，见 FORMAT.md 4.4 的 setups 一行。",
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/setup" }
+        },
         "verification": {
           "description": "验证记录：在哪个环境、用哪个模型、哪天测的、还原度多少，以及量这个还原度时用的评测模型。",
           "type": "array",
@@ -212,10 +218,43 @@
           "properties": {
             "emotion": { "$ref": "#/$defs/label" },
             "style": { "$ref": "#/$defs/label" },
-            "language": { "type": "string", "maxLength": 35, "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
-            "energy": { "enum": ["low", "medium", "high"] }
+            "language": { "$ref": "#/$defs/languageTag" },
+            "energy": { "$ref": "#/$defs/energyLevel" }
           }
         }
+      }
+    },
+
+    "languageTag": {
+      "description": "语言标签：形如 en、zh-CN。参考段的 tags.language 和设定的 labels.language 写法一样。",
+      "type": "string",
+      "maxLength": 35,
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+
+    "energyLevel": {
+      "description": "能量：low、medium、high 三档。参考段的 tags.energy 和设定的 labels.energy 写法一样。",
+      "enum": ["low", "medium", "high"]
+    },
+
+    "setup": {
+      "description": "一套设定：name 是名字；labels 是固定的标签，写法和参考段的 tags 一样（语言、情绪、风格、能量，都可选）；speed 是语速，正数，意思和台本里的语速一样（1 是不变，0.85 放慢，1.15 加快）；instructions 是一段给模型的说明，例如口音、方言；default 为 true 的那一套是不点名时用的。",
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "labels": {
+          "type": "object",
+          "properties": {
+            "emotion": { "$ref": "#/$defs/label" },
+            "style": { "$ref": "#/$defs/label" },
+            "language": { "$ref": "#/$defs/languageTag" },
+            "energy": { "$ref": "#/$defs/energyLevel" }
+          }
+        },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "instructions": { "$ref": "#/$defs/longText" },
+        "default": { "type": "boolean" }
       }
     },
 

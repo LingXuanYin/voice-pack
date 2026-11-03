@@ -17,9 +17,9 @@
 | `dub.mjs` | `planDub` 只规划（每句挑哪段参考、读音词表换了什么、停顿和语速的记录；不花钱），`dubScript` 规划再逐句合成：一段服务暂时出错、或者文字被拒（`details.textRejected`）记成 failed，别的段照做；调用之前查出来的文字错（`capability_input_invalid`）不计数；服务商拒的连着 3 句、还没有一句成功的停下来（`dub_text_rejected`）；别的错停下来 |
 | `mix.mjs` | `planMix(report)` 检查 dub 的报告（有一句没做成、或者 dub 中途停下，就不出成品）；`mixParts(env, parts)` 把各句接成一个 WAV：句前句后的停顿插成静音，换人处（相邻两句的包不同）先把两边的静音各削到 50 毫秒，统一成第一句的采样率和声道（纯 JS 重采样），有语速要求时用 ffmpeg 的 atempo 变速（没有就照原速接上，记一条）；非 WAV 的句子要 ffmpeg 解码。纯计算，不调能力，不花钱 |
 | `convert.mjs` | `convertAudio(env, pack, audio, options)`：变声和唱歌（`voice-conversion`、`singing-voice-conversion`）：把一段音频换成包的声音，内容、节奏、旋律不变 |
-| `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；没有任何标签的句子，环境有 `text-generation` 就让它判（收费的调用：适配器声明了一次请求的输入上限就按它分几次发，没声明一次发完；回答被截断的那一批对半分开再问；只规划的调用方传 `judge: false` 不调） |
+| `reference-pick.mjs` | `pickReferences(env, manifest, lines, options)`：按台词挑参考：每句话从参考集里挑语言、情绪、风格最匹配的一段；情绪、风格、能量没取全的句子，环境有 `text-generation` 就让它判，只补缺的项（哪些句子判、判什么，规则只在文件头写；收费的调用：适配器声明了一次请求的输入上限就按它分几次发，没声明一次发完；回答被截断的那一批对半分开再问；只规划的调用方传 `judge: false` 不调） |
 | `line-hints.mjs` | 从一句台词读出提示（纯计算）：`readDirections` 读舞台提示（（耳语）、*笑*……）和停顿，`detectLanguages` 按文字系统认语种，`canonicalLabel`、`primaryLanguage`、`normalizeLanguage` 整理情绪、风格和语言标签。词表是 `../vocab/cues.json` |
-| `pause-in-request.mjs` | 一段话里的停顿交给模型（纯计算）：`requestsOf` 把相邻的段并成几次请求（停顿 ≤ 2.5 秒、标点、`<speak>` 和 `<break>`），`renderRun`、`endsMidSentence`、`JOIN_PUNCTUATION_PAUSE_MS`。app 和配音（`dub.mjs` 第 5c 步）都用它 |
+| `pause-in-request.mjs` | 一段话里的停顿交给模型（纯计算）：`requestsOf` 把相邻的段并成几次请求（一个请求里的停顿加起来不超过环境声明的上限（不声明就不限）、一下子的声音的位置 `<cue/>`、标点、`<speak>` 和 `<break>`），`renderRun`、`endsMidSentence`、`JOIN_PUNCTUATION_PAUSE_MS`。app 和配音（`dub.mjs` 第 5c 步）都用它 |
 | `pronunciation-lexicon.mjs` | 读音词表（W3C 的 PLS）：`parseLexicon`、`lexiconRules`、`applyLexicon`：合成之前把台词里的词换成期望的读法；拼音音素（`x-pinyin`）由 `applyPhonemes` 在发送前换成 `<phoneme>` 标签（环境声明了 phoneme-in-text 才用）。解析器是自己写的，不引第三方依赖 |
 | `enhancers.mjs` | 增强件的使用情况（配音和变声共用）：核对能力返回的音频和它报的 `enhancers_used`，汇总这一次有没有用上增强件 |
 | `pack-script.mjs` | 包里的脚本：按清单登记的入口和运行时叫脚本、读它的回答（`runScript`），查缺哪个运行时（`missingScriptRuntimes`），列出没登记功能的脚本（`scriptsWithoutFeature`） |

@@ -35,7 +35,7 @@
 //   container_not_object      capabilities 或 runtimes 不是对象。details.key
 //   fetch_not_function        fetch 不是函数
 //   billing_invalid           billing 不是非空字符串
-//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数、maxPromptTokens 不是不小于 1 的整数。details.key
+//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数、maxPromptTokens 不是不小于 1 的整数、maxPauseInTextMs 不是不小于 1 的整数。details.key
 //   preview_card_invalid      previewCard 不是对象、里面有不认识的键、productName 或 links 里的链接不是非空字符串。details.key
 //   capability_unknown        能力名不在能力词表里（多半拼错了）。details.capability
 //   capability_not_function   能力的值不是函数。details.capability
@@ -95,8 +95,8 @@ import { isServiceError } from './capability-calls.mjs';
 
 /** 适配器的返回值里认的键。 */
 export const ADAPTER_KEYS = Object.freeze(['capabilities', 'runtimes', 'fetch', 'billing', 'limits', 'previewCard']);
-/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）、maxPromptTokens（text-generation 一次请求最多收多少输入，判情绪按它分批，见 lib/reference-pick.mjs）。 */
-export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptTokens']);
+/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）、maxPromptTokens（text-generation 一次请求最多收多少输入，判情绪按它分批，见 lib/reference-pick.mjs）、maxPauseInTextMs（声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒，见 lib/dub.mjs 第 5c 步）。 */
+export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptTokens', 'maxPauseInTextMs']);
 /** previewCard 里认的键，和 links 里认的键（形状同核心层 buildShareFile 的 card 选项）。 */
 export const PREVIEW_CARD_KEYS = Object.freeze(['productName', 'links']);
 export const PREVIEW_LINK_KEYS = Object.freeze(['open', 'make']);
@@ -118,6 +118,7 @@ const DESIGN_PROMPT = 'A calm adult woman with a warm, clear voice.';
 const MIN_MAX_CHARS = 10; // 同 lib/dub.mjs 的 maxChars
 const MIN_MIN_CHARS = 1; // 同 lib/dub.mjs 的 minChars：一个字也算下限
 const MIN_PROMPT_TOKENS = 1; // 同 lib/dub.mjs 的 maxPromptTokens
+const MIN_PAUSE_IN_TEXT_MS = 1; // 同 lib/dub.mjs 的 maxPauseInTextMs：一毫秒也算上限（平台的上下限由适配器按平台文档写，这里不替它加限制）
 /** VAD 给的区间末尾可以比录音长这么多秒（同 lib/long-recording.mjs）。 */
 const SPEECH_TOLERANCE_SECONDS = 0.05;
 /** mimeType（去掉参数、小写）对应 sniffAudio 认的格式。不在表里的，没法核对字节。 */
@@ -163,7 +164,7 @@ function shapeIssues(adapter) {
       for (const key of Object.keys(adapter.limits)) {
         if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits 里有不认识的键 ${JSON.stringify(key)}（只认 ${LIMIT_KEYS.join('、')}）`, { key }));
       }
-      const { maxChars, minChars, maxPromptTokens } = adapter.limits;
+      const { maxChars, minChars, maxPromptTokens, maxPauseInTextMs } = adapter.limits;
       if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxChars 要是不小于 ${MIN_MAX_CHARS} 的整数（一次合成最多多少个字），收到 ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
       }
@@ -172,6 +173,9 @@ function shapeIssues(adapter) {
       }
       if (maxPromptTokens !== undefined && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < MIN_PROMPT_TOKENS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxPromptTokens 要是不小于 ${MIN_PROMPT_TOKENS} 的整数（text-generation 一次请求最多收多少输入），收到 ${JSON.stringify(maxPromptTokens)}`, { key: 'maxPromptTokens' }));
+      }
+      if (maxPauseInTextMs !== undefined && (!Number.isInteger(maxPauseInTextMs) || maxPauseInTextMs < MIN_PAUSE_IN_TEXT_MS)) {
+        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInTextMs 要是不小于 ${MIN_PAUSE_IN_TEXT_MS} 的整数（声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒），收到 ${JSON.stringify(maxPauseInTextMs)}`, { key: 'maxPauseInTextMs' }));
       }
     }
   }

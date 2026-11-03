@@ -90,6 +90,7 @@ function stubFetch(externals) {
  * @param {string} [input.guidance] 配音指引（Markdown），放进生成的 SKILL.md 正文
  * @param {'zh' | 'en'} [input.textLanguage='zh'] 生成 SKILL.md 骨架用的语言（调用方按作者的语言给，例如 app 给作者做包时用的界面语言；规则见 skill-md.mjs 的 buildRoleSkillMd）。files 里带了 SKILL.md 就用不上，值错了照样抛 TypeError
  * @param {string[]} [input.sampleLines] 示例台词，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
+ * @param {object[]} [input.setups] 几套设定，原样写进清单的 setups（规则见 protocol/FORMAT.md 4.4 节和 4.5 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）。不替调用方改 requires.baseMin：带 setups 的包怎么写它，规则见 protocol/FORMAT.md 4.4，由调用方（lib/make-pack.mjs）定
  * @param {Map<string, Uint8Array>} input.protocolCore 协议核心的文件（含它的 manifest.json 和签名），放进 protocol/
  * @param {Map<string, Uint8Array>} [input.base] 基础部分的文件（含它的 manifest.json、签名和嵌着的 protocol/），放进 voice-pack/（这一版库写的协议版本里基础部分的目录名，names.mjs）；不给就是只有角色部分
  * @param {object} [input.limits] 解包上限
@@ -138,6 +139,8 @@ export async function packRolePart(input) {
     ...(input.direction ? { direction: input.direction } : {}),
     // 示例台词：不写、写空数组，清单里就没有这个字段；别的值（字符串、null、有 length 的对象……）原样交给清单检查去拒绝，不悄悄丢掉
     ...(input.sampleLines === undefined || (Array.isArray(input.sampleLines) && input.sampleLines.length === 0) ? {} : { sampleLines: input.sampleLines }),
+    // 几套设定：同示例台词，不写、写空数组，清单里就没有这个字段；别的值原样交给清单检查去拒绝
+    ...(input.setups === undefined || (Array.isArray(input.setups) && input.setups.length === 0) ? {} : { setups: input.setups }),
     ...(input.enhancers?.length ? { enhancers: input.enhancers } : {}),
     ...(input.scripts?.length ? { scripts: input.scripts } : {}),
     ...(input.verification?.length ? { verification: input.verification } : {}),

@@ -329,20 +329,24 @@ function withoutEmphasis(line, unrecognized) {
  * @param {string} text
  * @param {{ unrecognized?: 'keep'|'remove' }} [options]
  *   unrecognized 括号里不是整个都认得的内容怎么处理：'keep'（默认）留在要念的话里，不切段，不算舞台提示；'remove' 拿掉，只给明确拿到配音台本的调用方用
- * @param {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }|null} [carried]
+ * @param {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }|null} [carried]
  *   前一段在同一行里留下的状态（上一次调用的 carry）：第一行接着它读，情绪、风格、放慢或加快、还没挂上的提示都带过来。
  *   换行的、换声音的一段不传（null）：一行从头算。
  * @param {{ script?: string }} [where] script：这段台词所在的整份台本（没规范化的原文）。只用来说清报错的位置：舞台提示里的停顿装不下一份 WAV（pause_out_of_range）时，
  *   报错的 details 里有这个提示在台本里的行和列（tools/markup.mjs 的 placeOfMarker：第一次写它的地方）；不给就只有提示的原文，行和列是 null。
  * @returns {{
- *   pieces: { text: string, hints: { emotion: string|null, style: string|null }, directions: object[], speed: 'slow'|'fast'|null, line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
+ *   pieces: { text: string, hints: { emotion: string|null, style: string|null }, hintsBase: { emotion: string|null, style: string|null }, hintRaw: string|null, hintRawBase: string|null, directions: object[], speed: 'slow'|'fast'|null, line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
  *   directions: { raw: string, recognized: boolean, emotion: string|null, style: string|null, actions: string[], line: number }[],
  *   unattachedPauseMs: number,
  *   headPauseMs: number,
- *   carry: { emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }
+ *   carry: { emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }
  * }} unattachedPauseMs：整段台词里一句要念的话都没有（pieces 是空的）、只有停顿时，这些停顿一共多少毫秒，没处可挂；有要念的话时总是 0。
+ *   pieces[i].hintsBase：这一段不算一下子的声音（笑、叹气）时的情绪、风格：这一段用着一下子的声音时，是它出现以前管着的那一份（用掉以后回到的），别的段和 hints 一样。
+ *   例外：提示里既有情绪又有一下子的声音（（生气笑））时，情绪是这一段自己的，不回到它出现以前的：hintsBase 是 { emotion: 生气, style: null }（情绪不算一下子的声音，去掉的只有笑）。
+ *   环境声明了 cue-in-text 时，配音（lib/dub.mjs）用它挑参考（行首的笑不改变这一行用哪一段参考）、写说明和名字（一下子的声音不在里面，它写在文字里）。
+ *   pieces[i].hintRaw、hintRawBase：设定 hints、hintsBase 的那个提示的原文（作者的词；没有就是 null），配音写说明用（hintRawBase 对应 hintsBase：规则和 hintsBase 是同一个，只在这里写一遍；带一下子的声音的提示，原文不是说明：（生气笑）的 hintRawBase 是 null，情绪在 hintsBase 里，由名字（cues）带）。
  *   headPauseMs：第一行开头、前一段（carried 里的）后面的停顿，挂在前一段后面，不挂在这里的第一段前面（carried 有前一段时才可能有）。
- *   carry：最后一行读完时的状态，给同一行的下一段接着读；hasPiece 是同一行里前面有没有一段要念的话；back 是一下子的声音（笑、叹气）还没有被一段话用掉时（后面紧接着是停顿），用掉以后情绪、风格回到哪一份，没有等着用掉的就是 null。
+ *   carry：最后一行读完时的状态，给同一行的下一段接着读；hasPiece 是同一行里前面有没有一段要念的话；back 是一下子的声音（笑、叹气）还没有被一段话用掉时（后面紧接着是停顿），用掉以后情绪、风格回到哪一份，没有等着用掉的就是 null；baseOwn 是等着用掉的那个提示里既有情绪又有一下子的声音时，这一段不算一下子的声音时的情绪和风格（hintsBase 用它，不用 back），不是这种就是 null。
  */
 export function readDirections(text, options, carried = null, where = {}) {
   try {
@@ -368,7 +372,7 @@ function readDirectionsOf(text, options, carried) {
   const directions = [];
   let waiting = 0; // 前面还没有一句、等着挂到后一句前面的停顿：一行里只有停顿，又没有前一句
   let headPauseMs = 0; // 第一行开头的停顿，挂在 carried 里的前一段后面
-  /** @type {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }|null} */
+  /** @type {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }|null} */
   let carry = null;
   const lines = text.split(LINE_BREAK_RE);
   lines.forEach((original, lineNumber) => {
@@ -376,7 +380,10 @@ function readDirectionsOf(text, options, carried) {
     // 第一行接着前一段说的同一行（carried）；其余各行是新的一行，从头算
     const before = lineNumber === 0 && carried !== null ? carried : null;
     let state = { emotion: before?.emotion ?? null, style: before?.style ?? null };
+    let raw = before?.raw ?? null; // 设定 state 的那个提示的原文（作者的词）
+    let backRaw = before?.backRaw ?? null; // back 对应的原文
     let back = before?.back ?? null; // 一下子的声音（笑、叹气）出现了、还没有被一段话用掉：用掉以后 state 回到这一份（它出现以前管着的情绪和风格）
+    let baseOwn = before?.baseOwn ?? null; // 那个提示里既有情绪又有一下子的声音（（生气笑））：这一段不算笑时，情绪是它自己的（hintsBase 用它，不用 back）
     let speed = before?.speed ?? null;
     let pendingPause = 0;
     let gap = before !== null ? [...before.gap] : []; // 这一段前面、同一行里还没挂到前一段上的提示（前一段之后、这一段之前写的）
@@ -385,30 +392,38 @@ function readDirectionsOf(text, options, carried) {
     const push = (chunk) => {
       const spoken = chunk.trim();
       if (spoken === '') return;
-      pieces.push({ text: spoken, hints: { ...state }, directions: gap, speed, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
+      pieces.push({ text: spoken, hints: { ...state }, hintsBase: { ...(baseOwn ?? back ?? state) }, hintRaw: raw, hintRawBase: baseOwn !== null ? null : back !== null ? backRaw : raw, directions: gap, speed, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
       gap = [];
       pendingPause = 0;
       waiting = 0;
       hasPiece = true;
       if (back !== null) { // 一下子的声音只管紧跟着它的这一段：这一段用掉了它，后面的段回到它出现以前管着的
         state = back;
+        raw = backRaw;
         back = null;
+        backRaw = null;
+        baseOwn = null;
       }
     };
     for (const m of line.matchAll(DIRECTION_RE)) {
-      const raw = (m[1] ?? m[2] ?? m[3]).trim();
-      if (raw === '') continue; // 括号里只有空白：不是提示，留在台词里
-      const { meaning, whole, durations } = readCue(raw, m[2] === undefined, m[0]); // 结构规则只管括号，不管 *…*（m[2]）；m[0] 是括号连原文，报错时说是哪一个
+      const words = (m[1] ?? m[2] ?? m[3]).trim();
+      if (words === '') continue; // 括号里只有空白：不是提示，留在台词里
+      const { meaning, whole, durations } = readCue(words, m[2] === undefined, m[0]); // 结构规则只管括号，不管 *…*（m[2]）；m[0] 是括号连原文，报错时说是哪一个
       if (unrecognized === 'keep' && !whole) continue; // 整个不是舞台提示（词表里的提示，或者「副词 + 地」的写法）：不动，留在要念的话里，不切段，不记
       push(line.slice(last, m.index));
       last = m.index + m[0].length;
-      const direction = { raw, recognized: isRecognized(meaning), emotion: meaning.emotion, style: meaning.style, actions: meaning.actions, line: lineNumber };
+      const direction = { raw: words, recognized: isRecognized(meaning), emotion: meaning.emotion, style: meaning.style, actions: meaning.actions, line: lineNumber };
       directions.push(direction);
       gap.push(direction);
       if (meaning.emotion !== null || meaning.style !== null) {
         // 带一下子的声音的提示：它自己那一段照旧（和别的情绪、风格提示一样换掉旧的），用掉以后回到它出现以前管着的；还有一个没用掉的，回到的还是更早的那一份。别的情绪、风格提示：整个换掉旧的，也不再有等着用掉的
-        back = meaning.style !== null && ONE_SHOT_STYLES.has(meaning.style) ? (back ?? { ...state }) : null;
+        const oneShot = meaning.style !== null && ONE_SHOT_STYLES.has(meaning.style);
+        if (oneShot && back === null) backRaw = raw;
+        back = oneShot ? (back ?? { ...state }) : null;
+        if (back === null) backRaw = null;
+        baseOwn = oneShot && meaning.emotion !== null ? { emotion: meaning.emotion, style: null } : null;
         state = { emotion: meaning.emotion, style: meaning.style };
+        raw = words;
       }
       for (const action of meaning.actions) if (action === 'slow' || action === 'fast') speed = action;
       const pause = pauseOf(meaning, durations);
@@ -426,7 +441,7 @@ function readDirectionsOf(text, options, carried) {
       if (pieces.length > 0) pieces[pieces.length - 1].pauseAfterMs += pendingPause;
       else waiting += pendingPause;
     }
-    if (lineNumber === lines.length - 1) carry = { emotion: state.emotion, style: state.style, speed, gap, hasPiece, back };
+    if (lineNumber === lines.length - 1) carry = { emotion: state.emotion, style: state.style, speed, gap, hasPiece, back, baseOwn, raw, backRaw };
   });
   return { pieces, directions, unattachedPauseMs: waiting, headPauseMs, carry };
 }

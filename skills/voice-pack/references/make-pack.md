@@ -24,6 +24,8 @@
 
 **读音词表**：`--lexicon` 的两种写法（`<alias>`、`<phoneme>`）和音素的条件，见 `make-pack-details.md`「读音词表」。
 
+**几套设定（把固定值写进音色里）**：`--setups <文件.json>`：一份 JSON 数组，每项是一套设定 `{ name, labels?, speed?, instructions?, default? }`（`labels` 是固定的语言、情绪、风格、能量，写法同参考段的标签；`speed` 是正数，1 不变，0.85 放慢，1.15 加快；`instructions` 是给模型的一段说明，例如口音；名字不能重，最多一套带 `default: true`，写法的正本是 `protocol/FORMAT.md` 4.4），原样写进清单的 `setups`。配音时用 `dub` 命令的 `setup` 选项选一套，不选就用带 `default` 的那一套；设定补在台本没写的那一项上（规则见 `references/dub.md` 第 3 步）。换设定的值要发新版本：发新版本不给 `--setups` 就沿用上一版的，给了就换掉，给空数组就去掉。带设定的包，对基础部分的最低要求（`requires.baseMin`）由做包程序写好，规则见 `protocol/FORMAT.md` 4.4。
+
 素材是设计出来的声音时，示例台词照 `SKILL.md` 第 2 节「设计」第 3 步试听文本的写法：当面对人说的平常话，其余几句也一样，每句一种情绪，至少两句是问句、回答或插话。示例台词取 `vocab/design-sample-lines.json` 里跟声音语言一样的那一组（zh、en 各 7 句，每句的 `feel` 各不相同，`kind` 写明是问句、回答还是插话）的 `text`，写成字符串数组：`--sample-lines` 要的是字符串数组，直接给那一组的对象会报 `manifest_invalid`。也可以自己写同样口气的几句。示例台词只写进 `sampleLines`，不克隆成素材。
 
 **配音指引的三层**：配音指引写的是这个声音怎么说话、怎么念、说什么，分三节。三节都可选，小节名照「## 配音指引」的规矩不翻译：

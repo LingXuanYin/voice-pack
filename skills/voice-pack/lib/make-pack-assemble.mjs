@@ -44,6 +44,7 @@ function roleInput({ effective, input, previous, versionNumber, changelog, textL
     ...(effective.features === undefined ? {} : { features: effective.features }),
     ...(effective.direction === undefined ? {} : { direction: effective.direction }),
     ...(effective.sampleLines === undefined ? {} : { sampleLines: effective.sampleLines }),
+    ...(effective.setups === undefined ? {} : { setups: effective.setups }),
     ...(effective.guidance === undefined ? {} : { guidance: effective.guidance }),
     ...(effective.designSource === undefined ? {} : { designSource: effective.designSource }),
     ...(effective.scripts === undefined ? {} : { scripts: effective.scripts }),

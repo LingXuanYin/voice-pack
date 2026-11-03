@@ -6,21 +6,34 @@
 // 输入输出都是普通数据：不碰 DOM、不碰文件系统，也不读音频（只看清单里参考段的标签）。要的能力只有一项，而且是可选的：
 //   @capability text-generation  让它判断台词的情绪、风格（签名在 vocab/capability-signatures.md）。环境没有就不判断，不是错误
 //
-// 每句话要什么标签，分成两件事：
-//   「怎么说」的标签（情绪 emotion、风格 style、能量 energy），按这个顺序看，前面有了就不再往后看：
+// 每一句要什么标签（这一节是「怎么说」每一项从哪取的唯一正本：lib/dub.mjs、lib/line-hints.mjs、references/dub.md、命令行 dub 都指到这里，不再各写一遍）：
+//   「怎么说」的标签（情绪 emotion、风格 style、能量 energy），每一项分别按这个顺序取，取到就停（不是整组取：调用方给了其中一项，别的项照样往后看）：
 //     1 调用方给的标签（line.labels）
 //     2 台本标记里的提示（line.hints；没给就从 line.text 里读舞台提示，括号里的语气说明，例如（耳语）、*笑*，读法见 lib/line-hints.mjs）
 //       读 line.text 时，括号里不是整个都认得的内容（词表里没有的，或者有词表里的词可是还有别的字）算不算要念的话，
 //       由第四个参数 options.unrecognized 定，原样交给 readDirections：
 //       不给是 'keep'（留在要念的话里，参与认语种和送去判断），配音给 'remove'（拿掉）。规则只在 lib/line-hints.mjs 的文件头写；line.hints 给了就不读 text，选项不起作用
-//     3 环境有 text-generation：让它判断（所有还没有标签的台词整句送去，只能从参考集里有的标签里选）。这是收费的调用：
+//     3 设定里固定的标签（选项 setup 的 labels：音色包的清单里一套设定 setups，见 protocol/FORMAT.md 4.4；配音时由 lib/dub.mjs 选好是哪一套再交过来，不给就没有这一层）
+//     4 环境有 text-generation：让它判断。前三层取完，「怎么说」的三项里还缺哪一项，而且这一项在这一句的候选里有可选的，
+//       这一句就整句送去判（没有可念的话的除外），只能从参考集里有的标签里选。
+//       有没有可选的，只在已定的项筛过以后剩下的参考段里看，筛法就是下面「怎么比」的比较（hasChoice 用的就是挑参考的 criteriaKey，不另写一套）：把这一句要的语言、和次序排在这一项前面的已定的项
+//       交给比较，并列最好的那几段里，这一项的取值不都一样（没写这一项的段算一种取值），才有可选的。次序排在这一项后面的已定的项筛不掉它的候选（先比情绪、后比能量：能量定了、情绪缺，
+//       情绪照样有可选的）。没有可选的，判出什么都挑不出不同的参考，不问；一句话缺的项都是这样的，就不送去。
+//       缺的项，报告里照实写缺（wanted 里是 null，sources 里是 null）。
+//       判断只补缺的、有可选的那几项（提示里叫 choose）：提示里每一句写明哪几项已经定了（fixed：前三层取到的项和它们的值），请模型在这个前提下选 choose 里的项，
+//       所以固定了情绪，判出的风格是和这个情绪配得上的。回答里出现了没问的项（已经定了的，或者没有可选的），照旧丢掉（这不算回答有毛病，不进 judge.ignored）。
+//       三项都没定、三项都问的句子，提示里只有编号和台词。提示的那一行和分批的量法用同一个函数写（judgeLine）。这是收费的调用：
 //       环境声明了 text-generation 一次请求最多收多少输入（选项 maxPromptTokens）的，按它分几次发（量法和理由见 lib/input-batches.mjs），没声明就一次发完；单独超限的句子怎么办，见下 judge 一节
 //       只规划、不花钱的调用方（lib/dub.mjs 的 planDub，命令行的 dub --dry-run）传选项 judge: false，不调，judge 里写明正式运行要判几句、调几次（见下）
-//     4 都没有：默认参考
-//   语言 language 不走这个顺序：调用方给了就用调用方的，没给就从文字本身认（lib/line-hints.mjs 的 detectLanguages）。
+//     5 都没有：默认参考
+//   例：调用方只给了情绪、台本里写了（耳语）：情绪取调用方的，风格取台本的（两样都要）；台本里写了（耳语），设定固定了情绪：风格取台本的，情绪取设定的；
+//   台本里写了（平静），设定固定的情绪是生气：这一项取台本的平静。设定只固定了情绪，台本没写别的：风格、能量缺，筛完的几段之间风格、能量有可选的，整句送去判，判断补风格和能量，情绪还是设定的；
+//   三项分别由三层取到（调用方的情绪、台本的风格、设定的能量）：一项不缺，不送去判。调用方给了情绪，筛下来只剩一段（或剩下的几段风格、能量都一样）：风格、能量缺，可是没有可选的，不送去判。
+//   语言 language 不走这个顺序：调用方给了就用调用方的，没给就用设定的，再没有就从文字本身认（lib/line-hints.mjs 的 detectLanguages）。
 //     拉丁字母认不出是英语还是法语，给的是一组候选，所以只在参考集里恰好有一种拉丁字母语言时才起作用。
 //   所以没有任何「怎么说」的标签时，语言仍然参与挑选：同一种语言里挑，其中有默认段就用默认段，没有就取这种语言里的第一段；
 //   连语言也看不出来，才是纯粹的默认参考段。
+//   语速、说明不在这里：它们不影响挑哪段参考，补法见 lib/dub.mjs 文件头。
 //
 // 怎么比：把每一段参考和要的标签逐项比，按这个次序比大小，前一项分出高低就不看后一项：
 //   语言（完全一致 > 主语言一致 > 不一致） > 情绪 > 风格 > 能量 > 是不是默认段 > 在参考集里的次序
@@ -30,16 +43,17 @@
 // 清单里留出录音和参考共用 id 或音频文件，直接报错，不悄悄挑一个。
 //
 // 返回 { picks, judge }：
-//   picks[i]  { index, segmentId, rule, wanted, sources, matched, missed, directions }；判断失败、落到默认参考的句子多一个 judgeFailed: true（见 judge）
-//     rule      「怎么说」的标签是谁给的：'caller-labels' | 'markup-hints' | 'text-generation' | 'default'（没有人给）
+//   picks[i]  { index, segmentId, rule, wanted, sources, matched, missed, directions }；判断没成的句子（缺的项落到默认参考，前三层取到的项照旧）多一个 judgeFailed: true（见 judge）
+//     rule      「怎么说」的标签是谁给的：'caller-labels' | 'markup-hints' | 'setup' | 'text-generation' | 'default'（前三层没有人给，判断也没补上）。几项来自不同的层时，写排在最前面的那一层（调用方、台本的提示、设定、判断；每一项各自从哪来，看 sources）
 //     wanted    最终要的标签 { language, script, emotion, style, energy }，没有要求的项是 null；
-//               language 是调用方给的写法；从文字里认的，是这种文字可能的语言里参考集有的那几个（可能是空数组），不列整串（拉丁字母有四十多种语言）；
-//               script 是从文字里认出的文字系统（Latin、Han、Japanese……），语言是调用方给的就是 null；emotion、style 是规范化以后的名字
-//     sources   每一项标签从哪来：'caller' | 'text'（从文字本身认的语言）| 'markup' | 'text-generation' | null
+//               language 是调用方（或设定）给的写法；从文字里认的，是这种文字可能的语言里参考集有的那几个（可能是空数组），不列整串（拉丁字母有四十多种语言）；
+//               script 是从文字里认出的文字系统（Latin、Han、Japanese……），语言是调用方（或设定）给的就是 null；emotion、style 是规范化以后的名字
+//     sources   每一项标签从哪来：'caller' | 'text'（从文字本身认的语言）| 'markup' | 'setup'（设定里固定的）| 'text-generation' | null
+//               配音的 cues（lib/dub.mjs 第 7 步）读的就是 wanted.emotion、wanted.style（判断补上的也在里面），只留词表里的名字，不另取一遍
 //     matched   要了、而且挑中的这一段也有的项（例如 ['language', 'emotion']）
 //     missed    要了、但挑中的这一段没有的项：参考集里没有哪一段有它（例如生气的台词，参考集里没有生气的参考：['emotion']）
 //     directions  台词里读到的舞台提示：这一段前面、同一行里还没挂到前一段上的（见 lib/line-hints.mjs 的文件头「段带的」）。选了 'remove' 时，认不出意思的也列着，recognized 为 false；默认的 'keep' 只列整个括号都认得的，和结构规则认出的「副词 + 地」，后者 recognized 为 false
-//   judge     text-generation 这一步的情况：{ status: 'not_needed' | 'unavailable' | 'used' | 'unusable' | 'planned', ... }。
+//   judge     text-generation 这一步的情况（「要判」的句子是前三层取完还缺某一项、而且这一项有可选的句子，见上面第 4 层）：{ status: 'not_needed' | 'unavailable' | 'used' | 'unusable' | 'planned', ... }。
 //             judge 里提到哪一句台词，用的都是同一种编号（选项 lineNumbers；不给就是台词在 lines 里的次序），发给模型的提示里每句台词前面方括号里的数也是它：
 //             ignored[].index、tooLong.lines、truncated.lines，reason 里写的编号，都是它。这个编号（number）从 0 起；台词在 lines 里的位置叫次序（position），只在库里用；
 //             命令行（cli/commands/dub.mjs）说的序号是合成的段的序号，从 1 起，是另一样东西，命令行不把 judge 里的编号原样摆给人看。
@@ -56,7 +70,7 @@
 //               单独一句就超过一次请求的输入上限：这一句不判、不截，tooLong: { limit: 上限, lines: 这几句的编号 }。
 //             不论哪种，没判成的那几句，它们的 picks[i] 标着 judgeFailed: true，配音接着做；tooLong 的句子在规划里（planned）就已经标着
 //
-// 选项 options（第四个参数，都可选）：unrecognized，原样交给 readDirections（见下）；judge，布尔值，默认 true：false 就不调 text-generation；
+// 选项 options（第四个参数，都可选）：unrecognized，原样交给 readDirections（见下）；setup，{ labels?: { language?, emotion?, style?, energy? } }，这一次用的一套设定里固定的标签（上面的第 3 层；写法同清单里设定的 labels）；judge，布尔值，默认 true：false 就不调 text-generation；
 //   maxPromptTokens，不小于 1 的整数，text-generation 一次请求最多收多少输入（模型的事实，由环境的适配器声明，库里不写这个数；不给就不分批）；
 //   lineNumbers，每句台词一个互不相同的非负整数（和 lines 一样长），judge 里提到台词时用的编号，不给就是台词在 lines 里的次序（配音有几个包时，每个包只拿到自己的几句，给的是它们在整份台本里的编号）。
 //   写错（键拼错、值不对）抛 pick_input_invalid
@@ -150,18 +164,19 @@ function readLines(lines) {
   });
 }
 
-const OPTION_KEYS = ['unrecognized', 'judge', 'maxPromptTokens', 'lineNumbers'];
+const OPTION_KEYS = ['unrecognized', 'judge', 'maxPromptTokens', 'lineNumbers', 'setup'];
 
 /**
- * 选项：judge（是否调 text-generation，默认是）、maxPromptTokens（text-generation 一次请求最多收多少输入；不给就不分批），其余原样交给读舞台提示的选项（lib/line-hints.mjs 的 readDirections 的第二个参数）。
+ * 选项：judge（是否调 text-generation，默认是）、maxPromptTokens（text-generation 一次请求最多收多少输入；不给就不分批）、setup（这一次用的一套设定，见 readSetup），其余原样交给读舞台提示的选项（lib/line-hints.mjs 的 readDirections 的第二个参数）。
  * 现在就检查，不等到某句台词用上它；写错了不悄悄当成默认值。
  * lineNumbers（每句台词在整份台本里的编号，见 readLineNumbers）这里只取出来，长度对不对要等读了台词才知道。
- * @returns {{ judge: boolean, maxPromptTokens: number | null, lineNumbers: unknown, directions: { unrecognized: 'keep'|'remove' } }}
+ * @returns {{ judge: boolean, maxPromptTokens: number | null, lineNumbers: unknown, setup: unknown, directions: { unrecognized: 'keep'|'remove' } }}
  */
 function readOptions(options) {
   let judge = true;
   let maxPromptTokens = null;
   let lineNumbers;
+  let setup;
   let rest = options;
   if (isPlainObject(options)) {
     const unknown = Object.keys(options).find((key) => !OPTION_KEYS.includes(key));
@@ -175,13 +190,26 @@ function readOptions(options) {
       if (!Number.isInteger(maxPromptTokens) || maxPromptTokens < 1) throw invalid('options', `options 不合约定：maxPromptTokens 必须是不小于 1 的整数，收到 ${JSON.stringify(maxPromptTokens)}`);
     }
     if (Object.hasOwn(options, 'lineNumbers')) ({ lineNumbers, ...rest } = rest);
+    if (Object.hasOwn(options, 'setup')) ({ setup, ...rest } = rest);
   }
   try {
-    return { judge, maxPromptTokens, lineNumbers, directions: readDirectionOptions(rest) };
+    return { judge, maxPromptTokens, lineNumbers, setup, directions: readDirectionOptions(rest) };
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
     throw invalid('options', `options 不合约定：${error.message}`);
   }
+}
+
+/**
+ * 这一次用的一套设定里固定的标签（选项 setup，文件头第 3 层）：{ labels?: { language?, emotion?, style?, energy? } }，labels 的写法同台词的 labels。不给就没有这一层。
+ * 设定的别的字段（语速、说明）不在这里：和挑参考无关，由 lib/dub.mjs 用。
+ */
+function readSetup(raw) {
+  if (raw === undefined) return {};
+  if (!isPlainObject(raw)) throw invalid('options', 'options 不合约定：setup 必须是对象：{ labels?: { language?, emotion?, style?, energy? } }');
+  const unknown = Object.keys(raw).find((key) => key !== 'labels');
+  if (unknown !== undefined) throw invalid('options', `options 不合约定：setup 里不认识的键 ${JSON.stringify(unknown)}：只有 labels`);
+  return readLabels(raw.labels, 'options.setup.labels');
 }
 
 /**
@@ -209,18 +237,34 @@ function languageScore(wanted, candidate) {
 /** 这一段在某个「怎么说」的项上对不对得上要求。 */
 const moodHit = (candidate, wanted, key) => candidate[key] !== null && candidate[key] === wanted[key];
 
-/** 比较用的键，逐项比大小。 */
-function compareKey(candidate, wanted) {
+/** 要了的那几项的键（语言，再是情绪、风格、能量），逐项比大小；没有要求的项不参与。 */
+function criteriaKey(candidate, wanted) {
   const key = [];
   if (wanted.language !== null) key.push(languageScore(wanted.language, candidate));
   for (const mood of MOOD_KEYS) if (wanted[mood] !== null) key.push(moodHit(candidate, wanted, mood) ? 1 : 0);
-  key.push(candidate.isDefault ? 1 : 0, -candidate.order);
   return key;
 }
+
+/** 比较用的键：要了的项，再是是不是默认段、在参考集里的次序。 */
+const compareKey = (candidate, wanted) => [...criteriaKey(candidate, wanted), candidate.isDefault ? 1 : 0, -candidate.order];
 
 function isBetter(a, b) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
   return false;
+}
+
+/**
+ * 一句台词缺的某一项（mood）在参考集里有没有可选的：把排在它前面的要求（语言，和次序在它前面的、已经定了的「怎么说」的项）交给挑参考自己的比较，
+ * 筛下来并列最好的那几段里，这一项的取值不都一样，才有可选的（判出哪个值，挑中的参考就可能不同）。比较的规则只有 criteriaKey / isBetter 这一处，这里不另写。
+ * 排在它后面的已定的项筛不掉它的候选：次序在前的项先比（例如能量定了、情绪缺：情绪先比，所以四段里情绪不同，就有可选的）。
+ */
+function hasChoice(candidates, wanted, mood) {
+  const before = { language: wanted.language, emotion: null, style: null, energy: null };
+  for (const key of MOOD_KEYS.slice(0, MOOD_KEYS.indexOf(mood))) before[key] = wanted[key];
+  const keyed = candidates.map((candidate) => ({ candidate, key: criteriaKey(candidate, before) }));
+  const best = keyed.reduce((top, { key }) => (isBetter(key, top) ? key : top), keyed[0].key);
+  const tied = keyed.filter(({ key }) => !isBetter(best, key));
+  return new Set(tied.map(({ candidate }) => candidate[mood])).size >= 2;
 }
 
 function choose(candidates, wanted) {
@@ -252,37 +296,35 @@ function firstMood(directions) {
   return found === undefined ? {} : { ...(found.emotion === null ? {} : { emotion: found.emotion }), ...(found.style === null ? {} : { style: found.style }) };
 }
 
+/** 「怎么说」的一项从哪一层来，对应 picks[i].rule 里的名字；排在前面的层优先。 */
+const RULE_OF_SOURCE = [['caller', 'caller-labels'], ['markup', 'markup-hints'], ['setup', 'setup']];
+
 /**
- * 一句台词要的标签：「怎么说」的三项按 调用方 -> 台本标记 的顺序看（text-generation 的判断由调用的地方补），语言单独认。
- * @returns {{ wanted: object, sources: object, rule: string, directions: object[], needsJudge: boolean }}
+ * 一句台词要的标签：「怎么说」的三项，每一项分别按 调用方 -> 台本标记 -> 设定 的顺序看，取到就停（text-generation 的判断由调用的地方补：三项里还缺哪一项，这一句就要判，判断只补缺的项）；
+ * 语言单独认：调用方 -> 设定 -> 文字。规则的正本在文件头。
+ * @returns {{ wanted: object, sources: object, rule: string, directions: object[], missing: string[] }} missing：前三层取完还缺的项（情绪、风格、能量里没有来源的）
  */
-function wantedFor(line, directionOptions) {
+function wantedFor(line, directionOptions, setupLabels) {
   const read = line.hints === undefined && line.directions === undefined ? readDirections(line.text, directionOptions) : null;
   const directions = line.directions ?? read?.directions ?? [];
   const wanted = { language: null, emotion: null, style: null, energy: null };
   const sources = { language: null, emotion: null, style: null, energy: null };
 
-  let rule = 'default';
-  const callerMood = MOOD_KEYS.filter((key) => line.labels[key] !== undefined);
   const markupMood = line.hints !== undefined ? line.hints : firstMood(directions);
-  if (callerMood.length > 0) {
-    rule = 'caller-labels';
-    for (const key of callerMood) {
-      wanted[key] = key === 'energy' ? line.labels.energy : canonicalLabel(key, line.labels[key]);
-      sources[key] = 'caller';
-    }
-  } else if (Object.keys(markupMood).some((key) => markupMood[key] !== undefined)) {
-    rule = 'markup-hints';
-    for (const key of MOOD_KEYS) {
-      if (markupMood[key] === undefined) continue;
-      wanted[key] = key === 'energy' ? markupMood.energy : canonicalLabel(key, markupMood[key]);
-      sources[key] = 'markup';
-    }
+  for (const key of MOOD_KEYS) {
+    const [value, source] = line.labels[key] !== undefined ? [line.labels[key], 'caller']
+      : markupMood[key] !== undefined ? [markupMood[key], 'markup']
+        : setupLabels[key] !== undefined ? [setupLabels[key], 'setup'] : [undefined, null];
+    if (value === undefined) continue;
+    wanted[key] = key === 'energy' ? value : canonicalLabel(key, value);
+    sources[key] = source;
   }
+  const rule = RULE_OF_SOURCE.find(([source]) => MOOD_KEYS.some((key) => sources[key] === source))?.[1] ?? 'default';
 
-  if (line.labels.language !== undefined) {
-    wanted.language = { key: languageKey(line.labels.language), primaries: [primaryLanguage(line.labels.language)], shown: line.labels.language };
-    sources.language = 'caller';
+  const given = line.labels.language !== undefined ? [line.labels.language, 'caller'] : setupLabels.language !== undefined ? [setupLabels.language, 'setup'] : null;
+  if (given !== null) {
+    wanted.language = { key: languageKey(given[0]), primaries: [primaryLanguage(given[0])], shown: given[0] };
+    sources.language = given[1];
   } else {
     // 认语种时括号里的提示不算：不然中文台词里一个英文提示，整句会被认成英文（认不出的括号内容选了「保留」，它是要念的话，就算）
     const detected = detectLanguages(read === null ? spokenOf(line, directionOptions) : read.pieces.map((piece) => piece.text).join(' '));
@@ -291,35 +333,47 @@ function wantedFor(line, directionOptions) {
       sources.language = 'text';
     }
   }
-  return { wanted, sources, rule, directions, needsJudge: rule === 'default' };
+  return { wanted, sources, rule, directions, missing: MOOD_KEYS.filter((key) => wanted[key] === null) };
 }
+
+/** 前三层已经定下来的项 { emotion?, style?, energy? }（规范化以后的值）：提示里写给模型，让它在这个前提下选缺的项。 */
+const fixedOf = (plan) => Object.fromEntries(MOOD_KEYS.filter((key) => plan.sources[key] !== null).map((key) => [key, plan.wanted[key]]));
 
 // ---------------------------------------------------------------- 让 text-generation 判断
 
-/** 参考集里「怎么说」的每一项有哪些取值（按标签原来的写法，去重）；有没有可选的：至少有一项在不同的参考段之间取值不同。 */
+/** 参考集里「怎么说」的每一项有哪些取值（按标签原来的写法，去重）：请模型从这里选。 */
 function labelChoices(candidates, segments) {
   const choices = { emotion: [], style: [], energy: [] };
-  let varies = false;
   for (const mood of MOOD_KEYS) {
-    const seen = new Set();
     for (const [index, candidate] of candidates.entries()) {
-      seen.add(candidate[mood]);
       const raw = segments[index].tags[mood];
       if (typeof raw === 'string' && !choices[mood].some((item) => item.canonical === candidate[mood])) choices[mood].push({ raw, canonical: candidate[mood] });
     }
-    if (seen.size >= 2) varies = true;
   }
-  return { choices, varies };
+  return choices;
 }
 
-/** 一句台词在提示里的那一行。分批量的就是它（splitJudgeRequests），所以提示和量用同一个函数写。 */
-const judgeLine = (item) => `[${item.number}] ${JSON.stringify(item.text)}`;
+/** 提示里写已定的值：一般的词原样写，带别的字符（换行、竖线……）的用 JSON 引起来，免得破坏提示的行。 */
+const shownValue = (value) => (/^[\p{L}\p{N}_-]+$/u.test(value) ? value : JSON.stringify(value));
+
+/**
+ * 一句台词在提示里的那一行。分批量的就是它（splitJudgeRequests），所以提示和量用同一个函数写。
+ * 三项都没定、三项都问：只有编号和台词。否则后面接着写 fixed（前三层已经定了的项）和 choose（要模型选的项），用竖线隔开。
+ * item：{ number, text, fixed: { emotion?, style?, energy? }, ask: 要选的项（情绪、风格、能量里的几项） }。
+ */
+function judgeLine(item) {
+  const fixed = MOOD_KEYS.filter((key) => item.fixed[key] !== undefined).map((key) => `${key}=${shownValue(item.fixed[key])}`);
+  const notes = fixed.length === 0 && item.ask.length === MOOD_KEYS.length ? [] : [...(fixed.length === 0 ? [] : [`fixed: ${fixed.join(', ')}`]), `choose: ${item.ask.join(', ')}`];
+  return [`[${item.number}] ${JSON.stringify(item.text)}`, ...notes].join(' | ');
+}
 
 function buildJudgePrompt(choices, items) {
   const shown = (mood) => (choices[mood].length > 0 ? choices[mood].map((item) => item.raw).join(', ') : '（没有）');
   return [
     '你是配音导演。下面是一个声音的参考录音上有的标签，和要配音的台词。请为每句台词判断该用哪种参考：emotion（情绪）、style（风格）、energy（能量）各选一个。只能从给出的取值里选；判断不了、或者没有特别的要求，就填 null。',
+    '有的台词后面带着 fixed 和 choose：fixed 是已经定了的项，不要改；请在这个前提下，只选 choose 里的项（例如情绪已经定了，风格要和这个情绪配得上）。没带的台词，三项都选。',
     'You are a dubbing director. Below are the labels the reference recordings of one voice carry, and the lines to be dubbed. For each line choose emotion, style and energy, using only the values listed; use null when you cannot tell or there is nothing special.',
+    'Some lines are followed by fixed and choose: the fixed items are already decided, do not change them; choose only the items listed in choose, so that they fit the fixed ones (for example a style that suits an emotion already fixed). For lines without them, choose all three.',
     '',
     '参考集里有的标签 / Labels in the reference set:',
     `- emotion: ${shown('emotion')}`,
@@ -329,7 +383,7 @@ function buildJudgePrompt(choices, items) {
     '台词 / Lines:',
     ...items.map(judgeLine),
     '',
-    '只输出一个 JSON 数组，不要别的文字。每句台词一个对象，index 是台词前面方括号里的数字。Output only a JSON array, one object per line; index is the number in square brackets:',
+    '只输出一个 JSON 数组，不要别的文字。每句台词一个对象，index 是台词前面方括号里的数字，只写要选的项。Output only a JSON array, one object per line; index is the number in square brackets; write only the items to choose:',
     '[{"index": 0, "emotion": null, "style": null, "energy": null}]',
   ].join('\n');
 }
@@ -390,7 +444,8 @@ async function askJudge(env, choices, batch) {
 }
 
 /**
- * 采纳一批的回答：判出来的标签、来源、理由就地写进 plans。不采纳的（编号对不上、取值不在参考集里……）不猜，如实返回，进 judge.ignored。
+ * 采纳一批的回答：判出来的标签、来源、理由就地写进 plans。只采纳问了的项（item.ask）：这一句前三层已经取到的项、没有可选的项，回答里说什么都不采纳，也不算回答有毛病，不进 ignored。
+ * 别的不采纳的（编号对不上、取值不在参考集里……）不猜，如实返回，进 judge.ignored。
  * 模型回答里的 index 是提示里方括号中的台词编号（number），不是台词在 lines 里的次序（position）。
  */
 function adoptAnswer(batch, entries, choices, plans) {
@@ -408,9 +463,11 @@ function adoptAnswer(batch, entries, choices, plans) {
       continue;
     }
     answered.add(number);
-    const plan = plans[byNumber.get(number).position];
+    const { position, ask } = byNumber.get(number);
+    const plan = plans[position];
     for (const mood of MOOD_KEYS) {
       const value = entry[mood];
+      if (!ask.includes(mood)) continue; // 没问的项（前三层已经取到的，或者没有可选的），回答里写了也不采纳
       if (value === undefined || value === null || value === '') continue;
       const canonical = typeof value === 'string' ? (mood === 'energy' ? value : canonicalLabel(mood, value)) : null;
       if (canonical === null || !choices[mood].some((item) => item.canonical === canonical)) {
@@ -419,27 +476,28 @@ function adoptAnswer(batch, entries, choices, plans) {
       }
       plan.wanted[mood] = canonical;
       plan.sources[mood] = 'text-generation';
-      plan.rule = 'text-generation';
+      if (plan.rule === 'default') plan.rule = 'text-generation'; // 前三层有人给的，理由写排在最前的那一层（文件头 rule）
     }
   }
   return ignored;
 }
 
 /**
- * 还没有「怎么说」的标签的台词，让 text-generation 判断。就地改 plans（判出来的标签、来源、理由），返回 judge 的情况。
+ * 前三层取完还缺「怎么说」的某一项、而且这一项有可选的台词（hasChoice），让 text-generation 判断，判断只补缺的、有可选的项（提示里写明已定的项，文件头第 4 层）。就地改 plans（判出来的标签、来源、理由），返回 judge 的情况。
  * 台词整句送去，不截字数；环境声明了一次请求的输入上限（limit）就按它分批发（splitJudgeRequests），没声明就一次装下全部。
  * allowCall 是 false 就一次都不调（那是收费的调用）：要判断、环境也有这项能力的，返回 planned、要判几句和要调几次。
  */
 async function runJudge(env, set, input, plans, directionOptions, allowCall, limit, numbers) {
-  // position 是台词在 lines 里的次序，number 是报给调用方和模型的编号（readLineNumbers）
+  const choices = labelChoices(set.candidates, set.segments);
+  // position 是台词在 lines 里的次序，number 是报给调用方和模型的编号（readLineNumbers）。
+  // ask 是要问模型的项：前三层取完还缺、而且这一句的候选里这一项有可选的（hasChoice：已定的项筛过以后剩下的参考段里取值不都一样）；一项都没有，这一句不送去判。fixed 是已经定了的项，写在提示里
   const pending = plans.flatMap((plan, position) => {
-    if (!plan.needsJudge) return [];
+    const ask = plan.missing.filter((key) => hasChoice(set.candidates, plan.wanted, key));
+    if (ask.length === 0) return [];
     const text = spokenOf(input[position], directionOptions).trim();
-    return text === '' ? [] : [{ position, number: numbers[position], text }];
+    return text === '' ? [] : [{ position, number: numbers[position], text, ask, fixed: fixedOf(plan) }];
   });
   if (pending.length === 0) return { status: 'not_needed' };
-  const { choices, varies } = labelChoices(set.candidates, set.segments);
-  if (!varies) return { status: 'not_needed' };
   if (!hasCapability(env, 'text-generation')) return { status: 'unavailable', capability: 'text-generation' };
   const { batches, tooLong } = splitJudgeRequests(choices, pending, limit);
   // 单独一句就超过上限的（规则在文件头 judge 一节）：规划时就标上，它判不成是已知的
@@ -522,11 +580,12 @@ function shownLanguage(language, candidates) {
  * @param {object} manifest 角色部分的清单，或者至少带着 reference（和 holdout）的对象
  * @param {{ text?: string, labels?: { language?: string, emotion?: string, style?: string, energy?: 'low'|'medium'|'high' }, hints?: { emotion?: string, style?: string }, directions?: object[] }[]} lines
  *   台词。labels 是调用方给的标签；hints 是切开台词以后每一段生效的提示（配音流程给；不给就从 text 里读舞台提示）；directions 只是原样放进结果
- * @param {{ unrecognized?: 'keep'|'remove', judge?: boolean, maxPromptTokens?: number, lineNumbers?: number[] }} [options] unrecognized：括号里不是整个都认得的内容（词表里没有的，或者有词表里的词可是还有别的字）怎么处理，原样交给 lib/line-hints.mjs 的 readDirections（只有从 text 里读舞台提示时用到；
+ * @param {{ unrecognized?: 'keep'|'remove', judge?: boolean, maxPromptTokens?: number, lineNumbers?: number[], setup?: { labels?: { language?: string, emotion?: string, style?: string, energy?: 'low'|'medium'|'high' } } }} [options] unrecognized：括号里不是整个都认得的内容（词表里没有的，或者有词表里的词可是还有别的字）怎么处理，原样交给 lib/line-hints.mjs 的 readDirections（只有从 text 里读舞台提示时用到；
  *   台词自带 hints 的，text 已经切开，不起作用）。不给就是默认的 'keep'；配音明确给 'remove'。规则只在 lib/line-hints.mjs 的文件头写。
  *   judge：false 就不调 text-generation（它收费），要判断的台词落到默认参考，judge.status 是 'planned'。不给就是 true。
  *   maxPromptTokens：text-generation 一次请求最多收多少输入；给了就按它分批发（splitJudgeRequests），不给就一次发完。
- *   lineNumbers：judge 里提到台词时用的编号（readLineNumbers），不给就是台词的次序
+ *   lineNumbers：judge 里提到台词时用的编号（readLineNumbers），不给就是台词的次序。
+ *   setup：这一次用的一套设定里固定的标签（文件头「每一句要什么标签」的第 3 层，readSetup）；不给就没有这一层
  * @returns {Promise<{ picks: object[], judge: object }>}
  * @throws {VoicePackError} pick_input_invalid（options 不对时 details.field 是 options）、capability_result_invalid（text-generation 的返回不是 { text }）
  */
@@ -535,7 +594,8 @@ export async function pickReferences(env, manifest, lines, options) {
   const input = readLines(lines);
   const settings = readOptions(options);
   const directionOptions = settings.directions;
-  const plans = input.map((line) => wantedFor(line, directionOptions));
+  const setupLabels = readSetup(settings.setup);
+  const plans = input.map((line) => wantedFor(line, directionOptions, setupLabels));
   const numbers = readLineNumbers(settings.lineNumbers, input.length);
   const judge = await runJudge(env, set, input, plans, directionOptions, settings.judge, settings.maxPromptTokens, numbers);
   const picks = plans.map((plan, index) => {

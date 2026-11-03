@@ -21,6 +21,8 @@
 //     reference_unresolved 参考音频、留出录音、增强件、脚本入口指向的路径，不在文件列表（也不是外部资源，脚本只能在文件列表）里
 //     default_segment_unknown 默认参考段不是参考集里的一段（留出录音不算）
 //     duplicate_id         参考段、留出录音、增强件的 id 重复
+//     duplicate_setup      设定（setups）的名字重复（同一个包里不能重名）。details: { pointer, name }
+//     duplicate_default_setup  不止一套设定带 default: true（最多一套）。details: { pointer, name, other }：name 是后出现的那一套，other 是第一套带 default 的
 //     duplicate_runtime    基础部分的 runtimes 里，同一个运行时登记了两次。details: { pointer, runtime }
 //     holdout_is_reference 一个音频文件既当参考又当留出录音
 //     feature_unknown      脚本指向的功能不在 features 里
@@ -186,6 +188,16 @@ function semanticProblems(manifest) {
 
   const seen = new Map();
   const duplicate = (pointer, id, what) => add('duplicate_id', `${what}的 id ${JSON.stringify(id)} 重复了（已经在 ${seen.get(id)} 用过）`, { pointer, id });
+  // 几套设定（setups）：名字在同一个包里不重名，最多一套带 default: true（别的字段由 schema 管）
+  const setupNames = new Map();
+  let defaultSetup = null;
+  (manifest.setups ?? []).forEach((setup, i) => {
+    if (setupNames.has(setup.name)) add('duplicate_setup', `设定的名字 ${JSON.stringify(setup.name)} 重复了（已经在 ${setupNames.get(setup.name)} 用过）：同一个包里设定不能重名`, { pointer: `/setups/${i}/name`, name: setup.name });
+    else setupNames.set(setup.name, `/setups/${i}`);
+    if (setup.default !== true) return;
+    if (defaultSetup === null) defaultSetup = { name: setup.name, pointer: `/setups/${i}` };
+    else add('duplicate_default_setup', `设定 ${JSON.stringify(setup.name)} 也写了 default: true，已经有 ${JSON.stringify(defaultSetup.name)}（${defaultSetup.pointer}）：最多一套设定带 default`, { pointer: `/setups/${i}/default`, name: setup.name, other: defaultSetup.name });
+  });
   segments.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/reference/segments/${i}/id`, s.id, '参考段'); else seen.set(s.id, `/reference/segments/${i}`); });
   holdout.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/holdout/${i}/id`, s.id, '留出录音'); else seen.set(s.id, `/holdout/${i}`); });
   const enhancerIds = new Map();

@@ -14,7 +14,7 @@
 //                                              给 makePack 的 options.describeChanges（lib/make-pack.mjs 的文件头）：它收到的 changes 就是 diffVersions 的结果，不给就用这个
 //   fitChangelog(text)                         把一句变更说明裁到 CHANGELOG_MAX 个字符：超了截断，末尾加「…」。changelogOf 和 options.describeChanges 的返回值都过它
 //   CHANGELOG_MAX                              变更说明的长度上限（字符数）：读自清单 schema（lib/manifest-limits.mjs）；做包检查作者给的变更说明用同一个数
-//   effectiveOf(input, direction, previous)    这一版生效的描述（名字、配音指引、音色描述和标签、示例台词、设计来源、脚本、增强件、功能声明、对基础部分的要求、其他文件）：
+//   effectiveOf(input, direction, previous)    这一版生效的描述（名字、配音指引、音色描述和标签、示例台词、几套设定、设计来源、脚本、增强件、功能声明、对基础部分的要求、其他文件）：
 //                                              这次给了就用这次的，没给就沿用上一版的（规则见下面「上一版的东西怎么跟到新版本里」）；第一个版本就是输入本身
 //   assertSomethingNew(previous, { effective, items, fresh, defaultSegment })   花钱之前先看一眼：新补的素材一段都用不上、别的也没改，就不发新版本（抛 make_pack_nothing_changed）
 //   releaseChanges(previous, { effective, chosen, fresh, changelog, describeChanges })   挑完素材以后：这一版比上一版变了什么（什么都没变同样不发），
@@ -22,8 +22,8 @@
 //
 // 上一版的东西怎么跟到新版本里（规则只在这里写一遍）：
 //   参考、留出录音   保持原来的角色，不因为多了素材就从参考变成留出录音（那样前后两版的验证记录就没法比），也不反过来；次序不变，新补的接在后面
-//   配音指引、音色描述和标签、示例台词、设计来源、脚本、增强件、读音词表等其他文件   给了新的就换掉上一版的，没给就沿用（SKILL.md 按新清单重新生成，配音指引放进去）；示例台词给空数组就是去掉
-//   对基础部分的最低要求（requires）、所需能力（features）   沿用，除非明说；不因为这次用了新版本的基础部分就抬高最低要求
+//   配音指引、音色描述和标签、示例台词、几套设定（setups）、设计来源、脚本、增强件、读音词表等其他文件   给了新的就换掉上一版的，没给就沿用（SKILL.md 按新清单重新生成，配音指引放进去）；示例台词、几套设定给空数组就是去掉
+//   对基础部分的最低要求（requires）、所需能力（features）   沿用，除非明说；不因为这次用了新版本的基础部分就抬高最低要求。一个例外：带 setups 的包，baseMin 不低于 SETUPS_BASE_MIN（规则和理由只在 protocol/FORMAT.md 4.4 写）
 //   验证记录         不带过来：上一版的记录量的是上一版的参考集和指引，对这一版不算数。这一版量了就是新的一条，没量就没有（makePack 的报告说明）
 //   protocol/、voice-pack/   不跟着走，用这次给的协议核心和基础部分
 //
@@ -142,10 +142,10 @@ async function changedFiles(before, after) {
 
 /**
  * 比较两版，列出变了什么。previous、next 都是这个形状：
- *   { name, referenceIds, holdoutIds, defaultSegment, guidance, direction, sampleLines, designSource, scripts, enhancers, features, requires, files }
+ *   { name, referenceIds, holdoutIds, defaultSegment, guidance, direction, sampleLines, setups, designSource, scripts, enhancers, features, requires, files }
  *   files 是其他文件（Map，不含段的音频、SKILL.md、清单）；referenceIds、holdoutIds 是段的名字（按清单里的次序）
  * @returns {Promise<{ added: string[], addedReferences: string[], addedHoldouts: string[], dropped: string[], defaultChanged: boolean,
- *   guidanceChanged: boolean, directionChanged: boolean, sampleLinesChanged: boolean, designSourceChanged: boolean, scriptsChanged: boolean, enhancersChanged: boolean,
+ *   guidanceChanged: boolean, directionChanged: boolean, sampleLinesChanged: boolean, setupsChanged: boolean, designSourceChanged: boolean, scriptsChanged: boolean, enhancersChanged: boolean,
  *   requirementsChanged: boolean, filesChanged: string[], nameChanged: boolean, empty: boolean }>} empty 为真就是什么都没变
  */
 export async function diffVersions(previous, next) {
@@ -162,6 +162,7 @@ export async function diffVersions(previous, next) {
     guidanceChanged: (previous.guidance ?? '').trim() !== (next.guidance ?? '').trim(),
     directionChanged: !same(previous.direction, next.direction),
     sampleLinesChanged: !same(previous.sampleLines, next.sampleLines),
+    setupsChanged: !same(previous.setups, next.setups),
     designSourceChanged: !same(previous.designSource, next.designSource),
     scriptsChanged: !same(previous.scripts, next.scripts),
     enhancersChanged: !same(previous.enhancers, next.enhancers),
@@ -193,6 +194,7 @@ export function changelogOf(changes, { name } = {}) {
   if (changes.guidanceChanged) parts.push('更新了配音指引');
   if (changes.directionChanged) parts.push('更新了音色描述和标签');
   if (changes.sampleLinesChanged) parts.push('更新了示例台词');
+  if (changes.setupsChanged) parts.push('更新了设定');
   if (changes.designSourceChanged) parts.push('更新了设计来源');
   if (changes.scriptsChanged) parts.push('更新了脚本');
   if (changes.enhancersChanged) parts.push('更新了增强件');
@@ -207,18 +209,33 @@ export function changelogOf(changes, { name } = {}) {
 /** 这次生效的描述：这次给了就用这次的，没给就沿用上一版的（规则见 lib/pack-version.mjs 的文件头）。第一个版本就是输入本身。 */
 export function effectiveOf(input, direction, previous) {
   const old = previous === null ? {} : previous.manifest;
+  const setups = input.setups ?? old.setups;
   return {
     name: input.name === undefined ? previous.name : input.name.trim(),
     guidance: input.guidance ?? previous?.guidance ?? undefined,
     direction: direction ?? old.direction,
     sampleLines: input.sampleLines ?? old.sampleLines,
+    setups,
     designSource: input.designSource ?? old.designSource,
     scripts: input.scripts ?? old.scripts,
     enhancers: input.enhancers ?? old.enhancers,
     features: input.features ?? old.features,
-    requires: input.requires === undefined ? old.requires : { ...old.requires, ...input.requires },
+    requires: requiresOf(input, old, setups),
     files: new Map([...(previous === null ? [] : previous.carried), ...(input.files ?? [])]),
   };
+}
+
+/**
+ * 认 setups 的第一版基础部分：带 setups 的包，对基础部分的最低要求（requires.baseMin）不低于它。规则和理由只在 protocol/FORMAT.md 4.4 写；版本号只在这里。
+ */
+export const SETUPS_BASE_MIN = '2.7.0';
+
+/** 对基础部分的要求：沿用上一版的，除非明说；带 setups（这一版有就算，沿用的也算）的，baseMin 抬到不低于 SETUPS_BASE_MIN，已经更高的不动，明说的更低的也抬（带 setups 的包写更低的最低要求，是自相矛盾）。 */
+function requiresOf(input, old, setups) {
+  const requires = input.requires === undefined ? old.requires : { ...old.requires, ...input.requires };
+  if (blank(setups)) return requires;
+  const current = requires?.baseMin ?? input.baseVersion;
+  return { ...requires, baseMin: isSemver(current) && compareSemver(current, SETUPS_BASE_MIN) >= 0 ? current : SETUPS_BASE_MIN };
 }
 
 /** diffVersions 要的形状：上一版。 */
@@ -230,6 +247,7 @@ const previousShape = (previous) => ({
   guidance: previous.guidance,
   direction: previous.manifest.direction,
   sampleLines: previous.manifest.sampleLines,
+  setups: previous.manifest.setups,
   designSource: previous.manifest.designSource,
   scripts: previous.manifest.scripts,
   enhancers: previous.manifest.enhancers,

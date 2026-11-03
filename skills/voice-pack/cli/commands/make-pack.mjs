@@ -5,7 +5,7 @@
 // 这个命令只管读文件、组装运行环境、把包和报告写出来。
 //
 //   node cli.mjs make-pack [<素材目录|素材.json>] [--recording <文件|目录>] [--audition <文件|目录>] [--no-separate] --output <新目录> --name <名字> [--base-version <x.y.z>]
-//                          [--short-name <英文短名>] [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>]
+//                          [--short-name <英文短名>] [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>] [--setups <文件.json>]
 //                          [--previous <上一版的包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>]] [--default-segment <段名>]
 //                          [--source-pack <来源包的目录或分享文件>]
 //                          [--protocol <协议核心目录>] [--base <基础部分目录>]
@@ -43,6 +43,8 @@
 //   --guidance          配音指引的正文（Markdown 文件），放进 SKILL.md 的最后一节。--direction：{ description?, tags?, scenes? }，tags 只能从设计词表选。
 //                       --design-source：{ description?, model?, modelVersion?, date?, auditionLines? }，设计出来的声音、默认音色、融合出来的声音做包时写。--lexicon：读音词表（PLS），放进包里的 lexicon.pls。
 //                       --sample-lines：示例台词，一份 JSON 数组，每项一句台词（最多 50 条，每条 1–500 个字符，不能只有空白；可以带舞台提示，例如（耳语）），原样写进清单；发新版本不给就沿用上一版的，给空数组就去掉。
+//                       --setups：几套设定（固定到音色里），一份 JSON 数组，每项 { name, labels?, speed?, instructions?, default? }（写法见 protocol/FORMAT.md 4.4：labels 同参考段的 tags，speed 是正数，名字不能重，最多一套带 default），
+//                         原样写进清单；配音时 dub --setup <名字> 选一套，不选用带 default 的那一套。发新版本不给就沿用上一版的，给了就换掉，给空数组就去掉。带设定的包，对基础部分的最低要求（requires.baseMin）由做包程序写好，规则见 protocol/FORMAT.md 4.4。
 //   --recording, --audition, --no-separate
 //                       长录音、设计试听、不分离，见上面「素材」。--no-separate 只有给了 --recording 才有意义。
 //   --previous          发新版本：上一版的包目录。包 ID 不变，版本号往上加（--version 明说，要比上一版大；或 --bump，默认 minor），上一版的参考和留出录音保持原来的角色，
@@ -129,7 +131,7 @@ import { fixed2, renderFidelityReport } from '../fidelity-report.mjs';
 
 export const summary = '做包：读一批切好的录音，打标签、挑参考集和留出录音、试合成、量还原度、提示还缺什么素材；也能给已有的包发新版本';
 export const usage = `make-pack [<素材目录|素材.json>] [--recording <文件|目录>] [--audition <文件|目录>] [--no-separate] --output <新目录> --name <名字> [--short-name <英文短名>] [--base-version <x.y.z>]
-      [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>]
+      [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>] [--setups <文件.json>]
       [--previous <包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>]] [--default-segment <段名>]
       [--source-pack <来源包的目录或分享文件>] [--protocol <协议核心目录>] [--base <基础部分目录>] [--environment <名字>]
       ${ADAPTER_USAGE}
@@ -138,7 +140,7 @@ export const usage = `make-pack [<素材目录|素材.json>] [--recording <文�
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {
   output: 'string', name: 'string', 'short-name': 'string', 'base-version': 'string', language: 'string', 'text-language': 'string',
-  guidance: 'string', direction: 'string', 'design-source': 'string', lexicon: 'string', 'sample-lines': 'string',
+  guidance: 'string', direction: 'string', 'design-source': 'string', lexicon: 'string', 'sample-lines': 'string', setups: 'string',
   previous: 'string', version: 'string', bump: 'string', changelog: 'string', drop: 'string', 'default-segment': 'string',
   recording: 'string', audition: 'string', 'no-separate': 'boolean', 'source-pack': 'string',
   protocol: 'string', base: 'string', environment: 'string',
@@ -633,6 +635,7 @@ export async function run(args, ctx) {
     ...(options.direction === undefined ? {} : { direction: readJson(ctx, options.direction, 'direction') }),
     ...(options['design-source'] === undefined ? {} : { designSource: readJson(ctx, options['design-source'], 'designSource') }),
     ...(options['sample-lines'] === undefined ? {} : { sampleLines: readJson(ctx, options['sample-lines'], 'sampleLines') }),
+    ...(options.setups === undefined ? {} : { setups: readJson(ctx, options.setups, 'setups') }),
     ...(options.lexicon === undefined ? {} : { files: new Map([[LEXICON_FILE, readBytes(ctx, options.lexicon)]]) }),
     ...(options.previous === undefined ? {} : { previous: loadFiles(path.resolve(ctx.cwd, options.previous), '上一版') }),
     ...(options.version === undefined ? {} : { version: options.version }),

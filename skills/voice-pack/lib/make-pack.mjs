@@ -37,6 +37,9 @@
 //     guidance?,        配音指引的正文（Markdown），放进 SKILL.md 的最后一节
 //     sampleLines?,     示例台词：字符串数组，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节：最多 50 条，每条 1–500 个字符，不能只有空白；台词里可以带舞台提示，例如（耳语））。
 //                       不是数组报 make_pack_input_invalid（field 是 sampleLines）；条数、长度、空白由清单检查在花钱之前报（试装，manifest_invalid）。空数组等于没写
+//     setups?,          几套设定（固定到音色里）：数组，每项 { name, labels?, speed?, instructions?, default? }，原样写进清单的 setups（写法和规则见 protocol/FORMAT.md 4.4、4.5 节；配音怎么用，见 lib/reference-pick.mjs 文件头）。
+//                       不是数组报 make_pack_input_invalid（field 是 setups）；重名、不止一套带 default、speed 不是正数这类由清单检查在花钱之前报（试装，manifest_invalid）。空数组等于没写。
+//                       带 setups 的包，对基础部分的最低要求（requires.baseMin）怎么写，规则见 protocol/FORMAT.md 4.4，版本号是 lib/pack-version.mjs 的 SETUPS_BASE_MIN
 //     designSource?,    设计来源 { description?, model?, modelVersion?, date?, auditionLines? }：设计出来的声音、默认音色、融合出来的声音做包时写
 //     files?,           角色部分的其他文件 Map<路径, Uint8Array>：读音词表 lexicon.pls、脚本、增强件……原样放进包里
 //     scripts?, enhancers?   清单里登记的脚本和增强件；增强件只保证格式上能放（见下），做包不做训练
@@ -51,7 +54,7 @@
 //     version?, bump?   新版本号：明说的（要比上一版大），或者按 major、minor、patch 往上加（默认 minor）。没有 previous 时 version 是第一个版本的版本号（默认 1.0.0），bump 不能给
 //     changelog?        变更说明（至少一个字符，最长 CHANGELOG_MAX，读自清单 schema，见 lib/pack-version.mjs）；不给就按变化生成一份：库自己写的是中文的，调用方要别的写法，给 options.describeChanges
 //     drop?             上一版里不要了的参考或留出录音的名字 [id]
-//     name 可以不给（沿用上一版的）；guidance、direction、sampleLines、designSource、scripts、enhancers、features、requires、files 给了就换掉上一版的（files 按路径合并；sampleLines 给空数组就是去掉），没给就沿用
+//     name 可以不给（沿用上一版的）；guidance、direction、sampleLines、setups、designSource、scripts、enhancers、features、requires、files 给了就换掉上一版的（files 按路径合并；sampleLines、setups 给空数组就是去掉），没给就沿用
 //   }
 //
 // options（都可选）：

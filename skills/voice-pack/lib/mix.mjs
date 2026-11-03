@@ -9,7 +9,7 @@
 //      一句的停顿只在它自己的两头，不跨句。
 //   3. 格式：成品的采样率和声道是第一句的。别的句子统一过去：声道按规则合（单声道时复制到每个声道，多声道时取平均），采样率用加窗 sinc 的重采样（纯 JS，不依赖 ffmpeg）。
 //      音高不变：重采样只改采样率，不改时长以外的东西。
-//   4. 语速：unit.speed 是台本要求的语速（0.85 放慢、1.15 加快）。有 ffmpeg（env.runtimes.ffmpeg）就用 atempo 变速（保持音高）；没有就照原速接上，报告里记一条 speed_not_applied，不报错。
+//   4. 语速：unit.speed 是要求的语速（台本的标记和提示，没有就用设定的 speed；0.85 放慢、1.15 加快）。有 ffmpeg（env.runtimes.ffmpeg）就用 atempo 变速（保持音高）；没有就照原速接上，报告里记一条 speed_not_applied，不报错。
 //      变速只在拼之前对这一句做，所以它的时长会变，报告里记下是哪几句变了速（speedChanged）。
 //   5. 非 WAV 的句子（mp3、flac 等）要解码：decodeAudio 会要 ffmpeg，没有就 runtime_missing（点名 ffmpeg）。WAV 自己能解，不要 ffmpeg。
 //      即使没有语速要求，mp3 句子也要解码（拼起来要同一种 PCM），所以它需要 ffmpeg。报告不另记它（它不是「格式不同」，是解码）。
@@ -236,7 +236,7 @@ export async function mixParts(env, parts) {
     decoded.push({ ...part, audio });
   }
   if (unapplied.length > 0) {
-    notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着台本要求的语速）`, details: { units: unapplied } });
+    notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着要求的语速：台本的，没有就是设定的）`, details: { units: unapplied } });
   }
   // 换人处（规则 7）：相邻两句的包不同。第 i 句的头削的是它和第 i-1 句之间的那一处，尾削的是它和第 i+1 句之间的那一处
   const packOf = (part) => part.pack ?? null;

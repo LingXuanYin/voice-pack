@@ -14,7 +14,7 @@
 ## 拼接的细则
 
 - 每一句的 `pauseBeforeMs` 挂在句首、`pauseAfterMs` 挂在句末，各按毫秒插静音，不封顶。续接的句子（`join` 为 `continue`，接着下一句说）也一样：`pauseAfterMs` 是 0 就不插；以「，、；：」结尾的续接处，`pauseAfterMs` 是 500（配音定的，常量在 `lib/pause-in-request.mjs` 的 `JOIN_PUNCTUATION_PAUSE_MS`）。合成能力收 `continues` 的，续接的那一段传 `continues: true`，不到最短字数补「，」，句末补「。」。
-- `joined` 的段（一段话里的停顿并进了一次请求，文字里写着 `<break>`，或者靠标点）是一段音频：里面的停顿已经在音频里，不再插静音，只看它的头和尾的 `pauseBeforeMs`、`pauseAfterMs`。只有声明了 `pause-in-text` 的环境会有这种段；没有声明的，报告里没有 `joined`。
+- `joined` 的段（一行话里的停顿并进了一次请求，文字里写着 `<break>`，或者靠标点；声明了 `cue-in-text` 的环境，一行里的笑、叹气也写在文字里它所在的位置，一行不在那里切开）是一段音频：里面的停顿已经在音频里，不再插静音，只看它的头和尾的 `pauseBeforeMs`、`pauseAfterMs`。只有声明了 `pause-in-text` 或 `cue-in-text` 的环境会有这种段；都没有声明的，报告里没有 `joined`。试运行里并起来的那一截，`pick.directions` 列着每个成员的舞台提示。
 - `speed` 为 0.85（放慢）、1.15（加快）的，拼接的人自己变速：合成能力不收语速。`speed` 为 null 表示台本没有语速要求（不是 1.0）。`join` 只在句子被标记切开时出现（值是 `continue`）；没有这个键，这一句不接着下一句说。
 - **换人处的静音**（`mix` 做）：相邻两句的 `pack` 不同（换了人）时，上一句尾、下一句头的静音各削到 50 毫秒，再插这一处标的停顿，没标的约 100 毫秒。不削的话，合成句子头尾的静音相加，换人处会停好几百毫秒，比多数对话的换人间隔长。同一个包接着说的不削；整句低于 -40 dBFS（每 10 毫秒量一次）的不削，报告里记一条 `silent_unit`。
 

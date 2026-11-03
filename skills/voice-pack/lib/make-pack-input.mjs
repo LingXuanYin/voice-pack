@@ -172,6 +172,7 @@ export function readInput(input, previous) {
     direction = normalized.direction;
   }
   for (const key of ['scripts', 'enhancers']) if (input[key] !== undefined && !Array.isArray(input[key])) throw invalid(key, '必须是数组');
+  if (input.setups !== undefined && !Array.isArray(input.setups)) throw invalid('setups', '必须是数组：每项是一套设定 { name, labels?, speed?, instructions?, default? }（写法、重名、default 的检查，清单检查在花钱之前就查）');
   if (input.sampleLines !== undefined && !Array.isArray(input.sampleLines)) throw invalid('sampleLines', '必须是字符串数组：每条是一句示例台词（条数、长度、能不能空白，清单检查在花钱之前就查）');
   if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', '必须是字符串（配音指引的 Markdown 正文）');
   if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', '必须是 Map<路径, Uint8Array>');

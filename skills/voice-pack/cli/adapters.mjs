@@ -24,6 +24,7 @@
 //   maxCharsOf(adapters)                  一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的，没有就是 undefined
 //   minCharsOf(adapters)                  合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的，没有就是 undefined（dub、make-pack 的 minChars 选项）
 //   maxPromptTokensOf(adapters)           text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的，没有就是 undefined（dub 的 maxPromptTokens 选项：判情绪按它分批发，没有就一次发完）
+//   maxPauseInTextMsOf(adapters)          声明了 pause-in-text 的环境，一个请求里写进文字的停顿加起来最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的，没有就是 undefined（dub 的 maxPauseInTextMs 选项，没有就是不限）
 //   previewCardOf(adapters)              分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
 //   environmentName(adapters)             验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来，没有就是 null
 //   describeRequests(requests)            把适配器的参数写回命令行的样子（补做提示用）
@@ -341,6 +342,11 @@ export function maxCharsOf(adapters) {
 /** 合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
 export function minCharsOf(adapters) {
   return adapters.findLast((adapter) => adapter.limits?.minChars !== undefined)?.limits.minChars;
+}
+
+/** 声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxPauseInTextMsOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxPauseInTextMs !== undefined)?.limits.maxPauseInTextMs;
 }
 
 /** text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的（后给的盖过先给的）；都没给是 undefined。 */

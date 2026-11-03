@@ -27,7 +27,7 @@
 await env.capabilities['text-to-speech']({
   text,                  // string，必填：要说的话
   instructions,          // string，可选：怎么念（语气、节奏、情绪）。只写想要的效果，不用某个模型的指令语法。环境有 style-instruction 才用
-  cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
+  cues,                  // { emotion, style }，可选：这一句的情绪、风格的名字（挑参考读到的那两项）。环境有 style-cues 才用，见下面「怎么念」
   continues,             // true，可选：同 voice-cloning 的 continues（接着下一段说的，不到字数下限补「，」）
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string }
@@ -43,7 +43,7 @@ await env.capabilities['voice-cloning']({
   ref_audio,             // {bytes, mimeType}，或它的数组（融合，见下）。必填
   ref_text,              // string，或和 ref_audio 一一对应的字符串数组。参考音频里说的原文，可选
   instructions,          // string，可选：怎么念。环境有 style-instruction 才用
-  cues,                  // { emotion, style }，可选：这一句自己的名字（舞台提示认出来的，加调用方 labels 给的情绪和风格）。环境有 style-cues 才用，见下面「怎么念」
+  cues,                  // { emotion, style }，可选：这一句的情绪、风格的名字（挑参考读到的那两项）。环境有 style-cues 才用，见下面「怎么念」
   continues,             // true，可选：这一段是接着下一段说的（句子被标记切开、没有停顿）：不到字数下限补「，」，句末的补「。」。没有就是 false
   enhancers,             // 增强件的数组，可选，见下面「增强件」
 })
@@ -53,7 +53,7 @@ await env.capabilities['voice-cloning']({
 - `ref_audio` 给数组表示**融合**，只在调用方明确要融合时才用；给一段就只用那一段。怎么融合（等权还是带权重）由环境决定，包不传权重。
 - `ref_text` 是参考音频的逐字文本。用不上的环境可以忽略它。
 - `instructions`：环境有 `style-instruction` 才能按说明念；没有就**忽略**（别把它当成别的意思）。配音指引要不要传 `instructions`，先看环境有没有 `style-instruction`，见下面「怎么念」和 `lib/dub.mjs`。
-- `cues`：环境有 `style-cues` 才能用；没有就**忽略**。只装这一句自己的名字（舞台提示认出来的，加调用方 `labels` 给的情绪和风格），配音指引不进去，见下面「怎么念」。
+- `cues`：环境有 `style-cues` 才能用；没有就**忽略**。只装这一句的情绪、风格的名字（挑参考读到的那两项），配音指引不进去，见下面「怎么念」。
 - `enhancers`：可选，包里服务这项能力的增强件，用法见下面「增强件」。返回值里可以多一项 `enhancers_used`。
 - **字数下限**：环境可以声明这项能力一次至少要多少个字（适配器的 `limits.minChars`，见 `../adapters/README.md`）。库据此在合成之前并段（`lib/dub.mjs` 文件头第 5b 步），并不了的那一段记成失败，不调用能力；适配器自己不拦短文字，库不把它送进来。服务商那头说字数不够的，同样标 `details.textRejected`（见上面「通用约定」），库把那一段记成失败，别的段照常做。
 
@@ -216,7 +216,7 @@ await env.capabilities['text-generation']({
 
 - `text` 是模型的回答原文，库自己解析：按台词挑参考要求回答是一个 JSON 数组，读不出来就不采纳、不猜（`judge.status` 是 `unusable`）。
 - 环境没有这项能力时，按台词挑参考不判断，用默认参考；这不是错误。
-- **一次请求的输入上限**：模型一次能收多少输入，由环境的适配器声明（`limits.maxPromptTokens`，见 `../adapters/README.md`）。声明了，按台词挑参考把没带标签的句子分几次发（量法和理由见 `../lib/input-batches.mjs`，单独超限的句子怎么办见 `../lib/reference-pick.mjs` 的文件头）。没声明，一次发完。超过上限的请求，平台回 400，是普通的平台错误，照下面的规则往上抛：所以要声明上限，不要靠平台拦。
+- **一次请求的输入上限**：模型一次能收多少输入，由环境的适配器声明（`limits.maxPromptTokens`，见 `../adapters/README.md`）。声明了，按台词挑参考把要判的句子分几次发（量法和理由见 `../lib/input-batches.mjs`，单独超限的句子怎么办见 `../lib/reference-pick.mjs` 的文件头）。没声明，一次发完。超过上限的请求，平台回 400，是普通的平台错误，照下面的规则往上抛：所以要声明上限，不要靠平台拦。
 - 回答不能用（没有文字，或者没有正常结束）：抛 `capability_result_invalid`，`details.capability` 写 `text-generation`，`details.problem` 写是哪一种（`text_missing`、`stop_reason`）；没有正常结束的，`details.stopReason` 写平台报的原因（`length` 是回答被截断，`error`、`aborted` 是中途出错）。回答被截断（`stopReason` 是 `length`）时，库把那一批对半分开再问（走法见 `../lib/input-batches.mjs`），分到一句还被截断的才落到默认参考。别的情况，库把那几句落到默认参考（`judge.status` 是 `unusable`，它们的 `picks[i].judgeFailed` 为 true），配音接着做；分几次发的，只有回答不能用的那一次的句子这样处理，别的次照常采纳。别的错（401、输入不对、服务暂时出错）照旧往上抛。
 
 ## 怎么念
@@ -231,11 +231,11 @@ await env.capabilities['text-generation']({
 
 ### `style-cues`
 
-不是函数，是**声明**：环境提供它，表示合成能力（`text-to-speech`、`voice-cloning`）收参数 `cues`：这一句自己的几个名字（舞台提示认出来的，加调用方在 `labels` 里给的情绪和风格）。在 `env.capabilities['style-cues']` 里放 `true`（或任何不是 `undefined`、`null`、`false` 的值）。
+不是函数，是**声明**：环境提供它，表示合成能力（`text-to-speech`、`voice-cloning`）收参数 `cues`：这一句的情绪、风格的名字（挑参考读到的那两项）。在 `env.capabilities['style-cues']` 里放 `true`（或任何不是 `undefined`、`null`、`false` 的值）。
 
 - `cues` 的形状是 `{ emotion, style }`：`emotion`、`style` 是 `vocab/cues.json` 里 `emotion`、`style` 的规范名字，没有就是 `null`。环境收到别的键（例如旧版本的 `actions`）忽略：不出标签，也不报错。
 - 库用 `hasCapability(env, 'style-cues')` 问：有，配音就把这一句的 `cues` 通过参数传给合成能力；没有，**整个不传 `cues`** 这个键，照常合成，并在 `unit.cues.reason` 里说明（`style_cues_missing`）。
-- 这一句的 `emotion`、`style`：调用方在 `labels` 里给这一项的（规范化以后认得出的才用）先用，和挑参考一样；没给的，取读这一句的舞台提示时的状态（最后一个有情绪或风格的提示起，和 `lib/line-hints.mjs` 的读法一样）。语速和停顿不进 `cues`，见下面一条。
+- 这一句的 `emotion`、`style`：读的就是挑参考的结果（判断补上的项也在里面；每一项从哪一层取，次序只在 `lib/reference-pick.mjs` 的文件头写），只留 `vocab/cues.json` 里有的规范名字；挑参考用的标签不在词表里（例如调用方在 `labels` 里给了词表外的词），那一项就是 `null`，不退到别的层。语速和停顿不进 `cues`，见下面一条。
 - **配音指引永远不进 `cues`。** 指引写的是这个声音的习惯（爱笑、说话慢），不是这一句的指示。它只通过 `style-instruction` 的 `instructions` 传，而且只在环境声明了它的时候才传。
 - 一句被切成几段（`maxChars`）时，`emotion`、`style` 每段都带，除了 `vocab/cues.json` 的 `oneShot` 标着的一下子的声音（笑、叹气）：它只在第一段带。
 - 一行里被停顿标记（`[pause …]`）或舞台提示切成几段要念的话时，一下子的声音只在紧跟着它的那一段的 `cues` 里（那一段的说明里也只有那一段有它），后面的段不带；那一段用掉它以后，情绪和持续的风格回到它出现以前管着的（规则的正本是 `tools/markup.mjs` 文件头「舞台提示的范围」）。
@@ -246,10 +246,24 @@ await env.capabilities['text-generation']({
 
 不是函数，是**声明**：环境提供它，表示合成能力（`voice-cloning`）认文字里的停顿：一次请求里的停顿写成 `<speak>…</speak>` 包着的 `<break time="Nms"/>`（文字里的 `& < >` 转义），或者只靠标点。在 `env.capabilities['pause-in-text']` 里放 `true`。
 
-- 库用 `hasCapability(env, 'pause-in-text')` 问：有，配音就把段落里不超过 2.5 秒的停顿并进一次请求（`lib/pause-in-request.mjs`，`lib/dub.mjs` 的第 5c 步）；没有，每个停顿照旧切成两次请求，文字里没有 `<speak>`。
+- 库用 `hasCapability(env, 'pause-in-text')` 问：有，配音就把段落里不超过环境收得下的停顿并进一次请求（`lib/pause-in-request.mjs`，`lib/dub.mjs` 的第 5c 步）；没有，每个停顿照旧切成两次请求，文字里没有 `<speak>`。
+- 一个请求里的停顿能写多长，由环境说：适配器的 `limits.maxPauseInTextMs`（毫秒，写平台文档里的数，出处写在适配器里）是一个请求里写下的停顿（`<break>`）加起来的上限，平台把多个相加，超过的部分不要；加起来超了，就在那一处切开，那一处的停顿由拼接的人插静音。环境没说，库不限。
 - 名字（`cues` 译成的行内标签，例如 `[laughing]`）放在 `<speak>` 的根里面、要念的文字前面，不放在它外面。
 - 字数下限（`padToMinLength`）按说出来的字数数，补的字在 `</speak>` 前面；续接的段（`continues`）补「，」（`padCharOf`）。两处都在适配器的 `limits.mjs`。
 - 配音怎么拼接（停顿、续接、并起来的段、换人处的静音）只在 `references/dub-details.md` 的「拼接的细则」写一次。
+
+### `cue-in-text`
+
+不是函数，是**声明**：环境提供它，表示合成能力（`voice-cloning`）认文字里一下子的声音（`vocab/cues.json` 的 `oneShot`：笑 `laugh`、叹气 `sigh`）的位置：写成 `<speak>…</speak>` 里面的 `<cue style="laugh"/>`（和 `<break>` 同一层，`style` 是规范名字，文字里的 `& < >` 转义），环境把它译成自己的写法，放在那个位置。在 `env.capabilities['cue-in-text']` 里放 `true`。
+
+- 库用 `hasCapability(env, 'cue-in-text')` 问：有，配音一行里的笑、叹气写在它在台词里的位置，这一行的话并进同一个请求（`lib/dub.mjs` 第 5c 步）；没有，一下子的声音照旧在 `cues` 里，跟着紧跟在它后面的那一段，这一行被它切成几个请求。
+- 一行只有在这几处才切：换了参考段（行中间的情绪变了，挑到另一段）、换了语速、换了说明（环境收说明时，管着这一段的说明不同）、换行；停顿（环境声明了 `pause-in-text`，且不超过它收得下的长度）和一下子的声音都不是切点。
+- 只收一下子的声音。耳语、大喊这类持续的风格（`cues.style`）和情绪照旧放在整个请求的 `cues` 上，管整个请求；写在文字里的 `<cue/>` 不改变前后话的情绪和风格。
+- 一下子的声音只写成它位置上的 `<cue/>`：这一行从笑开始，就写在请求的开头（`<speak><cue style="laugh"/>…`）；在两段话中间，就写在缝上。它不进请求的说明（`instructions`），也不进 `cues`；挑参考也不看它（行首的笑不改变这一行用哪一段参考）。判断（`text-generation`）或调用方给的一下子的声音，同样写在这一行的开头。
+- `<cue style="…"/>` 不是标准的 SSML 元素：它是基础部分交给环境的写法，只写在 `<speak>` 里，由环境照自己的对照表译成模型认的标签，从来不原样发给平台。
+- 包里有配音脚本的（`text` 钩子要改要说的话，发出去的 `<speak>` 会丢它的结果），这个包的句子照没声明时的做法：一下子的声音在 `cues` 里。
+- 环境不认的名字（它的模型没有对应的声音）：译成什么都不写，不念出来，也不报错（同 `cues` 里表里没有的名字）。
+- 声明的理由写成「模型或服务认这个位置上的标签」，不要写成「我们的请求里没有 `cues` 字段」。没有声明的环境，和以前一样。
 
 ### `phoneme-in-text`
 
