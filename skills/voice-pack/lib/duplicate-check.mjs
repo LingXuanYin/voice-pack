@@ -16,12 +16,15 @@
 //     sampleLines    整份示例台词（每条一行连起来）：一条一条都很短时，整份抄是抄的是整份
 //     script:路径     包里登记的脚本（清单的 scripts，UTF-8 的文本文件）
 //   不比的，和为什么：
-//     标签和场景（direction.tags、scenes）  从词表里选的，同一类声音本来就选得一样
+//     标签（direction.tags）                从词表里选的，同一类声音本来就选得一样
 //     名字、变更说明                        短，而且「新版本」「Mira 的包」这样的话谁都会写
 //     读音词表（lexicon.pls）                一张「词 → 读法」的表，是事实不是创作：两个人给同一个词注音写出来的条目一样，不是抄
 //     转写（每段录音里说的话）               读同一句话（课文、校准句子）不是抄；录音被搬用由指纹管。要是把整套转写照抄再重录，那不是「直接复用」
 //   录音：新包的每一段录音（参考、留出录音、没切的长录音）和来源包的每一段录音（参考、留出录音）用音频指纹比（tools/audio-fingerprint.mjs），
 //        量的是「新的这段里有多少秒是来源里的录音」。来源包里指向外部资源的录音（包里没有字节）比不了，计在 sourceUnchecked 里。
+//        素材写了起止秒（trim，lib/make-pack.mjs 文件头「输入」）的段，只比进包的那几秒：解码以后照做包的切法切（lib/make-pack-take-audio.mjs 的 trimRange，同几个采样），
+//        作者切掉的部分不算复用；totalSeconds 是切出来的长度。起点在录音的结尾以后、切不出东西的段进不了包，不比（checked、unchecked 都不算它）。
+//        trim 写错了的（lib/make-pack-input.mjs 的 readTrim 不收的）照整段比：makePack 读输入时会报 make_pack_input_invalid。
 //
 // ---------------------------------------------------------------- 怎么比、阈值
 //
@@ -44,7 +47,7 @@
 //
 // ---------------------------------------------------------------- 谁调、什么时候调、不留什么
 //
-//   调用方在花钱的步骤（转写、听着打标签、试合成）之前调：要查的东西（文字、录音）这时都已定下，查出问题就不用白花钱。命令行的 make-pack --source-pack 和 app 的做包页都是这样用的。
+//   调用方在花钱的步骤（转写、挑默认段、标提示标注、试合成）之前调：要查的东西（文字、录音）这时都已定下，查出问题就不用白花钱。命令行的 make-pack --source-pack 和 app 的做包页都是这样用的。
 //   来源包只在这里读：不验哈希（只读它的内容来比，不拿它当包用），不联网。查完不留来源包的记录：这个函数不收也不返回来源包的名字、包 ID、路径，
 //   duplicate_detected 的 details 里只有新包的 item、量、阈值；调用方也不要把来源包的标识写进新包、日志、报告。
 //   env 只在解码 WAV 以外的格式时用（env.runtimes.ffmpeg）；解不了的录音记在 unchecked 里，不假装查过了。
@@ -69,6 +72,8 @@ import { extractGuidance } from '../protocol/lib/skill-md.mjs';
 import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
 import { fingerprintAudio, indexFingerprints, findReuse } from '../tools/audio-fingerprint.mjs';
 import { compareTexts, tokenizeText } from './text-overlap.mjs';
+import { readTrim } from './make-pack-input.mjs';
+import { trimRange } from './make-pack-take-audio.mjs';
 
 export const DEFAULT_THRESHOLDS = Object.freeze({
   text: Object.freeze({ minTokens: 8, rougeLF1: 0.75, copiedShare: 0.6 }),
@@ -122,11 +127,21 @@ function sampleLineUnits(texts, lines) {
   textUnit(texts, 'sampleLines', 'sampleLines', lines.filter((line) => typeof line === 'string').join('\n'));
 }
 
+/** 段的起止秒：写法对的是 { trim }，没写、写错了是空对象（写错了照整段比，见文件头）。 */
+function trimOf(segment) {
+  try {
+    return readTrim(segment.trim, 'trim', { sentence: segment.sentence, externalUrl: segment.externalUrl });
+  } catch {
+    return {};
+  }
+}
+
 /**
  * 新包要比的东西，取自做包的输入（lib/make-pack.mjs 的 input）。
  * @param {object} input 做包的输入：direction、designSource、guidance、sampleLines、scripts、files、segments 里用到的几项
  * @param {{ recordings?: { item: string, audio: { bytes: Uint8Array } }[] }} [options] recordings：还没切的长录音（命令行的 --recording、--audition）
- * @returns {{ texts: { item: string, kind: string, text: string }[], recordings: { item: string, bytes: Uint8Array }[] }}
+ * @returns {{ texts: { item: string, kind: string, text: string }[], recordings: { item: string, bytes: Uint8Array, trim?: { startSec?: number, endSec?: number } }[] }}
+ *   段写了起止秒的，带着 trim（写法对的才带，见文件头「比什么」的录音）
  */
 export function materialOfInput(input, { recordings = [] } = {}) {
   if (!isPlainObject(input)) throw new TypeError('input 必须是对象');
@@ -141,7 +156,8 @@ export function materialOfInput(input, { recordings = [] } = {}) {
   }
   const clips = [];
   (Array.isArray(input.segments) ? input.segments : []).forEach((segment, index) => {
-    if (segment?.audio?.bytes instanceof Uint8Array) clips.push({ item: typeof segment.id === 'string' ? segment.id : `segments[${index}]`, bytes: segment.audio.bytes });
+    if (!(segment?.audio?.bytes instanceof Uint8Array)) return;
+    clips.push({ item: typeof segment.id === 'string' ? segment.id : `segments[${index}]`, bytes: segment.audio.bytes, ...trimOf(segment) });
   });
   for (const recording of recordings) clips.push({ item: recording.item, bytes: recording.audio.bytes });
   return { texts, recordings: clips };
@@ -236,8 +252,10 @@ function compareAllTexts(candidateTexts, sourceTexts, limits) {
 
 // ---------------------------------------------------------------- 录音
 
-/** 解码并取指纹。解不了返回 { reason }，不抛（只有不认得的错才往上传）。 */
-async function print(env, bytes) {
+/**
+ * 解码并取指纹。解不了返回 { reason }，不抛（只有不认得的错才往上传）。写了起止秒（trim）的，只取切出来的那几秒的指纹；切不出东西返回 { outOfRange: true }。
+ */
+async function print(env, bytes, trim) {
   let audio;
   try {
     audio = await decodeAudio(env, bytes);
@@ -246,6 +264,11 @@ async function print(env, bytes) {
     if (kind === 'runtime_missing') return { reason: 'decode_unavailable' };
     if (kind === 'undecodable') return { reason: 'decode_failed' };
     throw error;
+  }
+  if (trim !== undefined) {
+    const range = trimRange(trim, audio);
+    if (range === null) return { outOfRange: true };
+    audio = { ...audio, frames: range.to - range.from, samples: audio.samples.map((channel) => channel.subarray(range.from, range.to)) };
   }
   return { fingerprint: fingerprintAudio(audio) };
 }
@@ -272,8 +295,10 @@ async function compareRecordings(env, candidateClips, sourceClips, limits, { yie
   let checked = 0;
   let highest = null;
   for (const clip of candidateClips) {
-    const printed = await print(env, clip.bytes);
-    if (printed.fingerprint === undefined) unchecked.push({ item: clip.item, reason: printed.reason });
+    const printed = await print(env, clip.bytes, clip.trim);
+    if (printed.outOfRange) {
+      // 切不出东西：这一段进不了包，不比（文件头「比什么」的录音）
+    } else if (printed.fingerprint === undefined) unchecked.push({ item: clip.item, reason: printed.reason });
     else {
       checked++;
       const { reusedSeconds } = findReuse(printed.fingerprint, index);

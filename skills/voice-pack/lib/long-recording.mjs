@@ -17,8 +17,8 @@
 //   options（都可选）
 //     separate     false：不分离（输入已经是干净的人声）。默认 true：环境有 audio-source-separation 就分离
 //     transcribe   false：不转写。默认 true：环境有 automatic-speech-recognition 就转写
-//     language     语言标签（en、zh-CN），给每一段的 labels.language，盖过转写报的，并且告诉转写这些录音说的是什么语言（转写认不了就抛 capability_input_invalid，原样往上抛）。不给：转写报了（写法合格）就把转写报的写进这一段的 labels.language；
-//                  没报就不给，做包流程自己认。注意做包流程的规矩：片段自己的标签盖过 makePack 的 input.labels 里的默认值，所以转写报的语言会盖过
+//     language     语言标签（en、zh-CN），给每一段的 language，盖过转写报的，并且告诉转写这些录音说的是什么语言（转写认不了就抛 capability_input_invalid，原样往上抛）。不给：转写报了（写法合格）就把转写报的写进这一段的 language；
+//                  没报就不给，做包流程自己认。注意做包流程的规矩：片段自己的 language 盖过 makePack 的 input.language（默认语言），所以转写报的语言会盖过
 //                  默认语言；要让作者说的算，就传 language。转写不一定报语言（vocab/capability-signatures.md：language 可选）：拉丁字母的文字（英语……）做包流程认不出语言，要传 language
 //     idPrefix     片段 id 的前缀：小写字母、数字、连字符、下划线，以字母或数字开头，最长 56 个字符。默认由 name 来：去掉扩展名，转成这种写法
 //                  （My Talk (final).mp3 → my-talk-final）；转不出来（没有 name、全是中文……）用 rec。id 是「前缀-三位序号」：rec-001、rec-002……
@@ -26,15 +26,18 @@
 //     concurrency  转写的并发数，1–8，默认 2
 //     retryWait    (毫秒) => Promise：转写暂时出错、再试之前等多久（规则同 makePack 的同名选项，正本是 lib/call-attempts.mjs）；不给就真的等。不是函数就抛 long_recording_input_invalid
 //     split        传给切段函数的选项（minSeconds、maxSeconds……，见 tools/silence-split.mjs 文件头）
-//     sentences    true：句子模式，录音切成句子（每句一段，不转写、不听），做包时再按情绪并成段。默认 false：切成 5–20 秒的段。见下面「句子模式」
+//     sentences    true：句子模式，录音切成句子（每句一段，不转写、不听），做包时先并成段、再一段转写一次（句子不逐句转写、不逐句听，规则在 lib/make-pack-sentences.mjs）。默认 false：切成 5–20 秒的段。见下面「句子模式」
 //     onPlan       (plan) => void：切好段、第一次转写之前交给它；plan 是 { recording, separation, cutting, transcription }，
 //                  transcription.calls 是要转写几次、extraCalls 是暂时出错时最多再多转写几次（每段最多再 2 次，lib/call-attempts.mjs）、seconds 是共多少秒。
 //                  它抛错就停，什么都不转写（命令行用它报费用）。
 //                  分离和 VAD 在这之前已经调过了：要省这两步，用 separate: false，或者环境里不给 VAD
 //
 // ---------------------------------------------------------------- 流程
-//   1 解码     整段只解一次（tools/audio-decode.mjs：WAV 自己解，别的格式要环境的 ffmpeg）。解不开就在这里报，一项能力都没调
-//   2 分离     环境有 audio-source-separation（并且没说 separate: false）：把原录音交给它，用返回的 vocals 往下走（vocals 再解一次码）。
+//   1 解码     整段只解一次（tools/audio-decode.mjs：WAV 自己解，别的格式要环境的 ffmpeg；带视频轨的文件只取第一路音轨）。解不开就在这里报，一项能力都没调
+//              （环境没有 ffmpeg 是 runtime_missing）。
+//              交给分离、VAD 的录音：包能放的格式（protocol/lib/audio.mjs 的 sniffAudio 认得出的）原样交；别的（带视频轨的 mp4、mov、mkv，webm、aac……）交解出来的音轨，
+//              存成 16 位 WAV（声道数、采样率照原来的）：两项能力的签名收的是一段音频（vocab/capability-signatures.md），不把整个视频文件交出去。两项都不调就不编。
+//   2 分离     环境有 audio-source-separation（并且没说 separate: false）：把原录音（上一步说的那一份）交给它，用返回的 vocals 往下走（vocals 再解一次码）。
 //              是花钱、耗时的调用，不重试，出错原样往上抛。没做分离，notes 里写：这次没做分离，输入要是干净的人声
 //   3 切段     环境有 voice-activity-detection：把（分离后的）录音交给它，用它给的说话区间切（tools/silence-split.mjs 的 segmentSpeechRegions，
 //              合并、长度上限、硬切同按能量切）；没有：按能量切（splitBySilence）。转写的返回里没有时间戳（vocab/capability-signatures.md），所以
@@ -44,6 +47,9 @@
 //              就停下来，让事件循环转一圈（页面能画、能响应），再接着编。编出来的字节和一口气编完的一样，次序也一样。
 //   4 转写     每段最多转写 3 次（规则只在 lib/call-attempts.mjs 写一份：暂时出错就等 5 秒、15 秒再来，次数按上限写进「确认费用」，见那个文件的文件头）。
 //              3 次都暂时出错（details.transient）的段记下来，没有 text，别的段照做；
+//              被服务商拦下的段丢掉：不在返回的 segments 里，report.segments 和 notes 写明是哪段、为什么，别的段照做（和做包的转写一样，lib/make-pack-transcribe.mjs 的 transcription_blocked）。
+//              认法（lib/capability-calls.mjs 的 isProviderBlocked，写法见 vocab/capability-signatures.md 的转写一节）有两种：能力抛 provider_blocked 这个码的不重试（同一段再问多半还被拦）；
+//              照暂时出错报、details.problem 是 provider_blocked 的照暂时出错再试，试满 3 次、最后一次的错还是这样，才算被拦下（最后一次只是暂时出错的，照上一条记下来）；
 //              别的错（401、返回的形状不对……）停下来：不再开始新的段，等在做的做完，错误原样往上抛。
 //              转写收什么格式由适配器自己负责（vocab/capability-signatures.md）：有的只收 16 kHz 单声道 16 位的 WAV，录音本身是 16 kHz 就直接送，
 //              别的采样率由适配器用环境的 ffmpeg 转，环境没有 ffmpeg，转写会抛 runtime_missing（点名 ffmpeg）。
@@ -54,11 +60,11 @@
 // 再检查（只加一个整体增益），好录音里 noise_floor_high 的误报从 0/50 变成 9–12/50（增益把安静录音的底噪一起抬高了）。逐条的结果不随基础部分发布。
 // 静音占比和信噪比（原来「太小声」那条线）已经改成不随增益变的（见 tools/audio-quality.mjs 的文件头）；底噪线也改成相对的（信噪比 12 到 20 dB），太响的绝对线去掉了，
 // 音质检查里已经没有随整体增益变的线，不再受这个影响。
-// 能量标签也要没动过的响度（拿各段的响度和这一批的中位数比），所以这里切出来的段要保持原电平交给 makePack。
 //
 // ---------------------------------------------------------------- 句子模式（options.sentences: true）
-//   做包的句子合段用（lib/make-pack.mjs 的 makePack 把句子按情绪并成段，规则在 lib/make-pack-sentences.mjs）。录音不按能量或 VAD 切成 5–20 秒的段，
-//   而是切成句子：每句一段音频，不转写、不听。转写和打标签都在做包里做（每句一次，费用由做包的 onPlan 说明；句子模式不调这里的 onPlan）。
+//   做包的句子合段用（lib/make-pack.mjs 的 makePack 先把句子并成 5–20 秒的段，再一段转写一次，规则和理由在 lib/make-pack-sentences.mjs）。录音不按能量或 VAD 切成 5–20 秒的段，
+//   而是切成句子：每句一段音频，不转写、不听。切成句子是为了按停顿定段的边界；转写在做包里按并好的段做（一段一次，费用由做包的 onPlan 说明；句子模式不调这里的 onPlan），
+//   句子不逐句转写，也不逐句先听一遍。
 //   流程 1 到 3 不变（解码、分离、VAD 或按能量找停顿），切的参数不同：停顿不短于 0.5 秒就切，不论句子多短；不到 0.1 秒的零头丢掉。
 //   一口气说、超过 maxSeconds 没有停顿的，硬切（tools/silence-split.mjs 第 5 条）：切出来的每段不短于下限 min(REFERENCE_THRESHOLDS.duration.warnBelow,
 //   (maxSeconds - 2 * paddingSeconds) / 2)。默认 maxSeconds 20 时下限是 5 秒（按段切的下限）；maxSeconds 更小时下限随它变，理由见 silence-split 第 5 条（sentenceCutOf）。
@@ -69,10 +75,10 @@
 //   report.transcription 是 { status: 'deferred' }，report.segments 每段的 transcription 也是 'deferred'。
 //
 // ---------------------------------------------------------------- 返回
-//   segments   [{ id, audio: { bytes, mimeType: 'audio/wav' }, text?, labels?, source: { recording?, startSec, endSec } }]
+//   segments   [{ id, audio: { bytes, mimeType: 'audio/wav' }, text?, language?, source: { recording?, startSec, endSec } }]
 //              句子模式（见上）每段多一个 sentence，不转写时没有 text。
-//              就是 makePack 的 input.segments 的形状。text 是转写出来的（没转写、转写失败、转写出来是空的，就没有这个字段）；
-//              labels 只有在知道语言的时候才有（{ language }）；source 的秒数对着原录音的时间轴（分离出来的人声和原录音等长、对齐）。
+//              就是 makePack 的 input.segments 的形状。text 是转写出来的（没转写、转写失败、转写出来是空的，就没有这个字段）；转写被服务商拦下的段不在这里（见 report.segments）；
+//              language 只有在知道语言的时候才有（语言标签；不给音色基底标签 tag，做包在标提示标注那一次让模型起名，起不成用段的 id）；source 的秒数对着原录音的时间轴（分离出来的人声和原录音等长、对齐）。
 //   notes      [{ code, message, details }]，原样放进 makePack 的 input.notes，进做包的报告。message 是给人看的中文；details 是这一条说的那些事实（message 里的数和名字），
 //              读的人（app 用两种语言自己写句子）只读 code 和 details，不去报告的别处凑；没有可说的就是空对象。字段和 hint 的 details 一样写在这里：
 //                separation_skipped     这次没做分离，输入要是干净的人声（环境没有这项能力，或者调用方说不分离）。details: { reason: 'capability_missing' | 'disabled' }，同 report.separation.reason
@@ -83,14 +89,18 @@
 //                transcription_skipped  没转写（环境没有这项能力，或者调用方不要），片段没有文本。details: { reason: 'capability_missing' | 'disabled' }，同 report.transcription.reason
 //                transcription_failed   有几段转写暂时出错，没有文本。details: { ids }，ids 是这几段的名字，全部（message 里只点前 10 个）
 //                transcription_empty    有几段转写出来是空的（静音、音乐、听不清），没有文本。details: { ids }，同上
+//                transcription_blocked  有几段转写被服务商拦下了（内容过滤），这几段丢掉了，不在 segments 里。details: { ids }，同上
 //   report     { recording, separation, cutting, transcription, segments }，给人看的细节：
 //                recording      { name, durationSec, sampleRate, channels, decoder }，交进来的那段录音
 //                separation     { status: 'done', model? } 或 { status: 'skipped', reason: 'capability_missing' | 'disabled' }
 //                cutting        { method: 'voice-activity-detection' | 'energy', model?, segments, dropped, analysis }；dropped 和 analysis 就是
 //                               tools/silence-split.mjs 返回的（丢掉了哪些块、这段录音自己的电平、阈值、硬切了几处）
-//                transcription  { status: 'done', transcribed, empty, failed, retried, models } | { status: 'skipped', reason } | { status: 'not_needed' }（没有片段）；retried 是为暂时出错多转写了几次
-//                segments       每段一条：{ id, startSec, endSec, durationSec, short, cut: { start, end }, transcription: 'done' | 'empty' | 'failed' | 'skipped', error? }
-//                               short 是不够 5 秒的零头（默认都留着；调用方给了 shortestSeconds，不够它的才丢，记 pieces_dropped）；error 是转写最后一次失败的 { code, message, details }
+//                transcription  { status: 'done', transcribed, empty, failed, blocked, retried, models } | { status: 'skipped', reason } | { status: 'not_needed' }（没有片段）；
+//                               blocked 是被服务商拦下、丢掉的段数，retried 是为暂时出错多转写了几次（照暂时出错报的被拦下也算在内）
+//                segments       每段一条：{ id, startSec, endSec, durationSec, short, cut: { start, end }, transcription: 'done' | 'empty' | 'failed' | 'blocked' | 'skipped', error?, attempts? }
+//                               short 是不够 5 秒的零头（默认都留着；调用方给了 shortestSeconds，不够它的才丢，记 pieces_dropped）；
+//                               error 是转写最后一次失败的、或者服务商拦下时报的 { code, message, details }（lib/capability-calls.mjs 的 summarizeError）；
+//                               attempts 是这一段转写试了几次，转写没成的段（failed、blocked）才有（能力抛 provider_blocked 这个码的，被拦下以后不再问，attempts 是问到被拦下那一次为止的次数，第一次就被拦是 1）
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   long_recording_input_invalid  输入不合约定。details.field 是出问题的字段（recording.name、concurrency、split……）
@@ -100,19 +110,20 @@
 //                                   voice-activity-detection：problem 是 speech_invalid，details.index 是出问题的那一项（整个返回不对就没有）
 //                                   automatic-speech-recognition：problem 是 text_missing
 //   另外：audio_decode_failed、wav_invalid、runtime_missing（解码，tools/audio-decode.mjs）、environment_invalid（核心层），
-//   以及所需能力自己抛的错（401 之类原样往上传；转写的暂时出错，试满 3 次还不成才不抛，记在片段上）。
+//   以及所需能力自己抛的错（401 之类原样往上传；转写的暂时出错，试满 3 次还不成才不抛，记在片段上；转写被服务商拦下不抛，那一段丢掉，两种认法见流程第 4 步）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
-import { VoicePackError } from '../protocol/lib/errors.mjs';
+import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { assertAudioClip, isAudioClip } from '../protocol/lib/audio-clip.mjs';
+import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
 import { DEFAULTS as SPLIT_DEFAULTS, segmentSpeechRegions, splitBySilence } from '../tools/silence-split.mjs';
 import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
 import { normalizeLanguage } from './line-hints.mjs';
 import { MAX_LANGUAGE_TAG } from './language-tag.mjs';
-import { summarizeError, badResult, pool } from './capability-calls.mjs';
+import { summarizeError, badResult, pool, isProviderBlocked } from './capability-calls.mjs';
 import { callWithRetries, extraAttempts } from './call-attempts.mjs';
 import { YIELD_AFTER_MS, nowMs, turnEventLoop } from './event-loop.mjs';
 
@@ -245,17 +256,31 @@ function readSpeech(result, durationSec) {
 /**
  * 逐段转写。`language`：调用方说了录音的语言就告诉转写（options.language），没说就不带这个键（规则的正本：vocab/capability-signatures.md 的转写一节）。
  * 暂时出错就按 lib/call-attempts.mjs 的规则再来（`wait` 是等待，不给就真的等）；返回 { models, retried }，retried 是为暂时出错多转写了几次。
+ * 被服务商拦下的（provider_blocked 这个码不重试；照暂时出错报的，试满了、最后一次还是被拦下）这一段记成 blocked（之后丢掉，见文件头流程第 4 步），别的段照做。
+ * 没转成的段（failed、blocked）记下最后一次的错和试了几次。
  */
 async function transcribeAll(env, items, { concurrency, language, wait }) {
   const recognize = requireCapability(env, 'automatic-speech-recognition');
   const models = new Set();
   let retried = 0;
   await pool(items, concurrency, async (item) => {
-    const outcome = await callWithRetries(() => recognize({ audio: item.audio, ...(language === undefined ? {} : { language }) }), { wait });
+    let calls = 0;
+    let outcome;
+    try {
+      outcome = await callWithRetries(() => {
+        calls += 1;
+        return recognize({ audio: item.audio, ...(language === undefined ? {} : { language }) });
+      }, { wait });
+    } catch (error) {
+      if (!isVoicePackError(error, 'provider_blocked')) throw error;
+      outcome = { error, attempts: calls }; // 被服务商拦下（provider_blocked 这个码）：不再问，下面按被拦下记
+    }
     retried += outcome.attempts - 1;
     if ('error' in outcome) {
-      item.transcription = 'failed';
+      // 被拦下的（provider_blocked 这个码，或者问满了次数、最后一次照暂时出错报的是被拦下）记成 blocked，之后丢掉；别的记成 failed（见文件头流程第 4 步）
+      item.transcription = isProviderBlocked(outcome.error) ? 'blocked' : 'failed';
       item.error = summarizeError(outcome.error);
+      item.attempts = outcome.attempts;
       return;
     }
     const { result } = outcome;
@@ -298,8 +323,10 @@ function transcriptionNotes(step, items) {
   }
   const failed = items.filter((item) => item.transcription === 'failed');
   const empty = items.filter((item) => item.transcription === 'empty');
+  const blocked = items.filter((item) => item.transcription === 'blocked');
   if (failed.length > 0) notes.push({ code: 'transcription_failed', message: `${failed.length} 段转写暂时出错（服务暂时不可用），这几段没有文本：${idsText(failed)}`, details: { ids: failed.map((item) => item.id) } });
   if (empty.length > 0) notes.push({ code: 'transcription_empty', message: `${empty.length} 段没有转写出文字（静音、音乐或听不清）：${idsText(empty)}`, details: { ids: empty.map((item) => item.id) } });
+  if (blocked.length > 0) notes.push({ code: 'transcription_blocked', message: `${blocked.length} 段转写被服务商拦下了（内容过滤），这几段丢掉了：${idsText(blocked)}`, details: { ids: blocked.map((item) => item.id) } });
   return notes;
 }
 
@@ -307,7 +334,7 @@ function transcriptionNotes(step, items) {
 
 /**
  * 句子模式的切段：按句间停顿切成句子，每句一段音频（句子加它后面的原停顿，见 item.sentence），不转写、不听。
- * 句子的听和并（按情绪并成段）在做包里做（lib/make-pack-sentences.mjs）。规则见文件头「句子模式」。
+ * 并段和转写（先并成段，再一段转写一次，不逐句先听）在做包里做（lib/make-pack-sentences.mjs）。规则见文件头「句子模式」。
  */
 async function sentencesOf(env, { work, mono, sampleRate, input, settings, canDetect, report }) {
   const cutSettings = { ...settings.split, ...sentenceCutOf(settings.split) };
@@ -354,7 +381,7 @@ async function sentencesOf(env, { work, mono, sampleRate, input, settings, canDe
     id: item.id,
     audio: item.audio,
     sentence: item.sentence,
-    ...(settings.language === undefined ? {} : { labels: { language: settings.language } }),
+    ...(settings.language === undefined ? {} : { language: settings.language }),
     source: { ...(input.name === undefined ? {} : { recording: input.name }), startSec: item.seg.startSec, endSec: item.seg.endSec },
   }));
   const notes = [];
@@ -386,12 +413,18 @@ export async function prepareLongRecording(env, recording, options = {}) {
     recording: { name: input.name ?? null, durationSec: round(original.frames / original.sampleRate, 3), sampleRate: original.sampleRate, channels: original.channels, decoder: original.decoder },
   };
 
+  // 交给分离、VAD 的录音（流程第 1 步）：包能放的格式原样交，别的交解出来的音轨（WAV）；两项都不调就不编
+  const separating = settings.separate && canSeparate;
+  const clip = (separating || canDetect) && sniffAudio(input.audio.bytes) === null
+    ? { bytes: encodeWav({ sampleRate: original.sampleRate, samples: original.samples }, { encoding: 'pcm16' }), mimeType: 'audio/wav' }
+    : input.audio;
+
   // 2 分离：往下用的是（分离后的）这一份
-  let work = { clip: input.audio, decoded: original };
+  let work = { clip, decoded: original };
   if (!settings.separate) report.separation = { status: 'skipped', reason: 'disabled' };
   else if (!canSeparate) report.separation = { status: 'skipped', reason: 'capability_missing' };
   else {
-    const result = await requireCapability(env, 'audio-source-separation')({ audio: input.audio });
+    const result = await requireCapability(env, 'audio-source-separation')({ audio: clip });
     if (!isPlainObject(result) || !isAudioClip(result.vocals)) throw badResult('audio-source-separation', 'vocals_missing', '必须返回 { vocals: { bytes, mimeType }, accompaniment?, model? }：vocals 是分出来的人声');
     work = { clip: result.vocals, decoded: await decodeAudio(env, result.vocals.bytes) };
     report.separation = { status: 'done', ...(typeof result.model === 'string' ? { model: result.model } : {}) };
@@ -459,19 +492,20 @@ export async function prepareLongRecording(env, recording, options = {}) {
   if (transcription.status === 'done') {
     const { models, retried } = await transcribeAll(env, items, { concurrency: settings.concurrency, language: settings.language, wait: settings.retryWait });
     const count = (state) => items.filter((item) => item.transcription === state).length;
-    transcription = { status: 'done', transcribed: count('done'), empty: count('empty'), failed: count('failed'), retried, models };
+    transcription = { status: 'done', transcribed: count('done'), empty: count('empty'), failed: count('failed'), blocked: count('blocked'), retried, models };
   }
   report.transcription = transcription;
 
-  const labelsOf = (item) => {
+  const languageOf = (item) => {
     const language = settings.language ?? item.language ?? null;
-    return language === null ? {} : { labels: { language } };
+    return language === null ? {} : { language };
   };
-  const segments = items.map((item) => ({
+  // 转写被服务商拦下的段丢掉（流程第 4 步）：report.segments 和 notes 里照写
+  const segments = items.filter((item) => item.transcription !== 'blocked').map((item) => ({
     id: item.id,
     audio: item.audio,
     ...(item.text === undefined ? {} : { text: item.text }),
-    ...labelsOf(item),
+    ...languageOf(item),
     source: { ...(input.name === undefined ? {} : { recording: input.name }), startSec: item.seg.startSec, endSec: item.seg.endSec },
   }));
   report.segments = items.map((item) => ({
@@ -483,6 +517,7 @@ export async function prepareLongRecording(env, recording, options = {}) {
     cut: item.seg.cut,
     transcription: item.transcription,
     ...(item.error === undefined ? {} : { error: item.error }),
+    ...(item.attempts === undefined ? {} : { attempts: item.attempts }),
   }));
 
   const notes = [];

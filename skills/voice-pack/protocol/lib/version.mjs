@@ -5,7 +5,8 @@
 //   - 基础部分、协议核心、角色部分各自用语义化版本号（semver.org 2.0.0）：主.次.修订，可带 -预发布 和 +构建信息。
 //
 // PROTOCOL_VERSION 是这一版库写的协议版本：新做的包、新打的分享文件、新发布的版本都按它写（名字也跟它走，names.mjs）。清单里的 protocol 字段写的是清单按哪一版协议写的。
-// 读的范围比写的宽：1.x 和 2.x 的都读（names.mjs 的 READABLE_PROTOCOL_MAJORS）。
+// 3.0 是新的主版本：格式可以改、可以删东西，不兼容 2.x（FORMAT.md 第 14 节）。新包的 requires.protocolMajor 是 3，只认 3.x 的基础部分；2.x 的包照旧取 2.x 的基础部分。
+// 读的范围比写的宽：1.x、2.x、3.x 的清单都读（names.mjs 的 READABLE_PROTOCOL_MAJORS），读到的主版本和要的对不上，由互相校验和补全判成不能用。
 //
 // 错误：
 //   invalid_version   不是合法的版本号。details: { version }
@@ -13,7 +14,7 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from './errors.mjs';
 
-export const PROTOCOL_VERSION = '2.0';
+export const PROTOCOL_VERSION = '3.0';
 
 // semver.org 给的正则（第 2 版）：数字不能有前导零，预发布里的数字标识也不能有前导零，标识只用 [0-9A-Za-z-]
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;

@@ -4,16 +4,16 @@
 // 把协议核心里的抽象规格、空白模板和使用者说的属性放进一个新目录；再把这个目录交给一个新开的会话或子 agent，由它写新包的文字内容。
 // 这个命令不读来源包，也不问来源包是哪个：来源包只在最后一步（make-pack 的 --source-pack）查重时才读。
 //
-//   node cli.mjs clean-room --output <新目录> [--tags <标签,标签>] [--scenes <场景,场景>] [--words <自己的话> | --words-file <文件>] [--language <标签>] [--designed]
+//   node cli.mjs clean-room --output <新目录> [--tags <标签,标签>] [--words <自己的话> | --words-file <文件>] [--language <标签>] [--designed]
 //                           [--protocol <协议核心目录>] [--json]
 //   node cli.mjs clean-room --output <新目录> --attributes <文件.json> [--protocol <协议核心目录>] [--json]
 //
-// 属性（至少给标签、场景、自己的话里的一个）：
-//   --tags, --scenes    设计词表里的标签、场景词表里的场景（中文名、英文名都认），用逗号隔开（中文逗号也行）。写法见 lib/design-vocab.mjs；不在词表里的在组装之前就报
+// 属性（至少给标签、自己的话里的一个）：
+//   --tags              设计词表里的标签（中文名、英文名、别名都认），用逗号隔开（中文逗号也行）。写法见 lib/design-vocab.mjs；不在词表里的在组装之前就报
 //   --words, --words-file   使用者自己的话，原样交给做包 agent：不改写，不补充。--words 是命令行里直接写的一段话，--words-file 是一个 UTF-8 的文字文件（话长、带换行时用它）。只能给一个
 //   --language          语言标签，例如 zh、en、zh-CN
 //   --designed          这个声音是设计出来的（不是用录音做的）：只记在属性里，做包 agent 不因此写设计来源（设计来源由调用方给，见 protocol/new-pack/README.md「设计来源」）
-//   --attributes        整份属性写在一个 JSON 文件里（{ tags?, scenes?, words?, language?, designed? }，键的意思同上）；不能和上面的属性选项一起给
+//   --attributes        整份属性写在一个 JSON 文件里（{ tags?, words?, language?, designed? }，键的意思同上）；不能和上面的属性选项一起给
 // 选项：
 //   --output            净室输入写到这个新目录。目录必须还不存在：不往已有的目录里写，也不覆盖
 //   --protocol          协议核心的目录；省略时用这份基础部分自己的 protocol/（要带 new-pack/ 和 FORMAT.md，开发树里也行，不用封印）
@@ -38,11 +38,11 @@ import { buildCleanRoomInput } from '../../lib/clean-room.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 
 export const summary = '给净室里的做包 agent 准备输入：抽象规格、空白模板和使用者说的属性（不读来源包）';
-export const usage = 'clean-room --output <新目录> [--tags <标签,标签>] [--scenes <场景,场景>] [--words <自己的话> | --words-file <文件>] [--language <标签>] [--designed] [--attributes <文件.json>] [--protocol <协议核心目录>] [--json]';
+export const usage = 'clean-room --output <新目录> [--tags <标签,标签>] [--words <自己的话> | --words-file <文件>] [--language <标签>] [--designed] [--attributes <文件.json>] [--protocol <协议核心目录>] [--json]';
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
-export const FLAGS = { output: 'string', tags: 'string', scenes: 'string', words: 'string', 'words-file': 'string', language: 'string', designed: 'boolean', attributes: 'string', protocol: 'string' };
-const ATTRIBUTE_FLAGS = ['tags', 'scenes', 'words', 'words-file', 'language', 'designed'];
+export const FLAGS = { output: 'string', tags: 'string', words: 'string', 'words-file': 'string', language: 'string', designed: 'boolean', attributes: 'string', protocol: 'string' };
+const ATTRIBUTE_FLAGS = ['tags', 'words', 'words-file', 'language', 'designed'];
 const SKILL_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 const list = (text) => text.split(/[,，]/).map((item) => item.trim()).filter((item) => item !== '');
@@ -65,7 +65,7 @@ export async function run(args, ctx) {
   if (options.words !== undefined && options['words-file'] !== undefined) return usageProblem(ctx, usage, '--words 和 --words-file 只能给一个');
   const given = ATTRIBUTE_FLAGS.filter((flag) => options[flag] !== undefined);
   if (options.attributes !== undefined && given.length > 0) return usageProblem(ctx, usage, `--attributes 不能和 --${given.join('、--')} 一起给：属性要么都写在文件里，要么都用选项`);
-  if (options.attributes === undefined && given.length === 0) return usageProblem(ctx, usage, '要给属性：--tags、--scenes、--words（或 --words-file）里至少一个，或者 --attributes <文件.json>');
+  if (options.attributes === undefined && given.length === 0) return usageProblem(ctx, usage, '要给属性：--tags、--words（或 --words-file）里至少一个，或者 --attributes <文件.json>');
 
   const output = path.resolve(ctx.cwd, options.output);
   if (fs.existsSync(output)) throw new VoicePackError('file_exists', `${output} 已经存在，不往已有的目录里写：换一个新目录名`, { details: { file: output } });
@@ -74,7 +74,6 @@ export async function run(args, ctx) {
     ? attributesFromFile(ctx, options.attributes)
     : {
       ...(options.tags === undefined ? {} : { tags: list(options.tags) }),
-      ...(options.scenes === undefined ? {} : { scenes: list(options.scenes) }),
       ...(options.words === undefined ? {} : { words: options.words }),
       ...(options['words-file'] === undefined ? {} : { words: readText(ctx, options['words-file']) }),
       ...(options.language === undefined ? {} : { language: options.language }),
@@ -103,7 +102,7 @@ export async function run(args, ctx) {
     '     当前这个 agent 不要写：已经读过来源包的角色内容（比如把它装成了 skill），读到的会漏进新写的文字里。',
     '  2. 写完回来，用 make-pack 做包并查重（--source-pack 是来源包，只在这一步读；查重在花钱的几步之前，抄多了就报错停下）：',
     `     node cli.mjs make-pack <素材> --output <新目录> --name <名字> --direction ${path.join(output, 'output', 'direction.json')} --guidance ${path.join(output, 'output', 'guidance.md')} --sample-lines ${path.join(output, 'output', 'sample-lines.json')} --source-pack <来源包>`,
-    '     要转写、打标签、试合成、量还原度，就再用 --adapter <名字|模块文件> 接上模型（适配器的约定见 adapters/README.md）。',
+    '     要转写、挑默认段、标提示标注、试合成、量还原度，就再用 --adapter <名字|模块文件> 接上模型（适配器的约定见 adapters/README.md）。',
     '',
   ].join('\n'));
   return 0;
