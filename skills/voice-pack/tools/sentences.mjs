@@ -7,6 +7,12 @@
 // 语言固定用 'en'（不跟随本机语言，免得同一段文字在不同机器上切得不一样）；中、日、韩、俄文的句末标点 UAX #29 本身就认。
 // 在 Node 24.14 和 Bun 1.4 里，同样的输入切出同样的结果（2026-10-14 在 45 条难例上对比过）。
 //
+// 方括号的提示（tools/markup.mjs「提示」：[whispering]、[Sigh]、[小声]）不是要念的字，交给 Segmenter 之前把每个提示整个换成同样长的一串 X（当成一个大写开头的词），
+// 切完照位置取回原文。不这样，Segmenter 会看提示里面的字：句号后面接一个小写开头的提示（「…the line. [whispering] Then…」），它当成同一句不切；
+// 句号后面紧接着提示（「你好。[小声]我说」），它切在提示的方括号中间。换了以后，句末后面的提示跟着后一段，接不接照下面规则 4 看提示后面的字。
+// 例外：英文句号后面不空格就接提示（「The end.[sigh]Then more.」）不切，和不带提示的「end.Then」一样（UAX #29 的 SB7：字母加句号后面紧跟大写字母不断句，
+// 提示换成的 X 算大写字母）；问号、叹号和中、日文的句号后面紧接着提示照样切。
+//
 // 规则（先后顺序就是判断顺序）。「接」是把相邻两段合成一句：
 //   1. 换行永远断句：一段以换行（LF、CR、LS、PS）结束，就不接下一段。台本一行一句，所以硬折行的文章要先自己合并行再来分。
 //      只有空白的段（空行）不成句，最后丢掉。
@@ -18,8 +24,10 @@
 //        整段只有「数字加句号」  编号（1. 2.）
 //   3. 前一段的最后一个词是 no nos fig figs vol vols ch chap sec art p pp pt ed eds op，或者 jan feb mar apr jun jul aug sep sept oct nov dec，
 //      后面带句号，并且下一段以数字开头，接（No. 5、Fig. 3、Jan. 6）。
-//   4. 下一段以小写字母开头（跳过开头的引号、括号），接：引号后面的说话人（"Why?" he asked.）。
+//   4. 下一段以小写字母开头（跳过开头的引号、括号和方括号的提示），接：引号后面的说话人（"Why?" he asked.）。
 //      小写字母开头几乎一定是同一句里被切断的，除非整段文字是全小写的口语；那种会被接上（done? ok then 这样问号后面接小写的一行，会被接成一句）。
+//      开头的提示看它后面的第一个字：「…the line. [whispering] Then…」是两句，「He paused. [sighs] and then…」是一句。
+//      一段去掉开头的提示就没有字了（「It was over. [Sigh]」的「[Sigh]」），接：没有字的不成一句。规则 3 看的「下一段以数字开头」也隔着提示看。
 //   都不是就不接。
 //
 // 有意的取舍：宁可接错，不要切错。接错只是两句合成一行（配音时句号照样停顿）；切错会把「Mr.」「St.」单独念成一句。
@@ -32,6 +40,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
+import { CUE_PATTERN } from './markup.mjs';
 
 const TITLES = new Set([
   'mr', 'mrs', 'ms', 'mx', 'messrs', 'mmes', 'dr', 'drs', 'prof', 'rev', 'hon', 'gen', 'col', 'capt', 'lt', 'sgt', 'gov', 'sen', 'rep', 'fr',
@@ -76,7 +85,22 @@ function lastWord(text) {
   return skipOpeners(parts[parts.length - 1]);
 }
 
-const startsWith = (text, pattern) => pattern.test(skipOpeners(text.trimStart()));
+/** 提示（方括号，写法只在 tools/markup.mjs 的 CUE_PATTERN）。LEADING_CUE 是一段开头的一个提示，连同它后面的空白。 */
+const CUES = new RegExp(CUE_PATTERN, 'gu');
+const LEADING_CUE = new RegExp(`^${CUE_PATTERN}\\s*`, 'u');
+
+/** 一段文字开头要念的第一个字从哪起：跳过开头的空白、引号、括号，和方括号的提示（规则 4）。 */
+function firstWords(text) {
+  let rest = text.trimStart();
+  for (;;) {
+    const cue = LEADING_CUE.exec(rest);
+    if (cue !== null) rest = rest.slice(cue[0].length);
+    else if (rest !== '' && OPENERS.has(rest.charCodeAt(0))) rest = rest.slice(1);
+    else return rest;
+  }
+}
+
+const startsWith = (text, pattern) => pattern.test(firstWords(text));
 const INITIAL = /^\p{Lu}$/u;
 const CAPS_ACRONYM = /^(?:\p{Lu}\.)+\p{Lu}$/u;
 const LIST_NUMBER = /^[0-9]{1,3}\.$/;
@@ -93,7 +117,7 @@ function shouldJoin(previous, next) {
     if (LIST_NUMBER.test(word) && previous.trim() === word) return true;
     if (BEFORE_NUMBER.has(key) && startsWith(next, DIGIT)) return true;
   }
-  return startsWith(next, LOWERCASE);
+  return startsWith(next, LOWERCASE) || firstWords(next) === '';
 }
 
 /**
@@ -106,7 +130,12 @@ export function splitSentences(text) {
   if (typeof text !== 'string') throw new TypeError('文字必须是字符串');
   const sentences = [];
   let current = '';
-  for (const { segment } of sentenceSegmenter().segment(text)) {
+  // Segmenter 看的是把提示换成 X 的文字（文件头），切出来的一段按它的长短从原文里取回
+  const seen = text.replace(CUES, (cue) => 'X'.repeat(cue.length));
+  let at = 0;
+  for (const { segment: masked } of sentenceSegmenter().segment(seen)) {
+    const segment = text.slice(at, at + masked.length);
+    at += masked.length;
     if (current !== '' && shouldJoin(current, segment)) current += segment;
     else {
       if (current !== '') sentences.push(current);

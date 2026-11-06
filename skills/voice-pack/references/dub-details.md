@@ -1,10 +1,10 @@
 # 用音色包配音和变声：主路用不到的细则
 
-这一份是 `references/dub.md` 挪出来的：下面几节是主路用不到的细则，原处留了一行指针。配一段台本、几个角色的一场戏、出成品这几条主路，碰到下面的情况才读对应的一节：有读音词表，有增强件，句子续接、变速或换人处的静音（「拼接的细则」），失败要重做（「失败和重做的细则」）。变声和唱歌、自己的适配器不在这几条路上，要查时再读。
+这一份是 `references/dub.md` 挪出来的：下面几节是主路用不到的细则，原处留了一行指针。配一段台本、几个角色的一场戏、出成品这几条主路，碰到下面的情况才读对应的一节：有读音词表，有增强件，并进一次请求的段、变速或换人处的静音（「拼接的细则」），失败要重做（「失败和重做的细则」）。变声和唱歌、自己的适配器不在这几条路上，要查时再读。
 
 ## 读音词表
 
-4. **读音词表**：包根目录的 `lexicon.pls`（W3C Pronunciation Lexicon，PLS），写法见 `make-pack-details.md`「读音词表」。只换要说的话里的词，台本标记原样保留。`<alias>` 照做。拼音音素（字母表 `x-pinyin`）只在环境声明了 `phoneme-in-text` 时才用：句子里用上的记在报告的 `lexicon.phonemes` 和那一句的 `phonemes` 里，并从 `unapplied` 去掉；没用上的、字母表不认的，报在 `lexicon.unapplied`（`reason` 是 `phoneme`）；环境没声明的，音素一律是 `reason: phoneme`；环境声明了、音节数或写法对不上的，是 `reason: phoneme_format`。
+4. **读音词表**：包根目录的 `lexicon.pls`（W3C Pronunciation Lexicon，PLS），写法见 `make-pack-details.md`「读音词表」。只换要说的话里的词，台本标记和方括号的提示原样保留（提示里的词不换，拼音音素也不标进提示）。`<alias>` 照做。拼音音素（字母表 `x-pinyin`）只在环境声明了 `phoneme-in-text` 时才用：句子里用上的记在报告的 `lexicon.phonemes` 和那一句的 `phonemes` 里，并从 `unapplied` 去掉；没用上的、字母表不认的，报在 `lexicon.unapplied`（`reason` 是 `phoneme`）；环境没声明的，音素一律是 `reason: phoneme`；环境声明了、音节数或写法对不上的，是 `reason: phoneme_format`。
 只有清单的 `files` 列着 `lexicon.pls` 才读：直接改已装的包里的这个文件，清单没列，就当没有词表，报告里 `applied`、`unapplied` 都空。改读音要发新版本，做法见 `make-pack.md`。
 
 ## 增强件
@@ -13,18 +13,19 @@
 
 ## 拼接的细则
 
-- 每一句的 `pauseBeforeMs` 挂在句首、`pauseAfterMs` 挂在句末，各按毫秒插静音，不封顶。续接的句子（`join` 为 `continue`，接着下一句说）也一样：`pauseAfterMs` 是 0 就不插；以「，、；：」结尾的续接处，`pauseAfterMs` 是 500（配音定的，常量在 `lib/pause-in-request.mjs` 的 `JOIN_PUNCTUATION_PAUSE_MS`）。合成能力收 `continues` 的，续接的那一段传 `continues: true`，不到最短字数补「，」，句末补「。」。
-- `joined` 的段（一行话里的停顿并进了一次请求，文字里写着 `<break>`，或者靠标点；声明了 `cue-in-text` 的环境，一行里的笑、叹气也写在文字里它所在的位置，一行不在那里切开）是一段音频：里面的停顿已经在音频里，不再插静音，只看它的头和尾的 `pauseBeforeMs`、`pauseAfterMs`。只有声明了 `pause-in-text` 或 `cue-in-text` 的环境会有这种段；都没有声明的，报告里没有 `joined`。试运行里并起来的那一截，`pick.directions` 列着每个成员的舞台提示。
-- `speed` 为 0.85（放慢）、1.15（加快）的，拼接的人自己变速：合成能力不收语速。`speed` 为 null 表示台本没有语速要求（不是 1.0）。`join` 只在句子被标记切开时出现（值是 `continue`）；没有这个键，这一句不接着下一句说。
-- **换人处的静音**（`mix` 做）：相邻两句的 `pack` 不同（换了人）时，上一句尾、下一句头的静音各削到 50 毫秒，再插这一处标的停顿，没标的约 100 毫秒。不削的话，合成句子头尾的静音相加，换人处会停好几百毫秒，比多数对话的换人间隔长。同一个包接着说的不削；整句低于 -40 dBFS（每 10 毫秒量一次）的不削，报告里记一条 `silent_unit`。
+- 每一句的 `pauseBeforeMs` 挂在句首、`pauseAfterMs` 挂在句末，各按毫秒插静音，不封顶，插多长就是多长（请求里放不下、在那里切开的长停顿，就是这样插回去的；`dub` 自己切开、台本没写停顿的切口，`dub` 记的默认停顿也是，见 `references/dub.md`「长文怎么切」的「切口的气口」）。
+- `joined` 的段（一段话的几句并进了一次请求，中间的短停顿用量过的写法写在文字里；或者比字数下限短的几句并在一起）是一段音频：里面的停顿已经在音频里，不再插静音，只看它的头和尾的 `pauseBeforeMs`、`pauseAfterMs`。各句的提示跟着各自的字，在请求的文字里。试运行里并起来的那一截，`pick.directions` 列着每个成员的舞台说明。
+- `speed` 不是 null 的（调用方或设定给的语速，`dub` 没变成的：合成时环境没有 ffmpeg，`speedChange.speed` 是 null），拼接的人自己变速：合成能力不收语速。`speed` 为 null 表示没有语速要求（不是 1.0），或者 `dub` 已经变过（`speedChange` 里写着变速前后的长度），拼接的人不再变；台本里写的放慢、加快是提示，交给了模型，不在这里。变速的上下限见 `lib/mix.mjs` 的 `SPEED_LIMITS`（和 `dub` 的目标时长、语速同一处），超出的按最近的那一头变。有 `targetDuration` 的段，`dub` 已经按目标时长变过速，`speed` 是 null，拼接的人不再变。
+- 一场戏一个请求的段（有 `scene`，音频文件是 `<序号>-scene.<扩展名>`）：一个请求、一个音频，里面几轮的间隔是模型定的，拼接的人不碰；它的头是第一个说话人的包（`pack`），尾是最后一个说话人的包（`lastSpeakerPack`），`pauseBeforeMs`、`pauseAfterMs` 是场头场尾的。没有每一行各自的音频（要的话，配音时用 `--no-scene`）。
+- **换人处的静音**（`mix` 做）：上一句的 `lastSpeakerPack`（没有就是它自己的 `pack`）和下一句的 `pack` 不同（换了人）时，上一句尾、下一句头的静音各削到 50 毫秒，再插这一处标的停顿，没标的约 100 毫秒。不削的话，合成句子头尾的静音相加，换人处会停好几百毫秒，比多数对话的换人间隔长。同一个包接着说的不削；整句低于 -40 dBFS（每 10 毫秒量一次）的不削，报告里记一条 `silent_unit`。
 
 ## 失败和重做的细则
 
-报错的 `details.action` 是 `download` 的，任务其实已经做完：报错里的任务号（`details.taskRunId`）用来取结果（适配器说明里写明怎么取），不要重做，重做会再计一次费。输出里打印的重做命令带着这次的适配器（`--adapter`、`--adapter-option`）和标签、说明、`--max-chars`、`--concurrency`，照着原样再跑就行。文字被拒的句子（`details.textRejected`，只和这一句的文字有关，换一句就成）也记成 `failed`，只记这一句，别的照常做，不重试，因为换一句才会有不同的结果。调用之前就查出来的（文字空白、太长、有处理不了的字，错误码 `capability_input_invalid`）不计数；服务商拒的，连着 3 句、还没有一句成功，就和别的错一样停下来（错误码 `dub_text_rejected`，`stoppedBy` 的 `details.rejected` 写明被拒的句子）：这种情况多半是参考或别的输入被拦了，每一句都会这样被拒，停下来才不白花钱。别的错（401、参数不对、缺能力、缺运行时……）直接停下来，不再开始新的句子，已经做好的文件和一份写着 `stoppedBy` 的 `dub.json` 留着。401 说明授权有问题：先让使用者处理好，再接着做（同一句再发还是 401）。
+平台说一场戏一个请求装不下（`details.problem` 是 `too_long_for_one_request`，也记成 `failed`，也不标暂时出错）：不自动切开，不重发，重做同样的一场还是装不下；`notes` 里的 `scene_too_long` 说明是哪一场，在那一场中间加章节标记（`# 标题`）切成两场，或者用 `--no-scene` 一行一个请求。服务那头已经做完、只是结果没取回来的句子（适配器在报错上标了 `details.unretrieved`，约定见 `vocab/capability-signatures.md`「通用约定」）也记成 `failed`，可不是暂时出错：输出里单列成「没取回」，照适配器给的 `details.retrieve`（用什么取、任务号这类线索）说怎么取回，不放进重做的命令。再跑同一条命令、或者 `--only` 点到它，都会把它重配、再计一次费；不想重配，照 `details.retrieve` 手动取回，可手动取回的音频现在还没有办法交回输出目录给 `mix` 用（要出成品就只能重配）。`mix` 的提示也不叫人 `--only` 重做它，同样写明这两条路。照输出里的 `--only` 命令重做别的句子时，没点到的没取回的句子照旧记成没取回（`failed`，`error` 连着 `details.retrieve` 照上一次的；同一个请求才算，认法同沿用），不记成 `skipped`，所以取回的线索一直留在 `dub.json` 里，`mix` 也不会叫人 `--only` 重配它；`--dry-run` 给同一个 `--out` 也这样标。这时照原样再跑那条 `--only` 命令不重配它，还会把点到的句子再配一次、再计一次费，所以那一次输出的「没取回」一段说的是「用 `--only` 点到它、或者去掉 `--only` 再跑这条命令」，`mix` 说的是再跑整份台本的那条 `dub` 命令。照旧记着的句子，`seed`、`seedChange` 照上一次的，再 `--only` 它接着往上加。输出里打印的重做命令带着这次的适配器（`--adapter`、`--adapter-option`）和标签、设定、目标时长、`--max-chars`、`--concurrency`，照着原样再跑就行。文字被拒的句子（`details.textRejected`，只和这一句的文字有关，换一句就成）也记成 `failed`，只记这一句，别的照常做，不重试，因为换一句才会有不同的结果。调用之前就查出来的（文字空白、太长、有处理不了的字，错误码 `capability_input_invalid`）不计数；服务商拒的，连着 3 句、还没有一句成功，就和别的错一样停下来（错误码 `dub_text_rejected`，`stoppedBy` 的 `details.rejected` 写明被拒的句子）：这种情况多半是参考或别的输入被拦了，每一句都会这样被拒，停下来才不白花钱。别的错（401、参数不对、缺能力、缺运行时……）直接停下来，不再开始新的句子，已经做好的文件和一份写着 `stoppedBy` 的 `dub.json` 留着。401 说明授权有问题：先让使用者处理好，再接着做（同一句再发还是 401）。
 
 ## 变声和唱歌
 
-**变声和唱歌**：`node cli.mjs convert <包目录> <音频文件> --out <文件>`；`--singing` 是唱歌（输入要是人声分轨，没有伴奏）。说话用 `voice-conversion`，唱歌用 `singing-voice-conversion`，缺哪一项，只有这个命令报 `capability_missing` 并点名缺的是哪一项，配音照常。参考用默认参考段，给了 `--language` 等标签就按标签挑。输出文件已经存在就拒绝，不覆盖，而且是在花钱之前就拒绝；接进来的适配器给了费用说明时，换声之前在标准错误里说明要调一次哪项能力（`--json` 时不说）。登记在 `convert` 功能名下的脚本在换声之后处理音频；增强件的用法同配音。
+**变声和唱歌**：`node cli.mjs convert <包目录> <音频文件> --out <文件>`；`--singing` 是唱歌（输入要是人声分轨，没有伴奏）。说话用 `voice-conversion`，唱歌用 `singing-voice-conversion`，缺哪一项，只有这个命令报 `capability_missing` 并点名缺的是哪一项，配音照常。用哪段参考同配音（`references/dub.md`「一句话是怎么变成合成的」第 3 步）：`--reference-tag <标签>` 只给一次，整串是标签；`--language` 是这句的语言（变声没有台词可认，没给时怎么定见 `lib/convert.mjs` 的文件头）。标签包里没有，报 `reference_tag_unknown`，不调能力、不说费用、不写文件。变声没有情绪、风格、能量的选项（给了是用法错误）。返回的 `pick` 写法同配音的 `units[i].pick`；交给模型的参考文字同配音：参考段有提示标注（`annotatedText`）就交它，没有就交逐字稿。输出文件已经存在就拒绝，不覆盖，而且是在花钱之前就拒绝；接进来的适配器给了费用说明时，该核对的都核对过（能力、脚本要的运行时、用哪段参考）以后、换声之前，在标准错误里说明要调一次哪项能力（`--json` 时不说）。登记在 `convert` 功能名下的脚本在换声之后处理音频；增强件的用法同配音。
 
 ## 自己的适配器
 

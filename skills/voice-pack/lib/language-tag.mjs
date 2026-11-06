@@ -20,7 +20,7 @@ const LABELS = { zh: '中文', ja: '日本語', ko: '한국어', en: 'English' }
 /** 显示名和英文名（音色库按英文名列语言）-> 标签，键是小写的：写法的大小写不论。 */
 const TAG_OF_NAME = new Map([...Object.entries(LABELS).map(([tag, name]) => [name.toLowerCase(), tag]), ['chinese', 'zh'], ['japanese', 'ja'], ['korean', 'ko']]);
 /**
- * 清单里语言标签的写法（清单 schema 的 $defs.languageTag，参考段的 tags.language 和设定的 labels.language 都用它，见 protocol/FORMAT.md 4.4）：形如 en、zh-CN，最长 35 个字符。流程层里认语言标签的地方都用这一份。
+ * 清单里语言标签的写法（清单 schema 的 $defs.languageTag，参考段和留出录音的 language、设定的 labels.language 都用它，见 protocol/FORMAT.md 4.4）：形如 en、zh-CN，最长 35 个字符。流程层里认语言标签的地方都用这一份。
  * 这个模块不引别的模块，没法去读 schema，所以写法在这里手写一遍；要和 schema 里的写法保持一致。
  */
 export const LANGUAGE_TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;

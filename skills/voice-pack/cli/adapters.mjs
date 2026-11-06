@@ -9,7 +9,7 @@
 //
 // 合并（applyAdapters）：这是合并规则唯一的正本。适配器按给的先后一个一个接进命令已有的环境：后给的盖过先给的，命令行上明说的盖过命令自己的默认。每个适配器的工厂拿到的 env 是「命令已有的加上前面的适配器」，
 // 它返回的 capabilities、runtimes 并进去，同名的盖过已有的；它给了 fetch 就换成它的。billing、limits 和 previewCard 不进环境，留在返回的 adapters 里给命令用
-// （费用说明、一次合成的字数上限、合成能力的字数下限、text-generation 一次请求的输入上限、分享文件的预览卡片上的产品名和入口）。
+// （费用说明、一次合成的字数上限、合成能力的字数下限、分享文件的预览卡片上的产品名和入口）。
 // limits 的每一个键各自合并：最后一个给了这个键的适配器的算数，后给的盖过先给的，没有适配器给就没有（undefined）。
 //
 // 信任：适配器在本进程里直接运行，不隔离，不让用户确认——和包里的脚本一样。用不用、用哪个适配器，是命令行上这个人的决定。
@@ -23,11 +23,12 @@
 //   billingSentence(adapters)             费用说明的开头一句（给了 billing 的适配器各一句，「要……，也要……」，不带句末的标点），没有就是 null
 //   maxCharsOf(adapters)                  一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的，没有就是 undefined
 //   minCharsOf(adapters)                  合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的，没有就是 undefined（dub、make-pack 的 minChars 选项）
-//   maxPromptTokensOf(adapters)           text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的，没有就是 undefined（dub 的 maxPromptTokens 选项：判情绪按它分批发，没有就一次发完）
-//   maxPauseInTextMsOf(adapters)          声明了 pause-in-text 的环境，一个请求里写进文字的停顿加起来最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的，没有就是 undefined（dub 的 maxPauseInTextMs 选项，没有就是不限）
+//   maxSpeakersOf(adapters)               声明了 scene-in-request 的环境，一场戏最多几个说话人：最后一个给了 limits.maxSpeakers 的适配器的，没有就是 undefined（dub 的 maxSpeakers 选项，没有就是不限）
+//   maxPauseInRequestMsOf(adapters)       一个请求里一处停顿最多多少毫秒：最后一个给了 limits.maxPauseInRequestMs 的适配器的，没有就是 undefined（dub 的 maxPauseInRequestMs 选项，没有就用基础部分的默认值）
 //   previewCardOf(adapters)              分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
 //   environmentName(adapters)             验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来，没有就是 null
 //   describeRequests(requests)            把适配器的参数写回命令行的样子（补做提示用）
+//   describeCheckTarget(request)          一个适配器写回 `adapter check` 的样子：适配器（名字或路径）放在第一个位置，后面是它的参数（结构检查建议 --live 的那条命令用）
 //   quoteArgument(text)                   把一个参数写回命令行的样子：里面有空白或引号就加双引号（给人看的提示用）
 //   skeletonKinds()                       `adapter new` 能生成的骨架种类：'module'，加上提供了骨架生成器（adapters/<名字>/skeleton.mjs）的官方适配器，按名字排
 //   buildSkeleton(kind, context)          生成一个骨架 → { files: [{ path, content }], fillIn }；context 的形状在 lib/adapter-skeleton.mjs 的文件头。
@@ -208,17 +209,27 @@ export function takeAdapterArguments(args) {
 export const quoteArgument = (text) => (/[\s"']/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text);
 const quoted = quoteArgument;
 
+/** 一个适配器的参数写回命令行的样子（不含接它的那一项）：官方适配器声明了的参数用它的写法，剩下的用 --adapter-option。adapter 是官方适配器（不是就是 undefined）。 */
+function optionArguments(adapter, options) {
+  const flagOf = new Map(Object.entries(adapter?.manifest.flags ?? {}).map(([flag, key]) => [key, flag]));
+  return Object.entries(options).map(([key, value]) => (flagOf.has(key) ? `${flagOf.get(key)} ${quoted(value)}` : `--adapter-option ${quoted(`${key}=${value}`)}`));
+}
+const officialByName = () => new Map(officialAdapters().map((adapter) => [adapter.name, adapter]));
+
 /** 把适配器的参数写回命令行的样子（给人看，补做的提示里用）：有简写和声明的参数就用它们，剩下的用 --adapter 和 --adapter-option。 */
 export function describeRequests(requests) {
-  const official = new Map(officialAdapters().map((adapter) => [adapter.name, adapter]));
+  const official = officialByName();
   const parts = [];
   for (const { spec, options } of requests) {
     const adapter = official.get(spec);
-    const flagOf = new Map(Object.entries(adapter?.manifest.flags ?? {}).map(([flag, key]) => [key, flag]));
-    parts.push(adapter?.manifest.shorthand === true ? `--${spec}` : `--adapter ${quoted(spec)}`);
-    for (const [key, value] of Object.entries(options)) parts.push(flagOf.has(key) ? `${flagOf.get(key)} ${quoted(value)}` : `--adapter-option ${quoted(`${key}=${value}`)}`);
+    parts.push(adapter?.manifest.shorthand === true ? `--${spec}` : `--adapter ${quoted(spec)}`, ...optionArguments(adapter, options));
   }
   return parts.join(' ');
+}
+
+/** 一个适配器写回 `adapter check` 的样子（给人看）：那个子命令要适配器在第一个位置（名字或路径，不带 --adapter），后面是它的参数，写法同 describeRequests。 */
+export function describeCheckTarget({ spec, options }) {
+  return [quoted(spec), ...optionArguments(officialByName().get(spec), options)].join(' ');
 }
 
 // ---------------------------------------------------------------- 加载
@@ -344,14 +355,14 @@ export function minCharsOf(adapters) {
   return adapters.findLast((adapter) => adapter.limits?.minChars !== undefined)?.limits.minChars;
 }
 
-/** 声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
-export function maxPauseInTextMsOf(adapters) {
-  return adapters.findLast((adapter) => adapter.limits?.maxPauseInTextMs !== undefined)?.limits.maxPauseInTextMs;
+/** 一个请求里一处停顿最多多少毫秒：最后一个给了 limits.maxPauseInRequestMs 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxPauseInRequestMsOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxPauseInRequestMs !== undefined)?.limits.maxPauseInRequestMs;
 }
 
-/** text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
-export function maxPromptTokensOf(adapters) {
-  return adapters.findLast((adapter) => adapter.limits?.maxPromptTokens !== undefined)?.limits.maxPromptTokens;
+/** 声明了 scene-in-request 的环境，一场戏最多几个说话人：最后一个给了 limits.maxSpeakers 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxSpeakersOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxSpeakers !== undefined)?.limits.maxSpeakers;
 }
 
 /** 验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来；没有适配器是 null。 */

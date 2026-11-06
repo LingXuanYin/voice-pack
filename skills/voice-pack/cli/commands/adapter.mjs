@@ -9,7 +9,7 @@
 //     能力名取自能力词表（vocab/capabilities.json），不认识的在写任何文件之前报用法错误。
 //
 //   node cli.mjs adapter check <名字|模块文件|目录> [--live] [--capability <能力,…>] [--text <文字>] [--adapter-option <键=值>]... [--json]
-//     检查一个适配器。默认只看结构，不调用任何能力：能加载，返回的形状对，能力名都在能力词表里，能力是函数、只是声明的能力（style-instruction、style-cues）是 true。
+//     检查一个适配器。默认只看结构，不调用任何能力：能加载，返回的形状对，能力名都在能力词表里，能力是函数、只是声明的能力（phoneme-in-text、scene-in-request、seed-in-request）是 true。
 //     --live：再把每项能力用一段很短的输入真调一次，核对返回（音频能解码、长度大于 0、mimeType 和字节对得上、有没有 model）。会真的调用模型，可能花钱、占算力：
 //             调之前在标准错误里说明调哪几项、各几次（适配器给了费用说明时也写上；--json 时不说，免得弄脏机器读的输出，计划在输出的 live.plan 里）。
 //             输入：一句 Hello, this is a check.（或 --text 给的；有的模型一次至少 15 个字符，所以不用 Hello.），要音频的给基础部分附带的一段人声
@@ -19,6 +19,8 @@
 //             只是声明、签名表里还没有它的调用写法（no_signature）、签名表里有但检查还没接上（not_wired）、不在词表里、不是函数、适配器没提供。
 //     适配器要什么参数用 --adapter-option 给，官方适配器声明的专有参数也认（写法见 adapters/README.md「命令行上怎么给」）。适配器要放在第一个位置，一次只查一个。
 //     适配器加载不了（找不到、写坏了、起程序失败……）也是一次不通过的检查，不是命令出错：错误写在结果里。
+//
+//   node cli.mjs adapter new --help、node cli.mjs adapter check --help（或 -h）：打印这个子命令的用法，退出 0。
 //
 // 退出码：0 通过；1 不通过（加载不了、结构有错、真调用有一项没通过），或者要写的目录已经存在；2 用法错误。
 // --json：输出一份 JSON。new：{ kind, directory, files, capabilities, next: { fillIn, check, use } }。
@@ -32,7 +34,7 @@ import { writeDirectory } from '../../protocol/cli/disk.mjs';
 import voiceInfo from '../../lib/adapter-check-voice.json' with { type: 'json' };
 import { checkAdapterLive, checkAdapterStructure, DEFAULT_TEXT, planLiveCalls } from '../../lib/adapter-check.mjs';
 import { NOT_IMPLEMENTED, parseSignatureDoc, skeletonContext } from '../../lib/adapter-skeleton.mjs';
-import { billingSentence, buildSkeleton, describeRequests, loadAdapter, quoteArgument, skeletonKinds, takeAdapterArguments } from '../adapters.mjs';
+import { billingSentence, buildSkeleton, describeCheckTarget, loadAdapter, quoteArgument, skeletonKinds, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, usageProblem } from '../input.mjs';
 
 const CLI_FILE = fileURLToPath(new URL('../../cli.mjs', import.meta.url));
@@ -201,7 +203,8 @@ async function runCheck(args, ctx) {
   const result = { ok: structure.ok, adapter: { spec, label, file }, structure };
   const lines = [`适配器 ${label}（${file}）`, ...structureLines(structure)];
   if (live && !structure.ok) lines.push('结构检查没通过，没有做真调用');
-  if (!live && structure.ok) lines.push(`没有调用任何能力。要用很短的输入把每项能力真调一次、核对返回（可能花钱）：node cli.mjs adapter check ${describeRequests(taken.requests)} --live`);
+  // 建议的命令照着跑得通：适配器在第一个位置（不带 --adapter），后面是它的参数，cli.mjs 写全路径（同 new 给的「检查」那一条）
+  if (!live && structure.ok) lines.push(`没有调用任何能力。要用很短的输入把每项能力真调一次、核对返回（可能花钱）：node ${quoteArgument(CLI_FILE)} adapter check ${describeCheckTarget(taken.requests[0])} --live`);
   if (live && structure.ok) {
     const env = { capabilities: adapter.capabilities ?? {}, runtimes: { ...ctx.env.runtimes, ...adapter.runtimes } }; // 返回的音频不是 WAV 时，解码要用命令自己的 ffmpeg
     const plan = planLiveCalls(env, { capabilities: wanted });
@@ -217,8 +220,19 @@ async function runCheck(args, ctx) {
 
 // ---------------------------------------------------------------- 入口
 
+/** 子命令的 --help（-h）：打印它的用法和一行说明，退出 0，和 runner 给别的命令的 --help 一样（runner 只看命令名后面的第一个参数，子命令的由这里看）。 */
+const SUBCOMMANDS = {
+  new: { usage: NEW_USAGE, summary: '生成适配器的骨架：每项能力一个还没实现的函数，注释从签名表生成；目录要还不存在' },
+  check: { usage: CHECK_USAGE, summary: '检查一个适配器：默认只看结构，不调用任何能力；加 --live 用很短的输入把每项能力真调一次（可能花钱）' },
+};
+function subcommandHelp(ctx, { usage: subUsage, summary: subSummary }) {
+  ctx.stdout(`用法：node cli.mjs ${subUsage}\n${subSummary}\n`);
+  return 0;
+}
+
 export async function run(args, ctx) {
   const [subcommand, ...rest] = args;
+  if (Object.hasOwn(SUBCOMMANDS, subcommand ?? '') && (rest[0] === '--help' || rest[0] === '-h')) return subcommandHelp(ctx, SUBCOMMANDS[subcommand]);
   if (subcommand === 'new') return runNew(rest, ctx);
   if (subcommand === 'check') return runCheck(rest, ctx);
   return usageProblem(ctx, usage, subcommand === undefined ? '要给子命令：new（生成骨架）或 check（检查）' : `不认识的子命令 ${subcommand}（有：new、check）`);

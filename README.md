@@ -3,7 +3,7 @@
 给 agent 用的音色包 skill：一个声音的参考集和配音指引装成一个包，谁拿到都能用。<br>
 The voice pack skill for your agent: a voice's reference clips and dubbing guidance, sealed in one pack that anyone can use.
 
-[产品页 Home](https://lingxuanyin.github.io/voice-pack/) · [2.0 发布了 What's new in 2.0](https://lingxuanyin.github.io/voice-pack/2.0/) · [发布说明 Release notes](skills/voice-pack/CHANGELOG.md) · [中文](#中文) · [English](#english)
+[产品页 Home](https://lingxuanyin.github.io/voice-pack/) · [2.0 新闻稿 2.0 press release](https://lingxuanyin.github.io/voice-pack/2.0/) · [发布说明 Release notes](skills/voice-pack/CHANGELOG.md) · [中文](#中文) · [English](#english)
 
 ## 装上 · Install
 
@@ -32,10 +32,10 @@ voice-pack 是给 agent 用的 skill：音色包（voice pack）的格式，和�
 
 ### 能做什么
 
-- **造声音**：克隆（一段 5–20 秒、不带伴奏的干净参考，加它的逐字文本）；设计（从设计词表挑属性写成描述，试听，满意的锁定成参考）；融合（两段以上参考，各带权重）。
-- **让它说话**：用音色包给台本配音，每句挑最对得上的参考，读音词表换掉容易读错的词；有声书和长文用台本标记分章、停顿、调语速和重音，新闻、播客、有声书、本地化配音、短视频等 12 个场景各有台本润色的规则；批量生成按单次的上限切开、并发，失败的句子单独重做，做好的不重复付费；变声和唱歌。
+- **造声音**：克隆（一段 5–20 秒、不带伴奏的干净参考，加它的逐字文本）；设计（按性别、年龄、音高、语速、情绪、特点、用途七个维度挑属性写成描述，试听；满意的锁定，只当原料，照它配一段带表演的话当参考）；融合（两段以上参考，各带权重）。
+- **让它说话**：用音色包给台本配音，一句怎么说写成方括号里的提示，原样交给模型；用哪段参考，由你或设定按音色基底标签点名，没点名就用这句语言的默认段；读音词表换掉容易读错的词。台本标记只有三种：分章、停顿、换声音。配音按场景走：对话里的一句、几个角色轮流说的一场戏、旁白和长文各有一份子 skill，写台本怎么改、提示怎么写、用哪段参考、配完查什么。批量生成按单次的上限切开、并发，失败的句子单独重做，做好的不重复付费；变声和唱歌。
 - **听**：转写，给克隆和做包补逐字文本；长录音先切段，再一段一段地转写。
-- **音色包**：做包（打标签，挑参考集和留出录音，响度统一到 −20 LUFS，试合成，量还原度，告诉你还缺什么素材）、检查、补全、放进项目，打成一个 `.voicepack.zip` 分享。
+- **音色包**：做包（挑参考集和留出录音，每段参考记下语言和音色基底标签，听着标上提示，每种语言挑一段默认段，响度统一到 −20 LUFS，试合成，量还原度，用 `--card-line` 配好卡片试听那一句，告诉你还缺什么素材）、检查、补全、放进项目，打成一个 `.voicepack.zip` 分享。
 - **量**：还原度，说话人相似度跟真人基线的比值，加盲听。
 
 ### 接模型
@@ -75,7 +75,7 @@ node cli.mjs check my-voice.voicepack.zip                  # 检查一个音色�
 node cli.mjs dub my-voice/ script.txt --out out/ --dry-run # 配音的规划：每句说什么、挑哪段参考、还缺什么能力
 ```
 
-需要 Node.js（在 24.14 上测过）；库只用平台自带的 Web Crypto、Compression Streams 和 fetch，当前的浏览器里也能跑；ffmpeg 可选，用来解码 WAV 以外的音频。
+需要 Node.js（在 24.14 上测过）；库只用平台自带的 Web Crypto、Compression Streams 和 fetch，当前的浏览器里也能跑；ffmpeg 可选，用来解码 WAV 以外的音频、在配好以后变速。
 
 ### 版本、许可、签名
 
@@ -96,10 +96,10 @@ The home page has two synthetic voices, one designed from a written description 
 
 ### What it does
 
-- **Make a voice**: clone (one clean 5–20 s reference with no music under it, plus its verbatim text); design (pick attributes from the design vocabulary, write them as a description, audition it, lock the take you like as a reference); blend (two or more references, each with a weight).
-- **Make it speak**: dub a script with a voice pack, each line getting the reference that matches it best and the pronunciation lexicon fixing words that get misread; audiobooks and long text with script markup for chapters, pauses, pace and emphasis, and 12 scenes, from news and podcasts to audiobooks, localization and short video, each with its own script-polishing rules; batches split at the per-call limit and generated in parallel, failed lines redone on their own and finished ones never paid for twice; voice conversion and singing.
+- **Make a voice**: clone (one clean 5–20 s reference with no music under it, plus its verbatim text); design (pick attributes along the seven dimensions of gender, age, pitch, pace, emotion, traits and purpose, write them as a description and audition it; the take you lock is only raw material, and an acted passage dubbed from it becomes the reference); blend (two or more references, each with a weight).
+- **Make it speak**: dub a script with a voice pack: how a line is said is written as cues in square brackets, which go to the model as written; the reference is the one you or the setup names by its reference tag, or else the default segment of the line's language; the pronunciation lexicon fixes words that get misread. Script markup comes in three kinds: chapters, pauses and voice changes. Dubbing goes by scene: a line said to someone, several characters taking turns, and narration or long text each have a sub-skill that says how to edit the script, which cues to write, which reference to use and what to check. Batches are split at the per-call limit and generated in parallel, failed lines are redone on their own and finished ones are never paid for twice. Voice conversion and singing, too.
 - **Listen**: transcription, for the verbatim text that clones and packs need; long recordings are cut first, then transcribed one segment at a time.
-- **Voice packs**: make (tag, pick the reference set and the holdout, even loudness to −20 LUFS, run a trial synthesis, measure fidelity, say what material is missing), check, complete, install into a project, and share as one `.voicepack.zip` file.
+- **Voice packs**: make (pick the reference set and the holdout, give each reference its language and reference tag, listen to mark cues in its transcript, pick a default segment for each language, even loudness to −20 LUFS, run a trial synthesis, measure fidelity, voice the preview card's line with `--card-line`, say what material is missing), check, complete, install into a project, and share as one `.voicepack.zip` file.
 - **Measure**: fidelity, as speaker similarity against a same-person baseline, plus blind listening.
 
 ### Plug in a model
@@ -139,7 +139,7 @@ node cli.mjs check my-voice.voicepack.zip                  # checks a voice pack
 node cli.mjs dub my-voice/ script.txt --out out/ --dry-run # the dubbing plan: each line, its reference, what is missing
 ```
 
-Requires Node.js (tested on 24.14); the library uses only built-in Web Crypto, Compression Streams and fetch, so current browsers run it too; ffmpeg is optional, for audio other than WAV.
+Requires Node.js (tested on 24.14); the library uses only built-in Web Crypto, Compression Streams and fetch, so current browsers run it too; ffmpeg is optional, for audio other than WAV and for speed changes after dubbing.
 
 ### Version, license, signatures
 

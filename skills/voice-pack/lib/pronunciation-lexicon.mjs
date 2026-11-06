@@ -44,8 +44,9 @@
 // 环境的 pronunciation-lexicon 能力（vocab/capabilities.json）是合成器自己支持词表的意思，这里不用它：词表对 alias 在文字层面生效，不依赖环境。
 //
 // ---------------------------------------------------------------- 怎么用到台词上（applyLexicon）
-//   - 只替换台本标记之间的文字，不改标记本身。标记的写法取自解析器自己的正则（tools/markup.mjs 的 MARKER_PATTERN）。
-//     不这样的话，词表里有 pause → break，[pause 1s] 就变成 [break 1s]，停顿没了；[voice:Alice] 加 Alice → Ali，声音名对不上。
+//   - 只替换台本标记和提示以外的文字，不改标记，也不碰方括号里的提示。标记和提示的写法取自解析器自己的正则（tools/markup.mjs 的 MARKER_PATTERN）。
+//     不这样的话，词表里有 pause → break，[pause 1s] 就变成 [break 1s]，停顿没了；[voice:Alice] 加 Alice → Ali，声音名对不上；
+//     提示 [Mira 笑着] 里的 Mira 也会被换掉，提示就不是作者写的了。拼音音素（applyPhonemes）同样不进提示。
 //   - 区分大小写：PLS 的 grapheme 是照写法对的，要两种写法就写两个 grapheme。
 //   - 词条是拉丁字母这类分词的文字时按整词匹配（Mira 换，Miranda 不动）；词条的两头是汉字、假名、谚文、泰文这类不分词的文字，按子串匹配。
 //     拉丁词挨着汉字不算在词内（「我喜欢Mira这个人」里的 Mira 能换）。
@@ -54,8 +55,10 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
-import { MARKER_PATTERN } from '../tools/markup.mjs';
-import { escapeSsml } from './pause-in-request.mjs';
+import { CUE_PATTERN, MARKER_PATTERN } from '../tools/markup.mjs';
+
+/** 写进 <speak> 的文字里的 & < > 转义（拼音音素的标签包在 <speak> 里，见 applyPhonemes）。 */
+const escapeSsml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** 读音词表在角色部分根上的文件名（约定，清单里没有专门的字段）。 */
 export const LEXICON_FILE = 'lexicon.pls';
@@ -527,7 +530,7 @@ export function pinyinProblem(term, ph) {
 }
 
 /**
- * 把读音标在台词的词上（拼音音素）。spoken 是要念的文字；ssml 为 true 时它已经是 <speak>…</speak>（转义过，标记和 <break> 不动，只换文字段）；
+ * 把读音标在台词的词上（拼音音素）。spoken 是要念的文字；ssml 为 true 时它已经是 <speak>…</speak>（转义过，标记和 <break> 不动，只换文字段）；方括号里的提示不动（文件头「怎么用到台词上」）；
  * 为 false 时是纯文字，有替换的就转义、包一层 <speak>。没有替换的原样交回，所以没有音素的句子和以前一字不差。
  * phonemes 是 lexiconRules 的 phonemes（{ term, alphabet, ph }）；同一个词条只用第一个。匹配和长词优先的规则和 applyLexicon 一样。
  * @returns {{ text: string, replacements: { term: string, ph: string, count: number }[] }} replacements 按第一次换到的先后排
@@ -543,11 +546,13 @@ export function applyPhonemes(spoken, phonemes, { ssml }) {
   const terms = [...byEscaped.keys()].sort((a, b) => b.length - a.length);
   const pattern = new RegExp(terms.map(termPattern).join('|'), 'gu');
   const counts = new Map();
-  const rewrite = (run) => run.replace(pattern, (matched) => {
+  const rewriteWords = (run) => run.replace(pattern, (matched) => {
     const item = byEscaped.get(matched);
     counts.set(item.term, (counts.get(item.term) ?? 0) + 1);
     return `<phoneme alphabet="${PINYIN_ALPHABET}" ph="${escapeSsml(item.ph).replace(/"/g, '&quot;')}">${matched}</phoneme>`;
   });
+  // 提示（方括号）原样，只换提示之间的字
+  const rewrite = (run) => run.split(CUES_SPLIT).map((piece, index) => (index % 2 === 1 ? piece : rewriteWords(piece))).join('');
   let text;
   if (ssml) {
     // 标签（<speak>、<break …/>）原样，只换标签之间的文字
@@ -563,6 +568,9 @@ export function applyPhonemes(spoken, phonemes, { ssml }) {
 }
 
 // ---------------------------------------------------------------- 用到台词上
+
+/** 按提示切开（提示在奇数位），给 applyPhonemes 绕开提示用。 */
+const CUES_SPLIT = new RegExp(`(${CUE_PATTERN})`);
 
 const WORD_CHAR = String.raw`[\p{L}\p{N}_]`;
 // 不分词的文字：汉字、假名、谚文、泰文这类，词条的边上是它们就按子串匹配，旁边是它们也不算在词内

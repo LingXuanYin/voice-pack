@@ -5,7 +5,8 @@
 //   说话人相似度  生成的录音和对应的留出录音之间的相似度，除以真人基线。
 //                真人基线 = 同一个评测模型下，同一个人的真录音（参考和留出录音，标了 synthetic 的克隆不算）两两之间相似度的平均。
 //   盲听         把真人录音和生成的录音打乱成 X、Y 交给能听音频的模型，不告诉它哪段是真人；
-//                先让它把两段话开头的 OPENING_WORDS 个词写出来，和已知文本的开头对不上就作废（只比开头：要整段原话，现成文章会被模型的服务商拦下，见 OPENING_WORDS）；
+//                先让它把两段话开头的 OPENING_WORDS 个词写出来，和已知文本的开头对不上就作废（只比开头：要整段原话，现成文章会被模型的服务商拦下，见 OPENING_WORDS；
+//                两边折过写法再比一次，片假名和平假名、有汉字时阿拉伯数字和汉字数字算一样，和不折的取小的，见 openingErrorRate）；
 //                再问两件事（是不是同一个人；哪里像、哪里不像）；
 //                换序再问一遍：同一对录音 X、Y 对调再问，模型偏向某个位置，也不会把「判成同一人的比例」推向一边。
 //                这个比例能不能当分数，见下面「怎么读这份报告」。
@@ -75,6 +76,18 @@
 //      校验只比每段音频开头的 OPENING_WORDS 个词。这一次（2026-11-01，就是这个提示收的）：380 段转写（另有 2 问没有转写：一问回答格式不对，一问被模型的服务商拦下），开头的词 335 段逐字对上，
 //      错误率均值 0.026、最大 0.57，超过 0.3 的 4 段正是 4 问收音校验没过的（K 组第一遍 2 问，M 组 2 问），其余 186 问两段都在 0.3 以下。
 //      没给音频时的错误率这一次没有重量（旧记录，2026-10-19：1.00，作废）。换了音频和静音时的错误率另量过，量法和数不随基础部分发布。
+//      开头的错误率比两次，交回小的那个：一次原样比，一次两边先折写法（openingErrorRate 的 foldWritings）：片假名当平假名；这一对文字里有汉字的，阿拉伯数字当汉字数字（94 就是九十四；
+//      还有假名的照日文的写法，100 就是百、105 就是百五；千分位逗号先去掉，1,000 就是 1000）。
+//      上面的数是加这一条以前量的，没有折过写法重量。加它的依据（2026-11-06）：另一次照这个收音校验判的听音评测，
+//      原样比，352 问里作废 75 问；另有 48 问都用同一段日文（逐字稿写片假名、模型写平假名），作废 44 问。
+//      那边放宽以后（先折写法，另外多认几条同一段话的转写；这里一段只有一份已知文本，只做前一条）降到 57 问、0 问，降下来的多半是听到了、写法不同。
+//      那边的数一律照中文读，只比折过的；日文照日文的写法读、去掉千分位逗号、和原样比的取小的，是这里另加的（照中文读日文的「百」「千」「百五」，读出来多一两个词，折了也对不上），没有重量。
+//      上限、开头的词数、分词都不变；凭提示编出来的话照旧过不了。汉字和假名之间（「何なのよ」和「なんなのよ」）折不了，照旧算错。
+//      取小的，所以折写法不会比原样比差，原来过的不会因为它作废。折过反倒多算错的，交回的是原样比的那个，和加这一条以前一样：
+//      另一边的写法比读出来的短，读出来多的词都算错。5 位以上的数逐位读，另一边写「一万」「两万」的（已知文本「3万円もするの？」、模型写「30000円もするの」，
+//      折过 0.857，原样 0.286，交回 0.286）；中文不写「一」的「千元」（1000 读成一千，多一个词：「花了千元买了一个蛋糕」，折过 0.286，原样 0.143）；
+//      折过以后一个数占的词数变了，开头的 OPENING_WORDS 个词比到的字跟着变，标提示标注时可能比到交给模型的那一截（日文的「１，０００」原样是「1」「000」两个词，
+//      折过是一个「千」；见 afterOpening），模型照实只写了去掉的那几个词，原样比一个不差。
 //      作废的条数单独报，不进以上任何比例。作废有四种原因，error.code 里分得开：收音校验没过（listening_check_failed）、
 //      回答不是固定格式（blind_answer_invalid）、回答没正常结束或是空的（blind_answer_unusable：截断、出错中断、没有文字，能力标 details.unusable）、回答被模型的服务商拦下（provider_blocked）。被拦下的另外报条数（blocked，是作废的一部分），
 //      写明是被拦下，不写成「不是 JSON」：服务商拦的是这一段录音的这次问答，再问多半还是被拦（旧记录，整段转写的旧提示 2026-10-14：同一批录音再问一遍，
@@ -219,14 +232,82 @@ export function transcriptErrorRate(reference, hypothesis) {
   return editDistance(expected, heard) / expected.length;
 }
 
-/** 核对两个输入都是字符串、已知文本里至少有一个词，分好词交回。transcriptErrorRate 和 openingErrorRate 共用。 */
-function tokenizePair(reference, hypothesis) {
+/**
+ * 核对两个输入都是字符串、已知文本里至少有一个词，分好词交回。transcriptErrorRate 和 openingErrorRate 共用；
+ * fold 为真时分词之前两边先折写法（foldWritings，只有 openingErrorRate 这样做）。
+ */
+function tokenizePair(reference, hypothesis, { fold = false } = {}) {
   for (const [name, value] of [['已知文本', reference], ['转写', hypothesis]]) {
     if (typeof value !== 'string') throw invalid(name, `${name}必须是字符串`);
   }
-  const expected = tokenizeTranscript(reference);
+  const [known, written] = fold ? foldWritings(reference, hypothesis) : [reference, hypothesis];
+  const expected = tokenizeTranscript(known);
   if (expected.length === 0) throw new VoicePackError('fidelity_text_empty', '已知文本里一个词也没有（空的，或者只有标点），没法拿它核对转写');
-  return { expected, heard: tokenizeTranscript(hypothesis) };
+  return { expected, heard: tokenizeTranscript(written) };
+}
+
+const HAN = /\p{Script=Han}/u;
+// 假名（平假名、片假名）。用 Script 不用 Script_Extensions：长音符号「ー」、中点「・」这类两边共用的符号不算
+const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+// 片假名 U+30A1（ァ）到 U+30F6（ヶ），减 0x60 就是对应的平假名；用码位拼出来，写明是哪一段码位
+const KATAKANA = new RegExp(`[${String.fromCharCode(0x30a1)}-${String.fromCharCode(0x30f6)}]`, 'gu');
+const DIGIT_NAMES = '零一二三四五六七八九';
+const PLACE_NAMES = ['千', '百', '十', ''];
+// 带千分位逗号的数（NFKC 以后，全角的「，」也是「,」）：1 到 3 位，后面每个逗号跟着正好 3 位（1,000、12,345,678）
+const GROUPED_DIGITS = /(?<![0-9])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9])/g;
+
+/**
+ * 一串阿拉伯数字的汉字读法：0 到 9999 照读法，更长的、或者以 0 开头的（0094）逐位读（一二三四五、零零九四）。
+ * 0 到 9999 分中文、日文两种写法：
+ *   中文（japanese 为假）：94 是九十四，105 是一百零五，10 是十，110 是一百一十；
+ *   日文（japanese 为真）：十、百、千前面不写「一」，中间隔着 0 也不写「零」：100 是百，1000 是千，105 是百五，110 是百十，1010 是千十。
+ * @param {string} digits 只有 0-9
+ * @param {{ japanese?: boolean }} [options]
+ * @returns {string}
+ */
+function numberReading(digits, { japanese = false } = {}) {
+  if (digits.length > 4 || (digits.length > 1 && digits[0] === '0')) return [...digits].map((digit) => DIGIT_NAMES[digit]).join('');
+  if (Number(digits) === 0) return DIGIT_NAMES[0];
+  let out = '';
+  let gap = false; // 读过的数后面隔着 0：中文在下一个不是 0 的位前面读一个「零」，日文不读
+  [...digits.padStart(4, '0')].forEach((digit, place) => {
+    if (digit === '0') {
+      gap = out !== '';
+      return;
+    }
+    if (gap && !japanese) out += DIGIT_NAMES[0];
+    gap = false;
+    // 「一」后面跟着十、百、千的：中文只省掉开头「一十」的「一」（10、15 是十、十五；110 是一百一十），日文都省掉（百、千、百十）
+    const silentOne = digit === '1' && place < 3 && (japanese || (place === 2 && out === ''));
+    out += (silentOne ? '' : DIGIT_NAMES[digit]) + PLACE_NAMES[place];
+  });
+  return out;
+}
+
+/**
+ * 收音校验比开头的时候，两边折一下写法再比一次：同一句话写法不同，不算没听到。只在比的时候折，原文（包里的逐字稿、报告）不动。
+ *   - 先 NFKC（半角片假名变全角，全角数字变半角）；
+ *   - 片假名折成平假名（U+30A1–U+30F6 减 0x60：「コンニチニャ」就是「こんにちにゃ」）；长音符号「ー」不动；
+ *   - 这一对文字里有汉字（已知文本和模型写的，有一边有就算），两边的阿拉伯数字都读成汉字数字（numberReading），千分位逗号先去掉（1,000 就是 1000，不然读成「一」「零零零」）。
+ *     按这一对算、不按每一边各算：已知文本「3じにあいましょう」、模型写「三時に会いましょう」，两边的 3 都读成「三」，错 2 个字（0.286）；
+ *     只折有汉字的那一边，3 和三对不上，错 3 个（0.429）。
+ *     这一对里还有假名的（同样有一边有就算）照日文的写法读（「100円」就是「百円」，105 是百五），没有的照中文读（「94岁」就是「九十四岁」，105 是一百零五）。
+ *     日文照中文读的话，「百」「千」「百五」读出来多一两个词，折了也对不上（已知文本「100円か1000円で買えるよ」、模型写「百円か千円で買えるよ」：照中文读 0.571，不折 0.286，照日文读 0）。
+ * 折不了的照旧算错：汉字和假名之间（「何なのよ」和「なんなのよ」）；两边都没有汉字的文字（英文等）不折数字（「94」和「ninety-four」）；
+ * 年份这类逐位念的数（「1994年」读成「一千九百九十四」，模型写「一九九四年」）。
+ * 折过反倒多算错的：另一边的写法比读出来的短，读出来多的词都算错。5 位以上的数逐位读，另一边写「一万」「两万」的
+ * （已知文本「3万円もするの？」、模型写「30000円もするの」，折过 0.857，不折 0.286）；中文不写「一」的「千元」（1000 读成一千，多一个词）。
+ * 所以 openingErrorRate 折过的和不折的各比一次，交回小的：这几种交回的是不折的那个，不比不折差。
+ * 依据见文件头「怎么读这份报告」第 5 点：日文的段（片假名、平假名）和带数字的中文，模型听到了也被作废。
+ * @param {string} reference
+ * @param {string} hypothesis
+ * @returns {[string, string]}
+ */
+function foldWritings(reference, hypothesis) {
+  const pair = [reference, hypothesis].map((text) => text.normalize('NFKC').replace(KATAKANA, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60)));
+  if (!pair.some((text) => HAN.test(text))) return pair;
+  const japanese = pair.some((text) => KANA.test(text));
+  return pair.map((text) => text.replace(GROUPED_DIGITS, (number) => number.replaceAll(',', '')).replace(/[0-9]+/g, (digits) => numberReading(digits, { japanese })));
 }
 
 /**
@@ -240,15 +321,65 @@ export const OPENING_WORDS = 7;
 /**
  * 开头的错误率：已知文本的头 OPENING_WORDS 个词，和模型写出来的头 OPENING_WORDS 个词，编辑距离除以已知文本这段开头的词数（已知文本不到这么多词，就是它全部的词数）。
  * 分词、算法同 transcriptErrorRate；模型多写了开头以外的话不看（写了全文也只比开头），少写了的每个词算错一个。
+ * 和 transcriptErrorRate 不同的一处：比两次，交回小的那个。一次原样比；一次分词之前两边先折写法（foldWritings：片假名当平假名；这一对里有汉字的，阿拉伯数字当汉字数字，还有假名的照日文的写法），
+ * 写法不同不算错。折过反倒多算错的（5 位以上的数对「一万」这类，见 foldWritings）交回的是原样比的那个，所以折写法不会比不折差。
+ * 折过的那一次，数读成汉字数字以后可能占几个词（94 是「九」「十」「四」三个词），开头的 OPENING_WORDS 个词按折过的数；原样比的那一次按原文的数。
  * @param {string} reference 已知文本（整段，函数自己取开头）
  * @param {string} hypothesis 模型写出来的话（只写开头，或者写了全文，都行）
  * @returns {number} 已知文本有 OPENING_WORDS 个词以上时在 0 到 1 之间；不到这么多词时，模型多写的词也算错，可以超过 1。和 DEFAULT_MAX_ERROR_RATE 比
  * @throws {VoicePackError} fidelity_input_invalid（不是字符串）、fidelity_text_empty（已知文本里一个词也没有，没法比）
  */
 export function openingErrorRate(reference, hypothesis) {
-  const { expected, heard } = tokenizePair(reference, hypothesis);
-  const opening = expected.slice(0, OPENING_WORDS);
-  return editDistance(opening, heard.slice(0, OPENING_WORDS)) / opening.length;
+  const rate = (fold) => {
+    const { expected, heard } = tokenizePair(reference, hypothesis, { fold });
+    const opening = expected.slice(0, OPENING_WORDS);
+    return editDistance(opening, heard.slice(0, OPENING_WORDS)) / opening.length;
+  };
+  return Math.min(rate(true), rate(false));
+}
+
+/**
+ * 一段文字去掉开头 words 个词以后剩下的原文（标提示标注那一次，交给模型的逐字稿去掉的就是收音校验原样比的这几个词，lib/segment-annotation.mjs）。
+ * 分词同 tokenizeTranscript（一个字一个字地规范化再认），切的是原文，剩下的部分一个字都不改，开头的空白和标点也留着。
+ * 不折写法（openingErrorRate 比的时候才折）。openingErrorRate 原样比的那一次，比的正好是去掉的这几个词；折过的那一次，一个数占的词数变了，
+ * 比的可能只是去掉的这几个词的前一部分（94 读成三个词），也可能比到没去掉的字：日文的「１，０００」原样是「1」「000」两个词，折过是一个「千」，
+ * 「１，０００円と１，０００円と１，０００円、…」去掉的是「１，０００円と１，０００円」，折过的开头「千円と千円と千」后两个词出自交给模型的那一截。
+ * 所以 openingErrorRate 交回两次里小的那个：模型照实只写了去掉的那几个词，原样比一个不差。
+ * 不到 words 个词（或者正好 words 个），剩下的是空串。
+ * @param {string} text
+ * @param {number} [words] 默认 OPENING_WORDS
+ * @returns {string}
+ */
+export function afterOpening(text, words = OPENING_WORDS) {
+  const source = String(text);
+  let count = 0;
+  let inWord = false;
+  for (let i = 0; i < source.length; ) {
+    const raw = String.fromCodePoint(source.codePointAt(i));
+    const next = i + raw.length;
+    for (const ch of raw.normalize('NFKC').toLowerCase()) {
+      if (APOSTROPHES.includes(ch)) continue;
+      const cjk = !isSeparator.test(ch) && isCjkChar.test(ch);
+      const word = !isSeparator.test(ch) && !cjk && isWordChar.test(ch);
+      if (word) {
+        inWord = true;
+        continue;
+      }
+      if (inWord) {
+        // 一个词在这个字前面结束了
+        inWord = false;
+        count += 1;
+        if (count >= words) return source.slice(i);
+      }
+      if (cjk) {
+        // 中文、日文一个字一个词，到这个字后面结束
+        count += 1;
+        if (count >= words) return source.slice(next);
+      }
+    }
+    i = next;
+  }
+  return '';
 }
 
 // ---------------------------------------------------------------- 盲听
@@ -791,7 +922,7 @@ async function baselineOrUnmeasurable(env, real) {
  * 某一段录音里没有能嵌声纹的语音（说话人验证报标准的 no_speech，见读法第 9 点）不是环境坏了：那一条的说话人相似度记成「量不到」
  *   （noSpeech，写明是生成的还是留出的那一段），不进比例，不能补做，别的条照常量。留出的真录音自己嵌不出时真人基线也不用它（baseline.excluded）；
  *   参考录音嵌不出也一样；剩下的真录音凑不出一对时，说话人相似度整体「量不了」（not_enough_real_recordings），盲听照做。
- * 分组：按留出录音的标签（情绪、风格、语言、能量等，有什么标签就分什么）一组一组报，每组带着参考集里有几段这个标签取值。
+ * 分组：按留出录音的标签（做包存下的是语言，别的评测集可以有别的键，有什么标签就分什么）一组一组报，每组带着参考集里有几段这个标签取值。
  *
  * @param {object} env 注入的运行环境：speaker-verification、audio-text-to-text 各自可选
  * @param {{

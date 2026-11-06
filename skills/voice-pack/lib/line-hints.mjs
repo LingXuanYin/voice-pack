@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 台词的提示（流程层）：从一句台词本身读出两样东西，给按台词挑参考用——
+// 台词的提示（流程层）：从一句台词本身读出两样东西，给配音和挑参考用（语种用来挑参考；舞台提示换成提示留在原位交给模型，读出的情绪、风格交给包里脚本的钩子）——
 //   1 舞台提示：台词里括号中的语气说明，例如（耳语）、(angry)、*笑*、【叹气】。词表是 vocab/cues.json。
 //   2 文字的语种：按文字系统认（汉字、假名、谚文、西里尔字母……）。拉丁字母认不出是英语还是法语，所以给的是一组候选。
-// 只做计算，不用模型，不读文件；规则的全貌见 lib/reference-pick.mjs 的文件头。
+// 配音（lib/dub.mjs）读舞台提示用的是 cuesInPlace：哪些算舞台提示同下面的「拿掉」，可它不拿掉，换成同样意思的方括号提示留在原位交给模型（规则写在它上面）。
+// 只做计算，不用模型，不读文件；怎么用，见 lib/dub.mjs 和 lib/reference-pick.mjs 的文件头。
 //
 // 舞台提示的写法（SKILL.md 的台本标记表里的「舞台提示」）：
 //   括号     （…）或 (…)，全角半角可以混着写；【…】；*…*。括号里最多 30 个字，超过的不是舞台提示，是台词的一部分。
@@ -32,30 +33,31 @@
 //                             一个词也没有就是没有类别的舞台提示：情绪、风格、动作都是空，directions 里 recognized 为 false。
 //                             已知的取舍：名词收尾的括号（（目的地）、（发源地））写法一样，也算，不念；要念出来就别加括号。代码里在 ADVERB_CUE_RE，要改，改这一处。
 //                             连接成分和整词就是这些，代码里在 CONNECTORS_RE、AND_RE、DURATION_RE 和词表里；要放宽，改这里，改这一处。
-//                             算的：从台词里拿掉，不念出来，在那里把台词切成两段，记在 directions 里（recognized 为 true），用来挑参考。
+//                             算的：从台词里拿掉，不念出来，在那里把台词切成两段，记在 directions 里（recognized 为 true），原样记下（挑参考的报告里列着，不影响用哪一段）。
 //                             不算的：括号里的字是要念的话，一个字不丢，不切段，不记进 directions，括号照原样留着；不算的 *…* 去掉星号，留下中间的字。
 //                             丢内容比多念几个字糟：普通正文里常有括号和强调，「会议在 2019 年（疫情之前）举行。」不能丢了「疫情之前」。
 //              'remove'       30 个字以内的括号（含 *…*，不含上面的 **…**）一律当舞台提示，拿掉，不念出来（读了「画外音」两个字出来比丢一句提示糟得多），
 //                             在那里切段。括号里只要有一个词表里的词就认得出（汉字按子串：（笑话比赛）里有「笑」，也认得出），意思照读，
 //                             记在 directions 里，recognized 为 true；一个词也没有的认不出，也拿掉，如实记着 recognized 为 false，
-//                             调用方可以告诉用户。结构规则认出的（（认真地说））两种选法下读法一样（一个词也没有，recognized 为 false）。只给明确拿到配音台本的调用方用：agent 配音（lib/dub.mjs）、变声（lib/convert.mjs）、
-//                             做包时判断文本能不能原样配音（lib/make-pack-pick.mjs）。
+//                             调用方可以告诉用户。结构规则认出的（（认真地说））两种选法下读法一样（一个词也没有，recognized 为 false）。只给明确拿到配音台本的调用方用：变声（lib/convert.mjs）、
+//                             做包时判断文本能不能原样配音（lib/make-pack-pick.mjs）；agent 配音（lib/dub.mjs）用 cuesInPlace，认法和这里一样。
 //            app 生成和别的读正文的地方用默认的 'keep'。选项由 lib/reference-pick.mjs 的 pickReferences 原样传下来；这条规则只在这里写。
 //   上限     不设上限：一行里认几处都认（两种选法一样；不算舞台提示的括号不计数）。每一段只带它前面自己那一段的提示（见「段带的」），
 //            每个提示只在一段里，所以几万处提示的一行，内存和输出跟提示数成线性。
-//   范围     提示管到哪里的规则，正本是 tools/markup.mjs 的文件头「舞台提示的范围」，这里不再写一份。这个模块怎么做到：台本标记 [pause …] 把一行切成几段时，调用方把前一段的状态
-//            （readDirections 返回的 carry）带给同一行的下一段（carried；换一行、换声音就不带），两边读出来的范围一样。不算舞台提示的括号（'keep'）不管什么范围。
+//   范围     readDirections 读出的每一段的情绪、风格、语速（pieces[i].hints、speed）：一个提示管从它出现的地方，到这一行结束，或者下一个同类的提示出现为止；换一行就清掉，换声音也清掉。
+//            同类：情绪和风格是一类，一个新的情绪或风格提示整个换掉旧的；放慢、加快是一类。停顿不改变情绪、风格和语速，也不切断它们：「（生气）你好[pause 3s]我走了」
+//            里「我走了」照样是生气的。台本标记 [pause …] 把一行切成几段时，调用方把前一段的状态（readDirections 返回的 carry）带给同一行的下一段（carried；换一行、换声音就不带）。
+//            不算舞台提示的括号（'keep'）不管什么范围。配音不用这里的范围：舞台提示换成提示留在原位，由模型自己读（cuesInPlace）。
 //            例外：一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）是一件事，不是一种状态：带着它的提示（（笑）、*笑*、（开心地笑））只管紧跟在它后面、第一段要念的话，用掉以后，管着的回到它出现以前的那一份
 //            （情绪、风格都回去；它出现以前没有，就是没有），不带到停顿后面的每一段。carry 的 back 记着回到哪一份：一下子的声音后面还没有要念的话时（紧接着是停顿），它连同 back 一起带给下一段。
 //   段带的   每一段的 directions 只列它前面、同一行里还没挂到前一段上的提示（前一段之后、这一段之前写的）。每个提示只在一段里，
-//            所以段的 directions 加起来是整段的提示数，不随段数重复。同一行里更早的提示，说明带最近的一处情绪或风格（要顺着段从前往后找）、还在管着的那一处放慢或加快（也是顺着段找），以及这一段自己前面那一截排在最后一个情绪或风格之后的停顿；
-//            前面几段的停顿不带过来（lib/dub.mjs 的说明就是这么拼的）。
+//            所以段的 directions 加起来是整段的提示数，不随段数重复。
 //            整段台词的全部提示在顶层的 directions 里，按出现的次序，每个只一份。
 //   意思     词表里 emotion（情绪）、style（说话的方式）、actions（对节奏的要求：停顿、放慢、加快）三类。
 //            一处提示里可以既有情绪又有风格（（生气地大喊））；同一类里有几个，取最前面的一个。
 //            认词：拉丁字母整词匹配、不分大小写（danger 里的 anger 不算），汉字和假名按子串匹配；重叠时取最长的（微笑是 happy，不是 laugh）。
 //   停顿     （停顿）算在前一段的后面；在一行开头就算在第一段的前面。停多久：括号里写了时长的按写的时长停，没写的每个停顿的词 600 毫秒
-//            （见「停顿的时长」）。挨着的几处停顿加起来，和台本标记 [pause] 一样，没有上限。放慢、加快设的是语速（speed）：一行里从它出现起，管到下一个放慢、加快或者行尾，情绪或风格变了也不清，停顿（包括 [pause …] 切开的段）也不清；拼接的人照 unit.speed 变速，说明里也写着这一处（见 lib/dub.mjs 文件头第 7 步）。
+//            （见「停顿的时长」）。挨着的几处停顿加起来，和台本标记 [pause] 一样，没有上限。放慢、加快设的是语速（speed）：一行里从它出现起，管到下一个放慢、加快或者行尾，情绪或风格变了也不清，停顿（包括 [pause …] 切开的段）也不清。配音不用它：放慢、加快在配音里只是写给模型的提示（cuesInPlace）。
 //            一行里只有停顿（单独一行的（停顿 3 秒），可以夹着别的提示，没有要念的话）时，停顿放在前一句的后面（前一句可以在上一行），
 //            没有前一句就放在后一句的前面，两种选法都一样；几行这样的行挨着，加起来。整段台词里一句要念的话都没有、只有停顿时，pieces 是空的，
 //            停顿一共多少毫秒写在返回值的 unattachedPauseMs 里，没处可挂，调用方自己挂到相邻的一句上（lib/dub.mjs 就这么做）；有要念的话时它总是 0。
@@ -79,7 +81,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import cues from '../vocab/cues.json' with { type: 'json' };
-import { pauseMs, pauseOutOfRange, placeOfMarker } from '../tools/markup.mjs';
+import { CUE_PATTERN, pauseMs, pauseOutOfRange, placeOfMarker } from '../tools/markup.mjs';
 import { isVoicePackError } from '../protocol/lib/errors.mjs';
 import { isLanguageTag } from './language-tag.mjs';
 
@@ -154,7 +156,7 @@ function findCues(text, onlyKinds = KINDS) {
 }
 
 /**
- * 一个标签的规范写法。参考段的标签（emotion、style）和台词里的舞台提示用同一份词表，所以 angry、愤怒、生气的、Furious 都是 angry；
+ * 一个标签的规范写法。调用方和设定给的情绪、风格（labels.emotion、labels.style）和台词里的舞台提示用同一份词表，所以 angry、愤怒、生气的、Furious 都是 angry；
  * 词表里没有的，只做规范化（兼容分解、转小写、去两头空白、连续空白折成一个）。不跨类认：emotion 里写了风格的词（whisper），只规范化。
  * @param {'emotion'|'style'} kind
  * @param {string} tag
@@ -329,24 +331,20 @@ function withoutEmphasis(line, unrecognized) {
  * @param {string} text
  * @param {{ unrecognized?: 'keep'|'remove' }} [options]
  *   unrecognized 括号里不是整个都认得的内容怎么处理：'keep'（默认）留在要念的话里，不切段，不算舞台提示；'remove' 拿掉，只给明确拿到配音台本的调用方用
- * @param {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }|null} [carried]
+ * @param {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }|null} [carried]
  *   前一段在同一行里留下的状态（上一次调用的 carry）：第一行接着它读，情绪、风格、放慢或加快、还没挂上的提示都带过来。
  *   换行的、换声音的一段不传（null）：一行从头算。
  * @param {{ script?: string }} [where] script：这段台词所在的整份台本（没规范化的原文）。只用来说清报错的位置：舞台提示里的停顿装不下一份 WAV（pause_out_of_range）时，
  *   报错的 details 里有这个提示在台本里的行和列（tools/markup.mjs 的 placeOfMarker：第一次写它的地方）；不给就只有提示的原文，行和列是 null。
  * @returns {{
- *   pieces: { text: string, hints: { emotion: string|null, style: string|null }, hintsBase: { emotion: string|null, style: string|null }, hintRaw: string|null, hintRawBase: string|null, directions: object[], speed: 'slow'|'fast'|null, line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
+ *   pieces: { text: string, hints: { emotion: string|null, style: string|null }, directions: object[], speed: 'slow'|'fast'|null, line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
  *   directions: { raw: string, recognized: boolean, emotion: string|null, style: string|null, actions: string[], line: number }[],
  *   unattachedPauseMs: number,
  *   headPauseMs: number,
- *   carry: { emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }
+ *   carry: { emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }
  * }} unattachedPauseMs：整段台词里一句要念的话都没有（pieces 是空的）、只有停顿时，这些停顿一共多少毫秒，没处可挂；有要念的话时总是 0。
- *   pieces[i].hintsBase：这一段不算一下子的声音（笑、叹气）时的情绪、风格：这一段用着一下子的声音时，是它出现以前管着的那一份（用掉以后回到的），别的段和 hints 一样。
- *   例外：提示里既有情绪又有一下子的声音（（生气笑））时，情绪是这一段自己的，不回到它出现以前的：hintsBase 是 { emotion: 生气, style: null }（情绪不算一下子的声音，去掉的只有笑）。
- *   环境声明了 cue-in-text 时，配音（lib/dub.mjs）用它挑参考（行首的笑不改变这一行用哪一段参考）、写说明和名字（一下子的声音不在里面，它写在文字里）。
- *   pieces[i].hintRaw、hintRawBase：设定 hints、hintsBase 的那个提示的原文（作者的词；没有就是 null），配音写说明用（hintRawBase 对应 hintsBase：规则和 hintsBase 是同一个，只在这里写一遍；带一下子的声音的提示，原文不是说明：（生气笑）的 hintRawBase 是 null，情绪在 hintsBase 里，由名字（cues）带）。
  *   headPauseMs：第一行开头、前一段（carried 里的）后面的停顿，挂在前一段后面，不挂在这里的第一段前面（carried 有前一段时才可能有）。
- *   carry：最后一行读完时的状态，给同一行的下一段接着读；hasPiece 是同一行里前面有没有一段要念的话；back 是一下子的声音（笑、叹气）还没有被一段话用掉时（后面紧接着是停顿），用掉以后情绪、风格回到哪一份，没有等着用掉的就是 null；baseOwn 是等着用掉的那个提示里既有情绪又有一下子的声音时，这一段不算一下子的声音时的情绪和风格（hintsBase 用它，不用 back），不是这种就是 null。
+ *   carry：最后一行读完时的状态，给同一行的下一段接着读；hasPiece 是同一行里前面有没有一段要念的话；back 是一下子的声音（笑、叹气）还没有被一段话用掉时（后面紧接着是停顿），用掉以后情绪、风格回到哪一份，没有等着用掉的就是 null。
  */
 export function readDirections(text, options, carried = null, where = {}) {
   try {
@@ -372,7 +370,7 @@ function readDirectionsOf(text, options, carried) {
   const directions = [];
   let waiting = 0; // 前面还没有一句、等着挂到后一句前面的停顿：一行里只有停顿，又没有前一句
   let headPauseMs = 0; // 第一行开头的停顿，挂在 carried 里的前一段后面
-  /** @type {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null, baseOwn: { emotion: string|null, style: string|null }|null, raw: string|null, backRaw: string|null }|null} */
+  /** @type {{ emotion: string|null, style: string|null, speed: 'slow'|'fast'|null, gap: object[], hasPiece: boolean, back: { emotion: string|null, style: string|null }|null }|null} */
   let carry = null;
   const lines = text.split(LINE_BREAK_RE);
   lines.forEach((original, lineNumber) => {
@@ -380,10 +378,7 @@ function readDirectionsOf(text, options, carried) {
     // 第一行接着前一段说的同一行（carried）；其余各行是新的一行，从头算
     const before = lineNumber === 0 && carried !== null ? carried : null;
     let state = { emotion: before?.emotion ?? null, style: before?.style ?? null };
-    let raw = before?.raw ?? null; // 设定 state 的那个提示的原文（作者的词）
-    let backRaw = before?.backRaw ?? null; // back 对应的原文
     let back = before?.back ?? null; // 一下子的声音（笑、叹气）出现了、还没有被一段话用掉：用掉以后 state 回到这一份（它出现以前管着的情绪和风格）
-    let baseOwn = before?.baseOwn ?? null; // 那个提示里既有情绪又有一下子的声音（（生气笑））：这一段不算笑时，情绪是它自己的（hintsBase 用它，不用 back）
     let speed = before?.speed ?? null;
     let pendingPause = 0;
     let gap = before !== null ? [...before.gap] : []; // 这一段前面、同一行里还没挂到前一段上的提示（前一段之后、这一段之前写的）
@@ -392,17 +387,14 @@ function readDirectionsOf(text, options, carried) {
     const push = (chunk) => {
       const spoken = chunk.trim();
       if (spoken === '') return;
-      pieces.push({ text: spoken, hints: { ...state }, hintsBase: { ...(baseOwn ?? back ?? state) }, hintRaw: raw, hintRawBase: baseOwn !== null ? null : back !== null ? backRaw : raw, directions: gap, speed, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
+      pieces.push({ text: spoken, hints: { ...state }, directions: gap, speed, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
       gap = [];
       pendingPause = 0;
       waiting = 0;
       hasPiece = true;
       if (back !== null) { // 一下子的声音只管紧跟着它的这一段：这一段用掉了它，后面的段回到它出现以前管着的
         state = back;
-        raw = backRaw;
         back = null;
-        backRaw = null;
-        baseOwn = null;
       }
     };
     for (const m of line.matchAll(DIRECTION_RE)) {
@@ -418,12 +410,8 @@ function readDirectionsOf(text, options, carried) {
       if (meaning.emotion !== null || meaning.style !== null) {
         // 带一下子的声音的提示：它自己那一段照旧（和别的情绪、风格提示一样换掉旧的），用掉以后回到它出现以前管着的；还有一个没用掉的，回到的还是更早的那一份。别的情绪、风格提示：整个换掉旧的，也不再有等着用掉的
         const oneShot = meaning.style !== null && ONE_SHOT_STYLES.has(meaning.style);
-        if (oneShot && back === null) backRaw = raw;
         back = oneShot ? (back ?? { ...state }) : null;
-        if (back === null) backRaw = null;
-        baseOwn = oneShot && meaning.emotion !== null ? { emotion: meaning.emotion, style: null } : null;
         state = { emotion: meaning.emotion, style: meaning.style };
-        raw = words;
       }
       for (const action of meaning.actions) if (action === 'slow' || action === 'fast') speed = action;
       const pause = pauseOf(meaning, durations);
@@ -441,9 +429,119 @@ function readDirectionsOf(text, options, carried) {
       if (pieces.length > 0) pieces[pieces.length - 1].pauseAfterMs += pendingPause;
       else waiting += pendingPause;
     }
-    if (lineNumber === lines.length - 1) carry = { emotion: state.emotion, style: state.style, speed, gap, hasPiece, back, baseOwn, raw, backRaw };
+    if (lineNumber === lines.length - 1) carry = { emotion: state.emotion, style: state.style, speed, gap, hasPiece, back };
   });
   return { pieces, directions, unattachedPauseMs: waiting, headPauseMs, carry };
+}
+
+// ---------------------------------------------------------------- 配音：舞台说明换成提示，留在原位
+
+/** 文字里的提示（方括号，语法见 tools/markup.mjs 的文件头「提示」）。 */
+const CUE_RE = new RegExp(CUE_PATTERN, 'g');
+/** 去掉提示（方括号里的）以后要念的字：认语种、挑参考用，配音（lib/dub.mjs）也用它看一截文字里有没有要念的字。提示去掉留下的连续空格并成一个。 */
+export const wordsOf = (text) => text.replace(CUE_RE, '').replace(/[ \t]{2,}/g, ' ').trim();
+/** 舞台说明写成的提示：括号里的字放进方括号；字里的方括号去掉（不然会提前结束这个提示）。 */
+const cueOf = (words) => `[${words.replace(/[[\]]/g, '')}]`;
+
+/**
+ * 配音读台词（lib/dub.mjs）：舞台说明换成同样意思的提示，留在它原来的位置交给模型；读成停顿的照旧是停顿。规则只在这里写：
+ *   哪些算舞台说明   同上面「括号」和「哪些算」的「拿掉」：30 个字以内的（…）、(…)、【…】、*…*（**…** 是强调，去掉星号，字照念）。
+ *   换成提示         括号里的字原样写进方括号，放在括号原来的位置：「（耳语）过来，*笑*我告诉你」是「[耳语]过来，[笑]我告诉你」。前后的字一个不动，不在那里切开。
+ *                    方括号本来就是提示（tools/markup.mjs 的文件头「提示」），原样留着；放慢、加快、笑、叹气……都一样，只是写给模型的一句话，配音不另外处理。
+ *   停顿             括号里有停顿的词（词表 actions 的 pause：（停顿 2 秒）、（沉默）……）的，是停顿，不写进文字：在那里切开（同一段话里短的，配音再并回一次请求，见 lib/dub.mjs 第 5c 步），时长和挂法同上面「停顿」
+ *                    （算在前一段的后面；一行开头的算在后一段前面；跨过 [pause …] 的同一行，挂在前一段后面，见 headPauseMs）。时长是 0 的，什么都不留，也不切开。
+ *                    括号里有停顿的词、又有情绪或风格的（（叹了口气，停顿 2 秒）），也只是停顿：情绪和风格不写进文字。
+ *   一段             两处切开的地方（停顿、换行）之间要交给模型的文字，去掉两头空白；是空的不算一段。段里只有提示、没有字的（一行只写了（生气））也是一段，
+ *                    words 是空串，由调用方决定接到哪里（lib/dub.mjs 把它接到下一段的开头）。
+ *   整行只有停顿     pauseLines 列出整行只有读成停顿的舞台说明（时长大于 0）和空白的行号（同 piece.line）；第一行接着 carried 里的前一段的，不算整行。
+ *                    配音认场景的边界用它（lib/dub.mjs 第 5c 步）：停顿写在一行的行尾、行首的，不在这里。
+ *   脚本钩子的情绪   hints 是这一段里第一个有情绪或风格的舞台说明；没有就是同一行前面最近的一个（跨过 [pause …] 接着算，换一行、换声音就清掉）。
+ *                    只给 lib/dub.mjs 的 moodOf（包里脚本的钩子）用：不挑参考，也不交给模型。
+ *                    一下子的声音（vocab/cues.json 的 oneShot：笑、叹气）只算它所在的那一段，不带到后面；方括号里的提示不读。
+ * @param {string} text 一段台词（tools/markup.mjs 解析出的一个 span 的文字）
+ * @param {{ mood: { emotion: string|null, style: string|null }, hasPiece: boolean, gap: object[] }|null} [carried] 同一行前一段（[pause …] 之前）留下的状态（上一次调用的 carry）；换一行、换声音的一段不传
+ * @param {{ script?: string }} [where] 同 readDirections：舞台说明里的停顿装不下一份 WAV 时，报错里补上它在台本里的行和列
+ * @returns {{
+ *   pieces: { text: string, words: string, hints: { emotion: string|null, style: string|null }, directions: object[], line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
+ *   directions: object[], unattachedPauseMs: number, headPauseMs: number,
+ *   carry: { mood: { emotion: string|null, style: string|null }, hasPiece: boolean, gap: object[] }, pauseLines: number[]
+ * }} text 是交给模型的文字（提示在原位）；words 是去掉所有提示（方括号里的）以后要念的字；directions 同 readDirections（这一段前面和里面的舞台说明）；
+ *   unattachedPauseMs、headPauseMs 同 readDirections。
+ */
+export function cuesInPlace(text, carried = null, where = {}) {
+  try {
+    return cuesInPlaceOf(text, carried);
+  } catch (error) {
+    throw withPlace(error, where?.script);
+  }
+}
+
+function cuesInPlaceOf(text, carried) {
+  if (typeof text !== 'string') throw new TypeError('台词必须是字符串');
+  const pauseLines = [];
+  const pieces = [];
+  const directions = [];
+  let waiting = 0; // 前面还没有一段、等着挂到后一段前面的停顿
+  let headPauseMs = 0; // 第一行开头的停顿，挂在 carried 里的前一段后面
+  let carry = null;
+  const lines = text.split(LINE_BREAK_RE);
+  lines.forEach((original, lineNumber) => {
+    const line = withoutEmphasis(original, 'remove');
+    const before = lineNumber === 0 && carried !== null ? carried : null;
+    let mood = before?.mood ?? { emotion: null, style: null }; // 同一行里最近的情绪、风格（一下子的声音不算）
+    let hasPiece = before?.hasPiece ?? false;
+    let pendingPause = 0;
+    let sent = ''; // 这一段攒下的文字（提示在原位）
+    let own = before !== null ? [...before.gap] : []; // 这一段前面和里面的舞台说明
+    let startMood = { ...mood };
+    let last = 0;
+    let linePause = 0; // 这一行里读成停顿、时长大于 0 的舞台说明加起来
+    const push = () => {
+      const content = sent.trim();
+      sent = '';
+      if (content === '') return;
+      const first = own.find((direction) => direction.emotion !== null || direction.style !== null);
+      pieces.push({ text: content, words: wordsOf(content), hints: first === undefined ? startMood : { emotion: first.emotion, style: first.style }, directions: own, line: lineNumber, pauseBeforeMs: pendingPause + waiting, pauseAfterMs: 0 });
+      own = [];
+      pendingPause = 0;
+      waiting = 0;
+      hasPiece = true;
+      startMood = { ...mood };
+    };
+    for (const m of line.matchAll(DIRECTION_RE)) {
+      const words = (m[1] ?? m[2] ?? m[3]).trim();
+      if (words === '') continue; // 括号里只有空白：不是舞台说明，留在台词里
+      const { meaning, durations } = readCue(words, m[2] === undefined, m[0]);
+      sent += line.slice(last, m.index);
+      last = m.index + m[0].length;
+      const direction = { raw: words, recognized: isRecognized(meaning), emotion: meaning.emotion, style: meaning.style, actions: meaning.actions, line: lineNumber };
+      directions.push(direction);
+      if (meaning.actions.includes('pause')) {
+        const pause = pauseOf(meaning, durations);
+        if (pause > 0) {
+          linePause += pause;
+          push();
+          const previous = pieces.length > 0 && pieces[pieces.length - 1].line === lineNumber ? pieces[pieces.length - 1] : null;
+          if (previous !== null) previous.pauseAfterMs += pause;
+          else if (before !== null && before.hasPiece && pieces.length === 0) headPauseMs += pause;
+          else pendingPause += pause;
+        }
+      } else sent += cueOf(words);
+      own.push(direction);
+      const oneShot = meaning.style !== null && ONE_SHOT_STYLES.has(meaning.style);
+      if (meaning.emotion !== null || (meaning.style !== null && !oneShot)) mood = { emotion: meaning.emotion, style: oneShot ? null : meaning.style };
+    }
+    sent += line.slice(last);
+    push();
+    // 整行只有停顿（读成停顿的舞台说明和空白）：这一行没有出一段。第一行接着前一段（carried）的，不是整行
+    if (linePause > 0 && before === null && !pieces.some((piece) => piece.line === lineNumber)) pauseLines.push(lineNumber);
+    if (pendingPause > 0) {
+      if (pieces.length > 0) pieces[pieces.length - 1].pauseAfterMs += pendingPause;
+      else waiting += pendingPause;
+    }
+    if (lineNumber === lines.length - 1) carry = { mood, hasPiece, gap: own };
+  });
+  return { pieces, directions, unattachedPauseMs: waiting, headPauseMs, carry, pauseLines };
 }
 
 // ---------------------------------------------------------------- 文字的语种

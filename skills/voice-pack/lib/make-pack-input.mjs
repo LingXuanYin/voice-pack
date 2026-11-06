@@ -8,21 +8,35 @@
 //                                  { targetLufs, peakCeilingDbfs, limiter }（关掉是 null，规则见 lib/make-pack-loudness.mjs 的文件头），
 //                                  textLanguage（SKILL.md 骨架的语言）补全成 'zh' 或 'en'（规则在 protocol/lib/skill-md.mjs 的 resolveTextLanguage，写错报 make_pack_input_invalid）
 //   materialOptionsOf(settings)    选项里挑素材的那几个（调用方给了的才写；lib/pack-material.mjs 自己有默认值）
-//   readInput(input, previous)     input 的字段和片段列表，整理成 { items, version, direction }：
+//   readInput(input, previous, { moreSegments? })   input 的字段和片段列表，整理成 { items, version, direction, cardLine }：
 //                                    items      条目：上一版里没被去掉的段（先参考后留出录音）接着新补的
-//                                    version    版本相关的字段（version、bump、changelog、drop、defaultSegment），没给的是 undefined（drop 是空数组）
+//                                    version    版本相关的字段（version、bump、changelog、drop、defaultSegments），没给的是 undefined（drop、defaultSegments 是空数组）；
+//                                               defaultSegments 是作者点名的默认段（input.defaultSegment 写的，一个也整理成数组），按给的次序
 //                                    direction  音色描述和标签换成规范写法以后的样子（lib/design-vocab.mjs），没给是 undefined
-//                                  previous 是 lib/pack-version.mjs 的 readPreviousVersion 读出来的上一版（发新版本时），不是的话是 null
-//   invalid(field, problem)        造一个 make_pack_input_invalid。别的步骤模块报输入的问题也用它，不各造一个
+//                                    cardLine   卡片试听那一句，去掉了两头空白；没给是 undefined
+//                                  previous 是 lib/pack-version.mjs 的 readPreviousVersion 读出来的上一版（发新版本时），不是的话是 null。
+//                                  moreSegments 为真：还有段没交来（命令行先查输入、再切长录音，lib/make-pack-precheck.mjs 的 precheckInput）：segments 可以是空数组，
+//                                  点名的默认段不在这些段里也不报（可能是要切出来的段，makePack 拿到全部的段再查）
+//   invalid(field, problem, more?)  造一个 make_pack_input_invalid（more 是 details 里另外的几项，例如 segment）。别的步骤模块报输入的问题也用它，不各造一个
 //
 // 条目（item）：做包的每一步读、写的是同一组对象，每个步骤模块的文件头写自己读哪些字段、写哪些字段。这里整理出来的字段：
-//   index（在输入里的次序，上一版带来的排在前面）、id、audio、text、labels（调用方给的标签：值是 undefined 没给，null 明确没有）、source、externalUrl、
+//   index（在输入里的次序，上一版带来的排在前面）、id、audio、text、annotatedText（素材给的提示标注，没给就没有这个字段）、
+//   givenLanguage（素材给的语言：段自己的 language，没有就是输入的 language；都没给是 undefined）、
+//   givenTag（素材给的音色基底标签，去掉了两头空白；没给是 undefined。作者给的和库里给的不分，都是素材给的）、source、externalUrl、
 //   synthetic（布尔值：true 是合成的，克隆出来的，不是这个人录的；没标是 false）；
-//   sentence（只有长录音的句子模式给：{ bodySec, pauseSec }，做包的句子合段用，见 lib/make-pack-sentences.mjs；别的调用方不给，就没有这个字段）；
-//   上一版带过来的段还有 previous（'reference' 或 'holdout'）和 path（在上一版里的路径）。
+//   sentence（长录音的句子模式给，素材 .json 也可以写（references/make-pack.md「素材」）：{ bodySec, pauseSec }，做包的句子合段用，见 lib/make-pack-sentences.mjs；没给就没有这个字段）；
+//   上一版带过来的段还有 previous（'reference' 或 'holdout'）和 path（在上一版里的路径），annotatedText 是上一版清单里的（没有就没有这个字段），
+//   givenLanguage 是上一版清单里这段的 language，givenTag 是上一版参考段的 tag（上一版的留出录音没有标签，是 undefined）；
+//   作者这次用 input.retag 改了名的参考，givenTag 是改以后的标签（去掉了两头空白），另有 retagged: true（来源算素材给的，撞名的规矩在 lib/make-pack-tags.mjs）。
+//
+// 改名（input.retag，发新版本时）：{ 段名: 新标签 }，改上一版参考的音色基底标签。段名要是上一版的参考、这次没去掉（留出录音没有标签，上一版没有的、--drop 去掉的不行）；
+//   标签的规矩同素材给的 tag（去掉两头空白；只有空白或超过 REFERENCE_TAG_MAX 个码点不行）。不对都在花钱之前报 make_pack_input_invalid，field 是 retag，
+//   details.segment 是哪一段。没给 previous 就给 retag，同样报（field 是 retag）。被设定引用的标签改了名，设定要一起改：花钱之前的检查认改以后的标签（lib/make-pack-tags.mjs）。
 //
 // 抛出的错误：
-//   make_pack_input_invalid  输入或选项不合约定。details: { field, problem }，field 是出问题的字段（segments[2].audio、labels.energy、loudness……），problem 说哪里不对
+//   make_pack_input_invalid  输入或选项不合约定。details: { field, problem, segment? }，field 是出问题的字段（segments[2].audio、segments[2].tag、sampleLines[0]、retag、loudness……），problem 说哪里不对；
+//                            field 是 retag 时 segment 是改名的那一段的段名。
+//                            素材还按旧写法给了 labels（段的 labels，或者输入的 labels）：field 是那一处的 labels，说明改写成 language、tag，不悄悄忽略
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
@@ -30,42 +44,66 @@ import { isSemver } from '../protocol/lib/version.mjs';
 import { resolveTextLanguage } from '../protocol/lib/skill-md.mjs';
 import { assertAudioClip } from '../protocol/lib/audio-clip.mjs';
 import { loudnessOptions } from '../tools/loudness-normalize.mjs';
-import { canonicalLabel } from './line-hints.mjs';
 import { materialOptionProblems } from './pack-material.mjs';
 import { normalizeDirection } from './design-vocab.mjs';
 import { BUMPS, CHANGELOG_MAX } from './pack-version.mjs';
 import { isLanguageTag, MAX_LANGUAGE_TAG } from './language-tag.mjs';
+import { isBlankText } from '../protocol/lib/manifest.mjs';
+import { ANNOTATED_TEXT_MAX, REFERENCE_TAG_MAX } from './manifest-limits.mjs';
+import { CUE_PATTERN } from '../tools/markup.mjs';
+import { MIN_MAX_CHARS } from './synthesis-limits.mjs';
+import { FULL_WIDTH_PUNCTUATION, HAN_OR_KANA, LATIN_CLOSING, SPACED_WORD, firstWrittenChar, lastWrittenChar } from './word-spacing.mjs';
 
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const ENERGIES = ['low', 'medium', 'high'];
-const LABEL_KEYS = ['language', 'emotion', 'style', 'energy'];
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-export const invalid = (field, problem) => new VoicePackError('make_pack_input_invalid', `做包的输入不合约定（${field}）：${problem}`, { details: { field, problem } });
+export const invalid = (field, problem, more = {}) => new VoicePackError('make_pack_input_invalid', `做包的输入不合约定（${field}）：${problem}`, { details: { field, problem, ...more } });
 
 // ---------------------------------------------------------------- 读输入
 
-/** 读一组标签（调用方给的）。值：undefined 没给，null 明确没有，字符串（能量只能是 low、medium、high）。 */
-function readLabels(labels, where, { allowNullLanguage = false } = {}) {
-  if (labels === undefined) return {};
-  if (!isPlainObject(labels)) throw invalid(where, '必须是 { language?, emotion?, style?, energy? } 对象');
-  const out = {};
-  for (const [key, value] of Object.entries(labels)) {
-    if (!LABEL_KEYS.includes(key)) throw invalid(`${where}.${key}`, `不认识的标签 ${JSON.stringify(key)}（只有 ${LABEL_KEYS.join('、')}）`);
-    if (value === undefined) continue;
-    if (value === null) {
-      if (key === 'language' && !allowNullLanguage) throw invalid(`${where}.language`, 'language 不能是 null（每段参考都要有语言标签）');
-      out[key] = null;
-      continue;
-    }
-    if (typeof value !== 'string' || value.trim() === '') throw invalid(`${where}.${key}`, '必须是非空字符串（或 null，表示明确没有）');
-    const text = value.trim();
-    if (key === 'language' && !isLanguageTag(text)) throw invalid(`${where}.language`, `语言标签 ${JSON.stringify(text)} 写法不对：要像 en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）`);
-    if (key === 'energy' && !ENERGIES.includes(text)) throw invalid(`${where}.energy`, `energy 只能是 ${ENERGIES.join('、')}，收到 ${JSON.stringify(text)}`);
-    if ((key === 'emotion' || key === 'style') && [...text].length > 64) throw invalid(`${where}.${key}`, '最长 64 个字符');
-    out[key] = key === 'emotion' || key === 'style' ? canonicalLabel(key, text) : text;
+/** 旧写法的 labels（每段的，或者输入的）：这一版不收，花钱之前报错，说明怎么改写（不悄悄忽略：素材里写的语言、标签不能没了还当没事）。 */
+function rejectLabels(labels, where) {
+  if (labels === undefined) return;
+  throw invalid(where, '这一版没有 labels 了：语言写成 language（每段自己的，或者输入的 language 给所有段当默认），音色基底标签写成每段的 tag（和清单同名）；情绪、风格、能量不再记，情绪写成台本里的提示');
+}
+
+/** 素材给的语言（段自己的 language，或者输入的 language）：不给是 undefined；给了要是语言标签（形如 en、zh-CN），去掉两头空白。 */
+function readLanguage(value, where) {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !isLanguageTag(value.trim())) throw invalid(where, `语言标签 ${JSON.stringify(value)} 写法不对：要像 en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）`);
+  return value.trim();
+}
+
+/**
+ * 一个音色基底标签（素材给的 tag、改名给的新标签）：去掉两头空白，别的不改写、不规范化（撞名加序号在挑完参考集以后，lib/make-pack-tags.mjs）。
+ * 只有空白或看不见的字符（判法同清单检查的 text_blank），或者超过 REFERENCE_TAG_MAX 个码点（格式的上限），花钱之前报错。blank 是只有空白时说的话。
+ */
+function readTagText(value, where, blank, more) {
+  if (typeof value !== 'string' || isBlankText(value)) throw invalid(where, blank, more);
+  const tag = value.trim();
+  if ([...tag].length > REFERENCE_TAG_MAX) throw invalid(where, `最长 ${REFERENCE_TAG_MAX} 个字符（按码点算），收到 ${[...tag].length} 个`, more);
+  return tag;
+}
+
+/** 素材给的音色基底标签（段的 tag）：不给是 undefined，给了照 readTagText。 */
+const readTag = (value, where) => (value === undefined ? undefined : readTagText(value, where, '必须是有字的字符串：这段参考的音色基底标签（例如「平常」「愤怒」「少年」），只用来在几段参考之间切换；不给就由做包给一个'));
+
+/**
+ * 改名（input.retag）：{ 段名: 新标签 }，规矩见文件头。kept 是上一版这次没去掉的段（readPreviousVersion 的 segments 去掉 drop 的）。
+ * @returns {Map<string, string>} 段名 -> 去掉了两头空白的新标签（没给是空的）
+ */
+function readRetag(value, { previous, kept }) {
+  const retag = new Map();
+  if (value === undefined) return retag;
+  if (previous === null) throw invalid('retag', '只有发新版本（给了 previous）才能改上一版参考的音色基底标签');
+  if (!isPlainObject(value)) throw invalid('retag', '必须是 { 段名: 新标签 } 对象：上一版里要改音色基底标签的参考，一段一项');
+  for (const [id, tag] of Object.entries(value)) {
+    const before = previous.segments.find((segment) => segment.id === id);
+    const why = before === undefined ? '上一版里没有这一段' : before.role !== 'reference' ? '是上一版的留出录音（留出录音没有音色基底标签）' : !kept.some((segment) => segment.id === id) ? '这次去掉了（drop）' : null;
+    if (why !== null) throw invalid('retag', `${JSON.stringify(id)} ${why}：只能改上一版参考的标签`, { segment: id });
+    retag.set(id, readTagText(tag, 'retag', `${JSON.stringify(id)} 的新标签必须是有字的字符串（例如「平常」「愤怒」「少年」）`, { segment: id }));
   }
-  return out;
+  return retag;
 }
 
 function readSource(source, where) {
@@ -94,7 +132,20 @@ function readSentence(sentence, where) {
   return { bodySec, pauseSec };
 }
 
-/** 读片段列表，整理成内部的条目。 */
+/**
+ * 示例台词（input.sampleLines）：字符串数组，每条是一句台词。不是数组，或者哪一条不是字符串，花钱之前报（field 是 sampleLines 或 sampleLines[2]）；
+ * 设计词表（vocab/design-sample-lines.json）里每一项是 { text, feel, kind } 对象，原样抄进来的，说明里教人取 text。条数、长度、能不能空白，清单检查在花钱之前查。
+ */
+function readSampleLines(lines) {
+  if (!Array.isArray(lines)) throw invalid('sampleLines', '必须是字符串数组：每条是一句示例台词（条数、长度、能不能空白，清单检查在花钱之前就查）');
+  lines.forEach((line, index) => {
+    if (typeof line === 'string') return;
+    const copied = isPlainObject(line) && typeof line.text === 'string';
+    const got = line === null ? 'null' : Array.isArray(line) ? '数组' : typeof line === 'object' ? '对象' : JSON.stringify(line);
+    throw invalid(`sampleLines[${index}]`, `第 ${index + 1} 条必须是字符串（一句示例台词），收到的是 ${got}${copied ? '：设计词表（vocab/design-sample-lines.json）里每一项是 { text, feel, kind } 对象，示例台词要的是它的 text 那一句' : ''}`);
+  });
+}
+
 /** 片段的 synthetic：不给或 false 是真录音，true 是合成的（克隆出来的），别的值报错。 */
 function readSynthetic(synthetic, where) {
   if (synthetic === undefined) return false;
@@ -102,13 +153,97 @@ function readSynthetic(synthetic, where) {
   return synthetic;
 }
 
-function readSegments(segments, defaults, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
+/**
+ * 去掉一处提示以后，前后两截之间留不留一个空格（规则只在这里，lib/make-pack.mjs 文件头「输入」的 annotatedText 照抄了例子；字符类在 lib/word-spacing.mjs）。
+ * hadSpace 是提示两边原来有没有空白。看的是前一截的结尾、后一截的开头那个字（隔着收尾、开头的引号、括号、省略号、破折号），按这个次序：
+ *   有一边是全角标点（挨着的那个字，或者隔着引号看到的），或者两边都是汉字、假名：不留（々〇〆 照汉字算，不是标点：「々 [sigh] hello」是「々 hello」）；
+ *   后一截开头是英文的收尾标点（. , ! ? ; : ) ] }）：不留（「That's enough [sigh].」是「That's enough.」，「Wait [laughs]! Really?」是「Wait! Really?」）；
+ *   原来有空白：留一个（「Hello there [laughs] 你好」是「Hello there 你好」，「OK [sigh] 好的」是「OK 好的」）；
+ *   两边都是拉丁、希腊、西里尔字母、数字（或韩文这类词间写空格的字），又紧挨着：也留一个（「I told you[sigh]already」是「I told you already」）；
+ *   剩下的不留（提示挨着英文标点：「already[sigh]. Now」是「already. Now」）。
+ */
+function spaceAfterCue(before, after, hadSpace) {
+  const touching = [[...before].at(-1) ?? '', [...after][0] ?? ''];
+  const last = lastWrittenChar(before);
+  const first = firstWrittenChar(after);
+  if ([...touching, last, first].some((ch) => FULL_WIDTH_PUNCTUATION.test(ch))) return false;
+  if (HAN_OR_KANA.test(last) && HAN_OR_KANA.test(first)) return false;
+  if (LATIN_CLOSING.test(touching[1])) return false;
+  if (hadSpace) return true;
+  return SPACED_WORD.test(last) && SPACED_WORD.test(first);
+}
+
+/**
+ * 去掉方括号提示（tools/markup.mjs 的 CUE_PATTERN），连着的空白并成一个，去掉两头空白：素材只给了提示标注时，逐字文本就是它。
+ * 去掉提示的地方留不留空格，见 spaceAfterCue：「你好 [sigh] 我说过了」是「你好我说过了」，「你好，[sigh] hello」是「你好，hello」，
+ * 「Hello there [laughs] 你好」是「Hello there 你好」，「I told you[sigh]already」是「I told you already」，「already[sigh]. Now」是「already. Now」。
+ * 有一截只是空白（两个提示隔着空白连写）时先不动它，留给下一处提示一起看。
+ */
+function withoutCues(text) {
+  const joined = text.split(new RegExp(CUE_PATTERN)).reduce((acc, piece) => {
+    const before = acc.trimEnd();
+    const after = piece.trimStart();
+    if (before === '' || after === '') return acc + piece;
+    const hadSpace = before !== acc || after !== piece;
+    return `${before}${spaceAfterCue(before, after, hadSpace) ? ' ' : ''}${after}`;
+  });
+  return joined.replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * 两句话不算空白，第一处不一样的地方：返回两边从那一处起的一小截（16 个字，没有了是空串）；一样是 null。
+ * 比提示标注和逐字文本用：提示前后多一个、少一个空格不算不一样（中文的提示前后常有空格，逐字稿里没有）。
+ */
+function firstDifference(a, b) {
+  const left = [...a];
+  const right = [...b];
+  const space = (ch) => /\s/u.test(ch);
+  let i = 0;
+  let j = 0;
+  for (;;) {
+    while (i < left.length && space(left[i])) i += 1;
+    while (j < right.length && space(right[j])) j += 1;
+    if (i >= left.length && j >= right.length) return null;
+    if (i >= left.length || j >= right.length || left[i] !== right[j]) return { annotatedText: left.slice(i, i + 16).join(''), text: right.slice(j, j + 16).join('') };
+    i += 1;
+    j += 1;
+  }
+}
+
+/** 素材给的提示标注（annotatedText）：不给就是没有；给了要是有看得见的字的字符串，去掉两头空白以后不超过 ANNOTATED_TEXT_MAX 个字符（格式的上限，protocol/FORMAT.md 4.4）。 */
+function readAnnotatedText(value, where) {
+  if (value === undefined) return {};
+  if (typeof value !== 'string' || isBlankText(value)) throw invalid(where, '必须是有字的字符串：这段逐字稿加上方括号提示的整句（提示以外的字和 text 一样）；没有提示标注就不写这个键');
+  const text = value.trim();
+  if ([...text].length > ANNOTATED_TEXT_MAX) throw invalid(where, `最长 ${ANNOTATED_TEXT_MAX} 个字符`);
+  if (withoutCues(text) === '') throw invalid(where, '除了方括号提示没有别的字：提示标注是逐字稿加上提示的整句');
+  return { annotatedText: text };
+}
+
+/**
+ * 一段的逐字文本，和素材给的提示标注对一对（规则见 lib/make-pack.mjs 文件头「输入」的 annotatedText）：给了 text 的，去掉提示以后的字要和它一样（空白不算），
+ * 不一样花钱之前报；没给 text（不给、null、空串）的，text 就是提示标注去掉提示的那句，这段不用转写。
+ */
+function readText(segment, annotated, where) {
+  const text = typeof segment.text === 'string' ? segment.text.trim() : '';
+  if (annotated.annotatedText === undefined) return text;
+  if (text === '') return withoutCues(annotated.annotatedText);
+  const differs = firstDifference(withoutCues(annotated.annotatedText), withoutCues(text));
+  if (differs !== null) {
+    const shown = (part) => (part === '' ? '（到头了）' : `「${part}」`);
+    throw invalid(`${where}.annotatedText`, `提示以外的字要和 text 一样（空白不算）：从提示标注的${shown(differs.annotatedText)}、text 的${shown(differs.text)}起不一样`, { differsAt: differs });
+  }
+  return text;
+}
+
+function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
   if (!Array.isArray(segments)) throw invalid('segments', '必须是数组：每一项是一段切好的录音');
   if (segments.length === 0 && !allowEmpty) throw invalid('segments', '至少要有一段');
   const seen = new Set(taken);
   return segments.map((segment, index) => {
     const where = `segments[${index}]`;
-    if (!isPlainObject(segment)) throw invalid(where, '必须是对象 { id?, audio, text?, labels?, source? }');
+    if (!isPlainObject(segment)) throw invalid(where, '必须是对象 { id?, audio, text?, annotatedText?, language?, tag?, source? }');
+    rejectLabels(segment.labels, `${where}.labels`);
     let id = segment.id;
     if (id === undefined) {
       // 没写名字：按次序起 seg-001、seg-002……，跳过已经有的（上一版的、前面的）
@@ -129,12 +264,15 @@ function readSegments(segments, defaults, { taken = new Set(), offset = 0, allow
     if (segment.externalUrl !== undefined && (typeof segment.externalUrl !== 'string' || !/^https:\/\//.test(segment.externalUrl) || segment.externalUrl.length > 2048)) {
       throw invalid(`${where}.externalUrl`, '必须是 https:// 开头、不超过 2048 个字符的网址');
     }
+    const annotated = readAnnotatedText(segment.annotatedText, `${where}.annotatedText`);
     return {
       index: offset + index,
       id,
       audio: segment.audio,
-      text: typeof segment.text === 'string' ? segment.text.trim() : '',
-      labels: { ...defaults, ...readLabels(segment.labels, `${where}.labels`) },
+      text: readText(segment, annotated, where),
+      ...annotated,
+      givenLanguage: readLanguage(segment.language, `${where}.language`) ?? defaultLanguage, // 段自己的盖过输入的
+      givenTag: readTag(segment.tag, `${where}.tag`),
       source: readSource(segment.source, `${where}.source`),
       externalUrl: segment.externalUrl ?? null,
       synthetic: readSynthetic(segment.synthetic, `${where}.synthetic`),
@@ -146,10 +284,10 @@ function readSegments(segments, defaults, { taken = new Set(), offset = 0, allow
 /**
  * 读输入。previous 是 readPreviousVersion 读出来的上一版（发新版本时），不是的话是 null。
  * @returns {{ items: object[], version: object, direction: object | undefined }} items：上一版里没被去掉的段（先参考后留出录音）接着新补的；
- *   version：版本相关的字段（version、bump、changelog、drop、defaultSegment），没给的是 undefined（drop 是空数组）；
+ *   version：版本相关的字段（version、bump、changelog、drop、defaultSegments），没给的是 undefined（drop、defaultSegments 是空数组）；
  *   direction：音色描述和标签换成规范写法以后的样子（没给是 undefined）
  */
-export function readInput(input, previous) {
+export function readInput(input, previous, { moreSegments = false } = {}) {
   if (!isPlainObject(input)) throw invalid('input', '必须是对象');
   const hasPrevious = previous !== null;
   if (input.name === undefined && hasPrevious) {
@@ -163,7 +301,7 @@ export function readInput(input, previous) {
   for (const key of ['features', 'requires', 'designSource']) if (input[key] !== undefined && !isPlainObject(input[key])) throw invalid(key, '必须是对象');
   let direction;
   if (input.direction !== undefined) {
-    // 音色标签只能从设计词表里取，场景只能从场景词表里取：写法换成规范的，不在词表里的在花钱之前就报
+    // 音色标签只能从设计词表里取：写法换成规范的，不在词表里的、不认识的字段在花钱之前就报
     const normalized = normalizeDirection(input.direction);
     if (normalized.problems.length > 0) {
       const [first] = normalized.problems;
@@ -172,8 +310,9 @@ export function readInput(input, previous) {
     direction = normalized.direction;
   }
   for (const key of ['scripts', 'enhancers']) if (input[key] !== undefined && !Array.isArray(input[key])) throw invalid(key, '必须是数组');
-  if (input.setups !== undefined && !Array.isArray(input.setups)) throw invalid('setups', '必须是数组：每项是一套设定 { name, labels?, speed?, instructions?, default? }（写法、重名、default 的检查，清单检查在花钱之前就查）');
-  if (input.sampleLines !== undefined && !Array.isArray(input.sampleLines)) throw invalid('sampleLines', '必须是字符串数组：每条是一句示例台词（条数、长度、能不能空白，清单检查在花钱之前就查）');
+  if (input.setups !== undefined && !Array.isArray(input.setups)) throw invalid('setups', '必须是数组：每项是一套设定 { name, labels?, referenceTag?, speed?, instructions?, default? }（写法、重名、default 的检查，清单检查在花钱之前就查；referenceTag 对不对得上，lib/make-pack-tags.mjs 在花钱之前查）');
+  if (input.sampleLines !== undefined) readSampleLines(input.sampleLines);
+  if (input.cardLine !== undefined && typeof input.cardLine !== 'string') throw invalid('cardLine', '必须是字符串：卡片试听那一句台词（长度、能不能空白，清单检查在花钱之前就查；配不配得成一个请求，lib/make-pack-card-line.mjs 在花钱之前查）');
   if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', '必须是字符串（配音指引的 Markdown 正文）');
   if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', '必须是 Map<路径, Uint8Array>');
 
@@ -195,17 +334,26 @@ export function readInput(input, previous) {
     if (unknown.length > 0) throw invalid('drop', `上一版里没有这几段：${unknown.join('、')}`);
     drop = [...new Set(input.drop)];
   }
-  if (input.defaultSegment !== undefined && (typeof input.defaultSegment !== 'string' || input.defaultSegment === '')) throw invalid('defaultSegment', '必须是参考集里一段的名字');
+  // 点名的默认段：一段的名字，或者几种语言各一段的名字的数组（一种语言最多一段，语言的检查在 lib/make-pack-pick.mjs 的 assertDefaultsUsable 和 pickMaterial）
+  const defaultSegments = input.defaultSegment === undefined ? [] : [input.defaultSegment].flat();
+  if (input.defaultSegment !== undefined && (defaultSegments.length === 0 || defaultSegments.some((id) => typeof id !== 'string' || id === ''))) throw invalid('defaultSegment', '必须是参考集里一段的名字，或者几种语言各一段的名字的数组');
+  const repeated = defaultSegments.find((id, index) => defaultSegments.indexOf(id) !== index);
+  if (repeated !== undefined) throw invalid('defaultSegment', `${JSON.stringify(repeated)} 点名了两次`);
 
-  const defaults = readLabels(input.labels, 'labels');
+  rejectLabels(input.labels, 'labels');
+  const defaultLanguage = readLanguage(input.language, 'language'); // 给所有段的默认只有语言；没有默认的音色基底标签
   const kept = hasPrevious ? previous.segments.filter((segment) => !drop.includes(segment.id)) : [];
+  const retag = readRetag(input.retag, { previous, kept }); // 改名：上一版参考的新标签
   const previousItems = kept.map((segment, index) => ({
     index,
     id: segment.id,
     audio: segment.audio,
     text: segment.text,
-    // 上一版的标签原样沿用：没有的项明说没有（null），不再判断
-    labels: { language: segment.tags.language, emotion: segment.tags.emotion ?? null, style: segment.tags.style ?? null, energy: segment.tags.energy ?? null },
+    ...(segment.annotatedText === undefined ? {} : { annotatedText: segment.annotatedText }), // 上一版的提示标注原样沿用，不再标
+    // 上一版的语言和音色基底标签原样沿用（留出录音没有标签），不再判断；作者改了名的参考用改以后的标签
+    givenLanguage: segment.language,
+    givenTag: retag.get(segment.id) ?? segment.tag,
+    ...(retag.has(segment.id) ? { retagged: true } : {}),
     source: null,
     externalUrl: segment.externalUrl,
     synthetic: segment.synthetic, // 上一版清单里标的：克隆出来的，跟着段走
@@ -213,13 +361,14 @@ export function readInput(input, previous) {
     path: segment.path,
   }));
   const segments = input.segments === undefined && hasPrevious ? [] : input.segments;
-  const fresh = readSegments(segments, defaults, { taken: previousIds, offset: previousItems.length, allowEmpty: hasPrevious });
-  if (input.defaultSegment !== undefined) {
-    const wanted = input.defaultSegment;
+  const fresh = readSegments(segments, defaultLanguage, { taken: previousIds, offset: previousItems.length, allowEmpty: hasPrevious || moreSegments });
+  for (const wanted of moreSegments ? [] : defaultSegments) {
     const isPreviousReference = kept.some((segment) => segment.id === wanted && segment.role === 'reference');
     if (!isPreviousReference && !fresh.some((item) => item.id === wanted)) throw invalid('defaultSegment', `${JSON.stringify(wanted)} 不是参考集里的一段（上一版的参考，或者这次新补的；留出录音和去掉的不行）`);
   }
-  return { items: [...previousItems, ...fresh], version: { version: input.version, bump: input.bump, changelog, drop, defaultSegment: input.defaultSegment }, direction };
+  // 卡片试听那一句：去掉两头空白（素材的文字都这样），别的原样
+  const cardLine = input.cardLine === undefined ? undefined : input.cardLine.trim();
+  return { items: [...previousItems, ...fresh], version: { version: input.version, bump: input.bump, changelog, drop, defaultSegments }, direction, cardLine };
 }
 
 /**
@@ -259,8 +408,11 @@ export function readOptions(options) {
   if (problem !== undefined) throw invalid(problem.field, problem.message);
   if (options.concurrency !== undefined && !(Number.isInteger(options.concurrency) && options.concurrency >= 1 && options.concurrency <= 8)) throw invalid('concurrency', '必须是 1–8 的整数');
   if (options.describeChanges !== undefined && typeof options.describeChanges !== 'function') throw invalid('describeChanges', '必须是函数 (changes, { name }) => 一句变更说明');
-  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写、打标签、试合成暂时出错、再试之前等多久');
+  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写、挑默认段、标提示标注、试合成暂时出错、再试之前等多久');
   if (options.minChars !== undefined && options.minChars !== null && !(Number.isInteger(options.minChars) && options.minChars >= 1)) throw invalid('minChars', '必须是不小于 1 的整数（合成能力一次至少多少个字，环境声明的），或者不给');
+  // 配卡片试听那一句时交给配音的两项上限（环境声明的，写法同 lib/dub.mjs 的同名选项；maxChars 的下限在 lib/synthesis-limits.mjs）
+  if (options.maxChars !== undefined && options.maxChars !== null && !(Number.isInteger(options.maxChars) && options.maxChars >= MIN_MAX_CHARS)) throw invalid('maxChars', `必须是不小于 ${MIN_MAX_CHARS} 的整数（合成能力一次最多多少个字，环境声明的），或者不给`);
+  if (options.maxPauseInRequestMs !== undefined && options.maxPauseInRequestMs !== null && !(Number.isInteger(options.maxPauseInRequestMs) && options.maxPauseInRequestMs >= 0)) throw invalid('maxPauseInRequestMs', '必须是不小于 0 的整数（一个请求里一处停顿最多多少毫秒，环境声明的），或者不给');
   // loudness 换成补全的目标、上限和限幅器，或者 null（关掉）；textLanguage 换成 'zh' 或 'en'（没给就是 'zh'）
   return { ...options, loudness: readLoudness(options.loudness), textLanguage: readTextLanguage(options.textLanguage) };
 }
