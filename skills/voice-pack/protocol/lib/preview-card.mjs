@@ -11,9 +11,9 @@
 //
 // 页面上有什么：
 //   名字      标题；包 ID 和版本写在它下面。配图由包 ID 画（voice-orb.mjs：同一个 ID 同一张图，不放头像）。
-//   试听      默认参考段的音频，内嵌成 data: 地址放进 <audio controls>，旁边是这一段的逐字文本。放不下就截短，不重新编码，规则和上限见 preview-audio.mjs；
-//            截短了写明放了前几秒。默认段的字节不在包里、放不下又切不了的，换下一段；一段都没有，写明「没有内嵌的试听」和原因，不留空白。
-//            示例台词（sampleLines）只是文字，格式里没有它的音频，所以试听总是一段真录音。
+//   试听      一段音频，内嵌成 data: 地址放进 <audio controls>：清单里有卡片试听那一句（cardLine）就放它，旁边是它的台词；没有就放默认参考段，旁边是这一段的逐字文本。
+//            用哪一段的规则只在 preview-audio.mjs 的 choosePreviewAudio 写。放不下就截短，不重新编码，规则和上限也在那里；截短了写明放了前几秒。
+//            一段都没有，写明「没有内嵌的试听」和原因，不留空白。没有那一句的包，卡片和有这个字段以前一字不差。
 //   还原度    验证记录（manifest.verification）里的，每条一行：环境、模型、日期、比值。读法只在 lib/fidelity.mjs 的文件头写一份（「怎么读这份报告」第 7 条）：
 //            比值本身就是分数，照数显示（两位小数，和 app 的显示一样），不设门槛，不封顶，不替人下「像不像」的结论，没写比值的显示「—」；
 //            旁边写明比值怎么来的、1 表示什么、这是作者附上的记录、没有重新量过。没有验证记录就写明没有，不留空白。
@@ -40,6 +40,7 @@ import { VoicePackError } from './errors.mjs';
 import { toBase64 } from './bytes.mjs';
 import { voiceOrbSvg } from './voice-orb.mjs';
 import { choosePreviewAudio } from './preview-audio.mjs';
+import { segmentLanguage } from './manifest.mjs';
 
 /** 卡片的内容安全策略：什么都不让加载，除了 data: 的音频和页面自己的内联样式。 */
 export const PREVIEW_CARD_CSP = "default-src 'none'; media-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
@@ -79,11 +80,14 @@ function auditionSection(manifest, audition) {
   if (audition === null) {
     return `<section class="audition">${heading}<p class="note">${both('这张卡片没有内嵌的试听：参考录音不在这个文件里，或者太大放不进卡片。', 'No audition is embedded on this card: the reference recordings are not inside this file, or are too big to fit on it.')}</p></section>`;
   }
-  const segment = (manifest.reference?.segments ?? []).find((candidate) => candidate.id === audition.segmentId);
-  const language = typeof segment?.tags?.language === 'string' ? ` lang="${escapeHtml(segment.tags.language)}"` : '';
   const excerpt = audition.trimmed && audition.seconds !== null
     ? `<p class="note">${both(`只放了这段录音的前 ${secondsText(audition.seconds)} 秒。`, `Only the first ${secondsText(audition.seconds)} seconds of this recording are embedded.`)}</p>`
     : '';
+  // 卡片试听那一句：旁边写它的台词（清单里没记它的语言，不写 lang）。参考段：写它的逐字文本，带它的语言
+  if (audition.cardLine === true) return `<section class="audition">${heading}<audio controls preload="metadata" src="data:${audition.mimeType};base64,${toBase64(audition.bytes)}"></audio><p class="line">${escapeHtml(manifest.cardLine.text)}</p>${excerpt}</section>`;
+  const segment = (manifest.reference?.segments ?? []).find((candidate) => candidate.id === audition.segmentId);
+  const segmentLang = segmentLanguage(segment); // 3.x 的段写 language，1.x、2.x 的写 tags.language（manifest.mjs 的 segmentLanguage 两种都认）
+  const language = segmentLang === undefined ? '' : ` lang="${escapeHtml(segmentLang)}"`;
   const line = segment?.text === undefined ? '' : `<p class="line"${language}>${escapeHtml(segment.text)}</p>`;
   return `<section class="audition">${heading}<audio controls preload="metadata" src="data:${audition.mimeType};base64,${toBase64(audition.bytes)}"></audio>${line}${excerpt}</section>`;
 }

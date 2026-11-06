@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// 请求开头的提示（流程层，纯计算，配音用：lib/dub.mjs）：调用方和设定给的情绪、风格、能量、说明，合成一条方括号的提示，写在每个请求的文字前面。
+// 不调能力，不碰音频。在每个请求的哪里加、哪个请求不加，由 lib/dub.mjs 定（文件头「设定」和第 7 步）；这里只管怎么合、怎么写进文字。
+//
+// 怎么合：
+//   - 四项，次序固定：情绪（emotion）、风格（style）、能量（energy）、说明（instructions，例如口音）。每一项分别取：调用方给的，没有再取设定的（不是整组取：
+//     调用方只给了情绪，风格照样取设定的）。都没有就没有这条提示（openingCueOf 返回 null）。
+//   - 情绪、风格写成标签词表（vocab/cues.json）的规范名字（lib/line-hints.mjs 的 canonicalLabel：生气、愤怒都写成 angry）；词表里没有的，照写（去掉两头空白）。
+//   - 能量写成 `<low|medium|high> energy`。说明照写：换行和连续的空白并成一个空格，方括号换成圆括号（提示里不能再有方括号，也不能换行：写法见 tools/markup.mjs 的 CUE_PATTERN）。
+//   - 几项用「, 」接起来，外面一对方括号：[angry, whisper, low energy, 带一点四川口音]。
+//   返回 { cue, parts }：cue 是这条提示；parts 是用上的每一项 { value, from }，value 是写进提示的样子，from 是 'caller'（调用方给的）或 'setup'（设定的），没用上的项不出现。
+//
+// 怎么写进文字（withOpeningCue）：写在最前面。挨着拉丁字母、数字的留一个空格（[angry] Stop it.），挨着中文的直接接（[angry]站住！），同台本里只有提示的一截接到下一句开头的写法。
+//   提示先写进文字，SSML 的拼音音素（只声明了 phoneme-in-text 的环境，<speak> 包着，lib/dub.mjs 第 4 步）后换，所以提示在 <speak> 里面的最前面，提示里面不换。音素标签（phoneme-markers）在第 4 步就写进了要说的话，提示里面同样不换。
+// 文字开头是不是已经有一条提示（opensWithCue）：去掉开头的空白，第一个是方括号的提示。lib/dub.mjs 用它认「台本在这一段开头自己写了提示」。
+//
+// 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
+import { CUE_PATTERN } from '../tools/markup.mjs';
+import { canonicalLabel } from './line-hints.mjs';
+
+/** 合成提示的几项，次序就是写进提示的次序。 */
+export const OPENING_ITEMS = Object.freeze(['emotion', 'style', 'energy', 'instructions']);
+
+const OPENS_WITH_CUE = new RegExp(`^\\s*${CUE_PATTERN}`, 'u');
+
+/** 一项给了没有：字符串，去掉两头空白以后不是空的。 */
+const given = (value) => typeof value === 'string' && value.trim() !== '';
+
+/** 一项写进提示的样子（规则见文件头「怎么合」）。 */
+function written(item, value) {
+  if (item === 'emotion' || item === 'style') return canonicalLabel(item, value);
+  if (item === 'energy') return value.trim();
+  return value.replace(/\[/g, '(').replace(/\]/g, ')').replace(/\s+/g, ' ').trim();
+}
+
+/** 能量在提示里的说法。 */
+const phrase = (item, value) => (item === 'energy' ? `${value} energy` : value);
+
+/**
+ * 合成开头的提示。caller、setup 各是 { emotion?, style?, energy?, instructions? }（调用方给的、设定的；没给的项是 undefined、null 或空字符串）。
+ * 写法（能量是 low、medium、high 之一）由调用的一方先查过：这里不再查。
+ * @returns {{ cue: string, parts: Record<string, { value: string, from: 'caller'|'setup' }> } | null} 四项都没有就是 null
+ */
+export function openingCueOf(caller, setup) {
+  const parts = {};
+  for (const item of OPENING_ITEMS) {
+    const source = given(caller?.[item]) ? ['caller', caller[item]] : given(setup?.[item]) ? ['setup', setup[item]] : null;
+    if (source === null) continue;
+    parts[item] = { value: written(item, source[1]), from: source[0] };
+  }
+  const items = OPENING_ITEMS.filter((item) => parts[item] !== undefined);
+  if (items.length === 0) return null;
+  return { cue: `[${items.map((item) => phrase(item, parts[item].value)).join(', ')}]`, parts };
+}
+
+/** 文字开头（去掉空白）是不是一条方括号的提示。 */
+export const opensWithCue = (text) => OPENS_WITH_CUE.test(text);
+
+/**
+ * 把提示写在一个请求的文字最前面（规则见文件头「怎么写进文字」）。cue 是 null 就原样返回。
+ */
+export function withOpeningCue(text, cue) {
+  if (cue === null || cue === undefined) return text;
+  const body = text.trimStart();
+  return /^[A-Za-z0-9]/.test(body) ? `${cue} ${body}` : `${cue}${body}`;
+}
