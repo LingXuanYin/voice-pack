@@ -20,7 +20,7 @@ import { baseDirectoryOf, isReadableProtocol } from './names.mjs';
 import { PROTOCOL_VERSION } from './version.mjs';
 
 /** 清单里字段的规范次序：同样的内容写出同样的字节。没列在这里的字段排在后面，按名字排。 */
-const KEY_ORDER = ['protocol', 'part', 'id', 'name', 'version', 'changelog', 'madeWith', 'requires', 'features', 'reference', 'holdout', 'direction', 'sampleLines', 'setups', 'enhancers', 'scripts', 'runtimes', 'verification', 'designSource', 'externals', 'files'];
+const KEY_ORDER = ['protocol', 'part', 'id', 'name', 'version', 'changelog', 'madeWith', 'requires', 'features', 'reference', 'holdout', 'direction', 'sampleLines', 'cardLine', 'setups', 'enhancers', 'scripts', 'runtimes', 'verification', 'designSource', 'externals', 'files'];
 
 /** 这一个部分的清单要管的路径：不是清单、不是签名、不在交给子部分管的目录里。（定义在 manifest.mjs，这里转出来方便用。） */
 export { isManagedPath };

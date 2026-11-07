@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 一份很长的输入分成几次请求（流程层，纯计算）：模型一次请求能收的输入有上限，平台或模型写明了，由环境的适配器声明（adapters/README.md 的 limits.maxPromptTokens）。
-// 声明了上限的环境，调用文字模型的地方按它分批发，不截输入；没声明的，一次发完。库里判情绪（lib/reference-pick.mjs）和 app 的文字功能（翻译、找术语、分析角色、润色、按台本推荐音色）
-// 用的是同一份分批，量法、单独超限的、回答被截断的走法只在这里写一遍。
+// 声明了上限的环境，调用文字模型的地方按它分批发，不截输入；没声明的，一次发完。app 的文字功能（翻译、找术语、分析角色、润色、按台本推荐音色）用它，
+// 量法、单独超限的、回答被截断的走法只在这里写一遍。基础部分自己的命令现在不调文字模型，不用它。
 //
 //   utf8Length(text)                                              一段文字的 UTF-8 字节数
 //   splitBatches(items, { limit, fixed, bytesOf, glue })          把 items 按上限装成几批：{ batches, tooLong }
@@ -17,7 +17,7 @@
 //
 // splitBatches：limit 是 null 或 undefined（环境没声明）：全部一批。声明了：按次序装，装不下下一项就另起一批；
 //   单独一项就超过 limit 的（tooLong: [{ item, position, bytes }]，position 是它在 items 里的次序，bytes 是只装它一项时整个提示的字节数）不进任何一批，也不截，
-//   怎么办由调用方定：判情绪的不判、落到默认参考；app 的文字功能报错。
+//   怎么办由调用方定：app 的文字功能报错。
 //
 // askBatches：每一批调一次 ask(batch)，结果按问的次序放进 results（{ batch, result }）；calls 是问了几次，含被截断的。
 //   回答被截断（isCut(error) 为真，用平台给的信号，不另估每项要多少输出）：这一批对半分开，两半各问一次（先问前一半），一直分下去；

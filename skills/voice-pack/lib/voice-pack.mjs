@@ -32,6 +32,10 @@
 //   manifest_missing        读不到清单。details.path
 //   manifest_*              清单不合格：照 protocol/lib/manifest.mjs 的 parseManifest
 //   pack_not_role           清单不是角色部分的。details.part 是它自己说的种类
+//   pack_protocol_old       包按协议 1.x、2.x 写（details: { protocol }，清单写的协议版本）：参考段的写法不一样（语言、音色基底标签，protocol/FORMAT.md 第 14 节），
+//                           这一版不读旧格式、不迁移；配音、变声在打开包时就停下，一次能力都不调。旧包照旧能用，用它那个主版本的程序（FORMAT.md 第 14 节「2.x 的包」）：
+//                           完整包用它自带的基础部分；只有角色部分的，用那个主版本（2.x、1.x）的基础部分（补全只在包要的主版本里挑，第 11 节）。说明里照这样写，主版本取自包的清单。
+//                           不借用 pack_invalid：那是协议核心打包失败的码（protocol/lib/pack.mjs）。make-pack --previous 碰上旧包另报 make_pack_previous_invalid / protocol_old（lib/pack-version.mjs）
 //   reference_unknown       没有这一段参考（留出录音不是参考，也算没有）。details.segment
 //   file_unlisted           要的路径清单里没列。details.path
 //   file_missing            清单里列了、拿不到文件。details.path
@@ -47,6 +51,8 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
 import { parseManifest, MANIFEST_FILE } from '../protocol/lib/manifest.mjs';
+import { protocolMajorOf } from '../protocol/lib/names.mjs';
+import { PROTOCOL_VERSION } from '../protocol/lib/version.mjs';
 import { assertPackPath } from '../protocol/lib/paths.mjs';
 import { sha256Hex } from '../protocol/lib/hash.mjs';
 import { readCapped } from '../protocol/lib/check.mjs';
@@ -98,6 +104,10 @@ export async function openVoicePack(source, { env, verify = false } = {}) {
   if (manifestBytes === null) throw new VoicePackError('manifest_missing', `没有清单 ${MANIFEST_FILE}：这不是一个音色包的角色部分`, { details: { path: MANIFEST_FILE } });
   const manifest = parseManifest(manifestBytes);
   if (manifest.part !== 'role') throw new VoicePackError('pack_not_role', `${MANIFEST_FILE} 说这是 ${manifest.part}，配音要的是角色部分（一个声音的参考集）`, { details: { part: manifest.part } });
+  if (protocolMajorOf(manifest.protocol) !== protocolMajorOf(PROTOCOL_VERSION)) {
+    const major = protocolMajorOf(manifest.protocol);
+    throw new VoicePackError('pack_protocol_old', `这个包按协议 ${manifest.protocol} 写：参考段的写法不一样（语言、音色基底标签，见 protocol/FORMAT.md 第 14 节），这一版（协议 ${PROTOCOL_VERSION}）不读旧格式。旧包照旧能用：完整包用它自带的基础部分；只有角色部分的，用 ${major}.x 的基础部分（补全只在包要的主版本里挑，FORMAT.md 第 11 节）。或者用新的素材做一个新包`, { details: { protocol: manifest.protocol } });
+  }
 
   const listed = new Map(manifest.files.map((entry) => [entry.path, entry]));
   const externals = new Map((manifest.externals ?? []).map((entry) => [entry.path, entry]));

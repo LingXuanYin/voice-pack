@@ -9,7 +9,8 @@
 //                3 index.html          预览卡片（打包时生成，没有也行；角色部分才有：基础部分里没有声音）
 //                4 README.md           写给人和 agent 的说明
 //   类型标识   文件名 mimetype，内容跟协议版本走（names.mjs 的表；没有换行）。开头的字节是固定的：
-//              50 4B 03 04（zip 本地头）、方法 0（存储）、文件名 mimetype 在第 30 字节、内容在第 38 字节。isShareFile、detectShareMime 只看这几十个字节，两套标识都认。
+//              50 4B 03 04（zip 本地头）、方法 0（存储）、文件名 mimetype 在第 30 字节、内容在第 38 字节。isShareFile、detectShareMime 只看这几十个字节，两套标识都认
+//              （2.x 和 3.x 共用一个标识，从这里分不出来，要看清单的协议版本：FORMAT.md 第 14 节「认」）。
 //   写的时候   同样的输入写出同样的字节（zip-write.mjs）：包目录里的文件按路径的 UTF-8 字节序排，其余按上面的次序。
 //   README 和预览卡片在打包时生成，不列进清单。卡片是什么、页面上有什么、怎么保证自包含，只在 preview-card.mjs 的文件头写一份；
 //   这里只管它在哪、什么时候生成：buildShareFile 默认给角色部分生成一张（options.card 给产品名和两个入口的链接，false 是不要，options.indexHtml 是用现成的）。
