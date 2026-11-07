@@ -11,7 +11,7 @@
 
 照 `attributes.json` 写这几个文件，放进 `output/`（没有这个目录就新建）：
 
-- `direction.json`：`description` 由你写；`tags`、`scenes` 原样抄 `attributes.json` 里的。
+- `direction.json`：`description` 由你写；`tags` 原样抄 `attributes.json` 里的。
 - `guidance.md`：配音指引的正文，小节照 `template/guidance.md`。
 - `sample-lines.json`：示例台词。
 

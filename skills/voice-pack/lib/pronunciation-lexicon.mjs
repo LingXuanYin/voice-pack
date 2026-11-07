@@ -3,10 +3,13 @@
 // 读音词表（流程层）：读 W3C 的发音词典（Pronunciation Lexicon Specification 1.0，PLS，https://www.w3.org/TR/pronunciation-lexicon/），
 // 在合成之前把台词里的词换成期望的读法。只做计算，不用模型，不读文件。
 //
-// 三个函数，数据进、数据出：
+// 几个函数，数据进、数据出：
 //   parseLexicon(input)          把 PLS 文件（字符串，或 UTF-8 字节）读成 { version, alphabet, language, lexemes }
-//   lexiconRules(lexicon, opts)  按 PLS 4.9.2 给每个词选定读法 -> { rules, phonemes, unapplied }（opts.phonemeInText：环境声明了拼音音素）
+//   lexiconRules(lexicon, opts)  按 PLS 4.9.2 给每个词选定读法 -> { rules, phonemes, unapplied }
+//                                （opts.phonemeMarkers：环境声明了 phoneme-markers，音素写成音素标签；opts.phonemeInText：只声明了 phoneme-in-text，拼音写成 SSML）
 //   applyLexicon(text, rules)    把规则用到台词上 -> { text, replacements }
+//   applyPhonemes(spoken, phonemes, { ssml })  拼音写成 SSML 的 <phoneme>（只声明了 phoneme-in-text 的环境，发送前）
+//   singleCharacterTerms(lexicon)、isSingleCharacterTerm(term)、singleCharacterNote(terms)、lexiconNotes(input)   只写一个字的词条和它的提醒（下面「只写一个字的词条」；lexiconNotes 是做包用的）
 //
 // 包里的读音词表放在角色部分的根上，文件名是 LEXICON_FILE（lexicon.pls）。清单没有专门的字段：它和别的包内文件一样列在 files 里，
 // 由检查核对哈希；这个名字是约定，包的读取、做包、app 导入导出都认它。
@@ -37,25 +40,41 @@
 // ---------------------------------------------------------------- 怎么选读法（lexiconRules）
 // 规范 4.9.2：同一个词（grapheme 的文字）的所有读法，按文档里的先后收在一起（跨 lexeme）；用第一个 prefer="true" 的，一个都没有就用第一个。
 //   - 选中的是 <alias>：词表的规则是「把这个词换成 alias 的文字」。规范要求 alias 不递归（换出来的文字不再查词表），applyLexicon 一次扫描完成，保证这点。
-//   - 选中的是 <phoneme>：音素要合成的模型自己会读才行，文字层面做不了。如实列在 unapplied（reason: 'phoneme'），
-//     不假装做了，也不悄悄换成别的 alias（作者要的是音素）。
+//   - 选中的是 <phoneme>：音素要合成的模型自己会读才行，用不用由环境的声明定：
+//     声明了 phoneme-markers（模型认文字里的音素标签），拼音（x-pinyin）、Arpabet（x-arpabet）、日文罗马字（x-romaji）写对的成了一条规则：把这个词换成音素标签（下面「音素标签」），
+//     和 alias 一样由 applyLexicon 一次扫描换掉；只声明了 phoneme-in-text，拼音写对的进 phonemes，发送前 applyPhonemes 写成 SSML（下面「拼音音素」）。
+//     别的情况（环境没有声明、字母表这个环境不收）如实列在 unapplied（reason: 'phoneme'），不假装做了，也不悄悄换成别的 alias（作者要的是音素）；
+//     环境收这种字母表、写法不对的，reason 是 'phoneme_format'。
 //   - lexeme 带 role（词性之类，按上下文挑读法用）：这里没有语法信息，没法判断这句话里是不是那个词性；列在 unapplied（reason: 'role'），不当成没有这条，
 //     也不一律照用（read 的现在时和过去时读法不同，照用会把另一半读错）。
 // 环境的 pronunciation-lexicon 能力（vocab/capabilities.json）是合成器自己支持词表的意思，这里不用它：词表对 alias 在文字层面生效，不依赖环境。
 //
 // ---------------------------------------------------------------- 怎么用到台词上（applyLexicon）
-//   - 只替换台本标记之间的文字，不改标记本身。标记的写法取自解析器自己的正则（tools/markup.mjs 的 MARKER_PATTERN）。
-//     不这样的话，词表里有 pause → break，[pause 1s] 就变成 [break 1s]，停顿没了；[voice:Alice] 加 Alice → Ali，声音名对不上。
+//   - 只替换台本标记和提示以外的文字，不改标记，也不碰方括号里的提示。标记和提示的写法取自解析器自己的正则（tools/markup.mjs 的 MARKER_PATTERN）。
+//     不这样的话，词表里有 pause → break，[pause 1s] 就变成 [break 1s]，停顿没了；[voice:Alice] 加 Alice → Ali，声音名对不上；
+//     提示 [Mira 笑着] 里的 Mira 也会被换掉，提示就不是作者写的了。音素（音素标签、SSML 的 applyPhonemes）同样不进提示。
+//   - 尖括号标签（tools/markup.mjs 文件头「尖括号标签」）也不碰：标签本身（<whisper>、</french>、<|speaker:0|>）和整个音素标记（<|phoneme_start|>…<|phoneme_end|>）。
+//     不这样的话，词表里有 whisper → whispa，<whisper> 就成了 <whispa>，模型不认；音素标记里的字母是音素，不是词。成对标签包住的字是要念的话，照样换
+//     （<emphasis>Mira</emphasis> 换成 <emphasis>Meera</emphasis>）。写法取自 tools/markup.mjs 的 TAG_PATTERN。
+//     音素标签（phoneme-markers）就是一条替换，换出来的标签不转义，句子里别的尖括号标签照样到模型。
+//     例外在 applyPhonemes（SSML 的拼音音素，只声明了 phoneme-in-text 的环境才用）：一句用上了音素，整句转义、包一层 <speak>，句子里的尖括号标签也转义了，到不了模型。
 //   - 区分大小写：PLS 的 grapheme 是照写法对的，要两种写法就写两个 grapheme。
 //   - 词条是拉丁字母这类分词的文字时按整词匹配（Mira 换，Miranda 不动）；词条的两头是汉字、假名、谚文、泰文这类不分词的文字，按子串匹配。
 //     拉丁词挨着汉字不算在词内（「我喜欢Mira这个人」里的 Mira 能换）。
 //   - 同一位置几个词条都能匹配时，长的优先（New York City 先于 New York）。整段台词一次扫描，换出来的文字不会再被别的词条处理。
 //   - 替换文是普通文字：$& 之类不会被当成替换语法。
 //
+// ---------------------------------------------------------------- 只写一个字的词条
+// 词条两头是汉字这类不分词的字时按子串找，所以只写一个字（「曾」）会把含这个字的每个词都换掉（「曾经」「不曾」也念成 zēng）。
+// 不拦，只提醒：做包时词表里有就提一条（lib/make-pack.mjs），配音时这次用上了就提一条（lib/dub.mjs），code 是 lexicon_single_character，
+// details 是 { terms }（那几个词条）。拉丁字母这类按整词找，一个字母的词条（A）只换单独的 A，不提。带 role 的用不上，不提。
+//
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from '../protocol/lib/errors.mjs';
-import { MARKER_PATTERN } from '../tools/markup.mjs';
-import { escapeSsml } from './pause-in-request.mjs';
+import { CUE_PATTERN, MARKER_PATTERN, TAG_PATTERN } from '../tools/markup.mjs';
+
+/** 写进 <speak> 的文字里的 & < > 转义（拼音音素的标签包在 <speak> 里，见 applyPhonemes）。 */
+const escapeSsml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** 读音词表在角色部分根上的文件名（约定，清单里没有专门的字段）。 */
 export const LEXICON_FILE = 'lexicon.pls';
@@ -464,18 +483,21 @@ function readLexeme(element, ids) {
 
 /**
  * 给每个词选定读法，规则见文件头「怎么选读法」。
- * phonemeInText：环境声明了 phoneme-in-text（见 dub.mjs）。没有声明，所有音素都是 reason 'phoneme'，和没有拼音这一项时一字不差。
- * 声明了：拼音（x-pinyin）写对的进 phonemes；写不对的（音节数、写法、词条里有非汉字）reason 是 phoneme_format，problem 写明是哪一种。
+ * phonemeMarkers：环境声明了 phoneme-markers（见 dub.mjs）。拼音（x-pinyin）、Arpabet（x-arpabet）、日文罗马字（x-romaji）写对的成了 rules 里的一条：把词换成音素标签（say 是标签，
+ *   另有 phoneme: { alphabet, ph }），和别名在同一次扫描里换（applyLexicon）。
+ * phonemeInText：环境声明了 phoneme-in-text、没有声明 phoneme-markers。拼音写对的进 phonemes（发送前 applyPhonemes 写成 SSML）；Arpabet、罗马字不收（reason 'phoneme'）。
+ * 两个都没有声明，所有音素都是 reason 'phoneme'，和没有拼音这一项时一字不差。
+ * 收的字母表里写不对的（音节数、写法、词条不是那种字）reason 是 phoneme_format，problem 写明是哪一种。
  * unapplied 列着所有音素（能用的也列着，调用方在用上的时候去掉）。
  * @param {ReturnType<typeof parseLexicon>} lexicon
- * @param {{ phonemeInText?: boolean }} [options]
+ * @param {{ phonemeInText?: boolean, phonemeMarkers?: boolean }} [options]
  * @returns {{
- *   rules: { term: string, say: string, language: string }[],
+ *   rules: { term: string, say: string, language: string, phoneme?: { alphabet: string, ph: string } }[],
  *   phonemes: { term: string, alphabet: string, ph: string }[],
  *   unapplied: ({ term: string, reason: 'phoneme', phoneme: string, alphabet: string } | { term: string, reason: 'phoneme_format', phoneme: string, alphabet: string, problem: 'term'|'count'|'form' } | { term: string, reason: 'role', role: string, lexemeId: string|null })[]
  * }}
  */
-export function lexiconRules(lexicon, { phonemeInText = false } = {}) {
+export function lexiconRules(lexicon, { phonemeInText = false, phonemeMarkers = false } = {}) {
   const byTerm = new Map(); // 词 -> 按文档次序收齐的读法
   const unapplied = [];
   for (const lexeme of lexicon.lexemes) {
@@ -497,9 +519,13 @@ export function lexiconRules(lexicon, { phonemeInText = false } = {}) {
       continue;
     }
     const alphabet = chosen.alphabet ?? lexicon.alphabet;
-    const pinyin = phonemeInText && alphabet === PINYIN_ALPHABET;
-    const problem = pinyin ? pinyinProblem(term, chosen.value) : null;
-    if (pinyin && problem === null) phonemes.push({ term, alphabet, ph: chosen.value });
+    // 这个环境收不收这种字母表：音素标签收拼音、Arpabet 和罗马字，SSML 只收拼音
+    const checkOf = phonemeMarkers ? MARKER_ALPHABETS.get(alphabet) : phonemeInText && alphabet === PINYIN_ALPHABET ? pinyinProblem : undefined;
+    const problem = checkOf === undefined ? null : checkOf(term, chosen.value);
+    if (checkOf !== undefined && problem === null) {
+      if (phonemeMarkers) rules.push({ term, say: phonemeMarkersOf(alphabet, chosen.value), language: lexicon.language, phoneme: { alphabet, ph: chosen.value } });
+      else phonemes.push({ term, alphabet, ph: chosen.value });
+    }
     if (problem === null) notApplied.push({ term, reason: 'phoneme', phoneme: chosen.value, alphabet });
     else notApplied.push({ term, reason: 'phoneme_format', phoneme: chosen.value, alphabet, problem });
   }
@@ -510,8 +536,8 @@ export function lexiconRules(lexicon, { phonemeInText = false } = {}) {
 //
 // 包里的拼音音素：字母表 x-pinyin（PLS 第 2 节：非 ipa 的字母表是 x- 开头的自定义名）；ph 是拼音加数字声调，每个汉字一个音节，
 // 音节用空格分开，个数和词里的汉字数相等，声调 1 到 5（5 是轻声）。拼音里的 ü 写成 v（lü3 写成 lv3）。
-// 认不认得这个字母表、怎么写进文字，由环境定：环境声明了 phoneme-in-text 才用（适配器的字母表名见它的 env.mjs）。
-// 这里只管读、判、写成标签；发送时在 dub.mjs 的 runUnit 里做（停顿、切段、字数都仍按纯文字算，标签不计字数）。
+// 认不认得这个字母表、怎么写进文字，由环境定：声明了 phoneme-markers，写成音素标签（下面「音素标签」）；只声明了 phoneme-in-text，写成 SSML 的 <phoneme>
+// （适配器的字母表名见它的 env.mjs）。SSML 这一种在这里只管读、判、写成标签；发送时在 dub.mjs 的 runUnit 里做（停顿、切段、字数都仍按纯文字算，标签不计字数）。
 
 /** 包里写汉语拼音用的字母表名。 */
 export const PINYIN_ALPHABET = 'x-pinyin';
@@ -526,8 +552,66 @@ export function pinyinProblem(term, ph) {
   return syllables.every((syllable) => PINYIN_SYLLABLE.test(syllable)) ? null : 'form';
 }
 
+// ---------------------------------------------------------------- Arpabet 音素
+//
+// 包里的英文音素：字母表 x-arpabet，ph 是 CMU Arpabet：音素用大写字母写，之间空一格；元音后面带重音数字（0 不重读、1 主重音、2 次重音），辅音不带。
+// 一个词条一个词（拉丁字母，中间可以有撇号、连字符）：音素标签一个标签代替一个词（厂商文档）。只在声明了 phoneme-markers 的环境里用，SSML 那一种不收。
+
+/** 包里写英文音素（CMU Arpabet）用的字母表名。 */
+export const ARPABET_ALPHABET = 'x-arpabet';
+const ARPABET_VOWELS = new Set(['AA', 'AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH', 'IY', 'OW', 'OY', 'UH', 'UW']);
+const ARPABET_CONSONANTS = new Set(['B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M', 'N', 'NG', 'P', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH']);
+const ARPABET_PHONE = /^([A-Z]+)([0-2])?$/;
+const LATIN_WORD = /^\p{Script=Latin}+(?:['’-]\p{Script=Latin}+)*$/u;
+
+/** Arpabet 音素写得对不对：null 是对的；'term' 是词条不是一个拉丁字母的词；'form' 是某个音素不在 Arpabet 里，或者元音没带重音数字、辅音带了。 */
+export function arpabetProblem(term, ph) {
+  if (!LATIN_WORD.test(term)) return 'term';
+  return ph.split(' ').every((phone) => {
+    const match = ARPABET_PHONE.exec(phone);
+    if (match === null) return false;
+    return match[2] === undefined ? ARPABET_CONSONANTS.has(match[1]) : ARPABET_VOWELS.has(match[1]);
+  }) ? null : 'form';
+}
+
+// ---------------------------------------------------------------- 日文罗马字音素
+//
+// 包里的日文音素：字母表 x-romaji，ph 是 OpenJTalk 风格的罗马字，带音调的数字：字母后面跟一个数字，一个接一个，不空格（厂商唯一的例子：橋が 写 ha0shi1ga0）。
+// 一个词条是一个日文的词或短的词组（假名、汉字，长音符 ー）：音素标签一个标签代替整个词条（厂商文档）。只在声明了 phoneme-markers 的环境里用，SSML 那一种不收。
+// 这里只核字母和数字的样子，不核是不是真有这个音拍、音调对不对：厂商只给了一个例子。
+
+/** 包里写日文音素（OpenJTalk 风格的罗马字，带音调数字）用的字母表名。 */
+export const ROMAJI_ALPHABET = 'x-romaji';
+const JAPANESE_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}ー]+$/u;
+const ROMAJI_WITH_PITCH = /^(?:[A-Za-z]+[0-9])+$/;
+
+/** 罗马字音素写得对不对：null 是对的；'term' 是词条里有不是假名、汉字的字；'form' 是 ph 不是「字母后面跟一个数字」一个接一个（有空格、假名，或者没有音调数字）。 */
+export function romajiProblem(term, ph) {
+  if (!JAPANESE_TERM.test(term)) return 'term';
+  return ROMAJI_WITH_PITCH.test(ph) ? null : 'form';
+}
+
+// ---------------------------------------------------------------- 音素标签（phoneme-markers）
+//
+// 环境声明了 phoneme-markers：合成认文字里的 <|phoneme_start|>音素<|phoneme_end|>，标签代替原来的词，原来的字不写（写法是配音模型的厂商文档定的，models/scene3.md「音素标签」）。
+// 拼音一个音节一个标签，几个标签挨着写（yin2 hang2 写成 <|phoneme_start|>yin2<|phoneme_end|><|phoneme_start|>hang2<|phoneme_end|>）；Arpabet 一个词一个标签，音素照写；
+// 罗马字一个词条一个标签。包里的写法就是厂商的写法（拼音小写、ü 写 v、轻声写 5；Arpabet 大写、带重音数字；罗马字带音调数字），不转换。
+// 换成标签是一次替换，和别名一样在 applyLexicon 的同一次扫描里做：长的词条优先，换出来的字不再查词表（别名换出来的字不会再被标上音素）。
+// 不转义、不包 <speak>：句子里的尖括号标签照样到模型。
+
+/** 声明了 phoneme-markers 的环境收的字母表，和各自的检查。 */
+const MARKER_ALPHABETS = new Map([[PINYIN_ALPHABET, pinyinProblem], [ARPABET_ALPHABET, arpabetProblem], [ROMAJI_ALPHABET, romajiProblem]]);
+const PHONEME_START = '<|phoneme_start|>';
+const PHONEME_END = '<|phoneme_end|>';
+
+/** 一个词条的音素写成音素标签：拼音一个音节一个标签，别的字母表（Arpabet、罗马字）整个音素一个标签。 */
+function phonemeMarkersOf(alphabet, ph) {
+  const marker = (inside) => `${PHONEME_START}${inside}${PHONEME_END}`;
+  return alphabet === PINYIN_ALPHABET ? ph.split(' ').map(marker).join('') : marker(ph);
+}
+
 /**
- * 把读音标在台词的词上（拼音音素）。spoken 是要念的文字；ssml 为 true 时它已经是 <speak>…</speak>（转义过，标记和 <break> 不动，只换文字段）；
+ * 把读音标在台词的词上（SSML 的拼音音素，只声明了 phoneme-in-text 的环境；音素标签不走这里，见上面「音素标签」）。spoken 是要念的文字；ssml 为 true 时它已经是 <speak>…</speak>（转义过，标记和 <break> 不动，只换文字段）；方括号里的提示不动（文件头「怎么用到台词上」）；
  * 为 false 时是纯文字，有替换的就转义、包一层 <speak>。没有替换的原样交回，所以没有音素的句子和以前一字不差。
  * phonemes 是 lexiconRules 的 phonemes（{ term, alphabet, ph }）；同一个词条只用第一个。匹配和长词优先的规则和 applyLexicon 一样。
  * @returns {{ text: string, replacements: { term: string, ph: string, count: number }[] }} replacements 按第一次换到的先后排
@@ -543,11 +627,13 @@ export function applyPhonemes(spoken, phonemes, { ssml }) {
   const terms = [...byEscaped.keys()].sort((a, b) => b.length - a.length);
   const pattern = new RegExp(terms.map(termPattern).join('|'), 'gu');
   const counts = new Map();
-  const rewrite = (run) => run.replace(pattern, (matched) => {
+  const rewriteWords = (run) => run.replace(pattern, (matched) => {
     const item = byEscaped.get(matched);
     counts.set(item.term, (counts.get(item.term) ?? 0) + 1);
     return `<phoneme alphabet="${PINYIN_ALPHABET}" ph="${escapeSsml(item.ph).replace(/"/g, '&quot;')}">${matched}</phoneme>`;
   });
+  // 提示（方括号）原样，只换提示之间的字
+  const rewrite = (run) => run.split(CUES_SPLIT).map((piece, index) => (index % 2 === 1 ? piece : rewriteWords(piece))).join('');
   let text;
   if (ssml) {
     // 标签（<speak>、<break …/>）原样，只换标签之间的文字
@@ -564,12 +650,64 @@ export function applyPhonemes(spoken, phonemes, { ssml }) {
 
 // ---------------------------------------------------------------- 用到台词上
 
+/** 按提示切开（提示在奇数位），给 applyPhonemes 绕开提示用。 */
+const CUES_SPLIT = new RegExp(`(${CUE_PATTERN})`);
+/** applyLexicon 不碰的：台本标记、提示、尖括号标签（文件头「怎么用到台词上」）。 */
+const UNTOUCHED = new RegExp(`${MARKER_PATTERN}|${TAG_PATTERN}`, 'gi');
+
 const WORD_CHAR = String.raw`[\p{L}\p{N}_]`;
 // 不分词的文字：汉字、假名、谚文、泰文这类，词条的边上是它们就按子串匹配，旁边是它们也不算在词内
 const UNSPACED = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]`;
 const INSIDE_WORD = `(?!${UNSPACED})${WORD_CHAR}`;
 const INSIDE_WORD_START = new RegExp(`^${INSIDE_WORD}`, 'u');
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+
+const SINGLE_UNSPACED = new RegExp(`^${UNSPACED}$`, 'u');
+
+/** 词条只写了一个字、又是按子串找的（汉字、假名、谚文这类，见 termPattern）：含这个字的每个词都会被换掉。拉丁字母这类整词找，一个字母的词条不算。 */
+export function isSingleCharacterTerm(term) {
+  return typeof term === 'string' && SINGLE_UNSPACED.test(term);
+}
+
+/** 词表里只写一个字的词条（isSingleCharacterTerm），按词表的次序，不重复；带 role 的不算（它用不上，见文件头「怎么选读法」）。 */
+export function singleCharacterTerms(lexicon) {
+  const terms = new Set();
+  for (const lexeme of lexicon.lexemes) {
+    if (lexeme.role !== null) continue;
+    for (const term of lexeme.graphemes) if (isSingleCharacterTerm(term)) terms.add(term);
+  }
+  return [...terms];
+}
+
+/**
+ * 只写一个字的词条的提醒（只提醒，不拦）：做包时看词表里有没有（lib/make-pack.mjs），配音时看这次用上了没有（lib/dub.mjs）。
+ * terms 是那几个词条（不空，按调用方给的次序）。
+ * @returns {{ code: 'lexicon_single_character', message: string, details: { terms: string[] } }}
+ */
+export function singleCharacterNote(terms) {
+  const listed = terms.map((term) => `「${term}」`).join('');
+  return {
+    code: 'lexicon_single_character',
+    message: `读音词表里有 ${terms.length} 个词条只写了一个字：${listed}。词条按字面在台词里找，含这个字的每个词都会照它念，不只是要改的那个名字或词。只想改一个名字或一个词，把词条写成整个词（例如写「曾小雨」，不写「曾」）`,
+    details: { terms: [...terms] },
+  };
+}
+
+/**
+ * 做包时的说明：一份读音词表（PLS 的字符串或 UTF-8 字节）有只写一个字的词条，给一条 lexicon_single_character（singleCharacterNote），没有就是 []。
+ * 词表读不了的也是 []：读不读得了不归做包这一步，配音读它时报 lexicon_invalid。别的错照常抛。
+ */
+export function lexiconNotes(input) {
+  let lexicon;
+  try {
+    lexicon = parseLexicon(input);
+  } catch (error) {
+    if (error instanceof VoicePackError && error.code === 'lexicon_invalid') return [];
+    throw error;
+  }
+  const terms = singleCharacterTerms(lexicon);
+  return terms.length === 0 ? [] : [singleCharacterNote(terms)];
+}
 
 function termPattern(term) {
   const chars = [...term];
@@ -604,7 +742,7 @@ export function applyLexicon(text, rules) {
   });
   let out = '';
   let last = 0;
-  for (const marker of text.matchAll(new RegExp(MARKER_PATTERN, 'gi'))) {
+  for (const marker of text.matchAll(UNTOUCHED)) {
     out += rewrite(text.slice(last, marker.index)) + marker[0];
     last = marker.index + marker[0].length;
   }
