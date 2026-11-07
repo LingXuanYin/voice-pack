@@ -12,7 +12,7 @@
 // 抛出的错误（VoicePackError）：
 //   file_unreadable       包目录不存在、不是目录，或者读不了文件（来自 protocol/cli/disk.mjs 的同名 code，意思相同）
 //   symlink_not_allowed   包里有符号链接。details.path
-//   另外 manifest_missing、manifest_*、pack_not_role 来自 lib/voice-pack.mjs。
+//   另外 manifest_missing、manifest_*、pack_not_role、pack_invalid（协议 1.x、2.x 的旧包，details.reason 是 protocol_old）来自 lib/voice-pack.mjs。
 import fs from 'node:fs';
 import path from 'node:path';
 import { VoicePackError } from '../protocol/lib/errors.mjs';

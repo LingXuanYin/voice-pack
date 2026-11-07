@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 句子合段（流程层，不花钱）：长录音的句子模式（lib/long-recording.mjs 的 sentences: true）切出来的句子，每句已经打过情绪标签
-// （lib/make-pack-tags.mjs 的 tagAll，每句听一次），这里按情绪把句子并成段。段的音频、文字、标签都从它里面几句来，不再听一遍：
-// 打标签的次数等于句数。段是在打标签之后才合成的（makePack 的次序），所以 tagAll 不会再听它。
+// 句子合段（流程层，不花钱）：长录音的句子模式（lib/long-recording.mjs 的 sentences: true）切出来的句子，在转写之前并成段，之后一段转写一次（lib/make-pack-transcribe.mjs）。
+// 句子不逐句转写，也不逐句先听。理由（2026-11-05 在开发用的转写上量过 25 句两秒以下的短句，每句给语言、不给语言各转一次）：短句没有上下文，错字多，
+// 中文短句给了语言 38 个字错 18 个，多是音对字错（「散伙」写成「发火」），同一段话整段送，45 个字只错 1 个；没人说话的小块会编出一句话来
+// （给了语言时，两块杂音都编出了整句），编出来的字进了逐字稿，参考的文字就和音频对不上了；逐句的请求也多。
+// 一段里可能有几种说法，音色基底标签按合好的段给（lib/make-pack-tags.mjs 的 assignTags）。段的音频从它里面几句来。
 //
 //   mergeSentences(items)  -> { items, merged, aliases, step }
 //     items      条目列表（不改）。返回的 items 里，参与并段的句子换成合好的段（放在段里第一句的位置）；没参与的原样留着（淘汰了的，报告里写着原因）
@@ -10,10 +12,11 @@
 //     aliases    句子的名字 -> 它所在的段的名字（作者点名的默认参考段是句子的名字时用）
 //     step       { sentences: 参与并段的句子数, segments: 合成的段数 }
 //
-// 参与并段的：没有淘汰（unused）的句子。听不出情绪的（回答作废、服务暂时出错试满了、听了说没有）也参与，只是它们的情绪是「没有」。
-// 情绪：调用方给了的（labels.emotion）盖过听出来的（tagging.emotion），同 lib/make-pack-tags.mjs 的 assembleTags。
+// 参与并段的：筛片段没淘汰（unused）的句子。在转写之前做，所以句子还没有转写出来的文字，也还没定语言。
 //
-// 分组：语言、采样率、情绪。没有情绪的句子单独一组，不和有情绪的并：听不出的句子不会被归到某一种情绪里。
+// 分组：素材给的语言（givenLanguage：作者给的 --language，或者段自己的 language；规范化以后的写法，protocol/lib/manifest.mjs 的 languageKey；没给的算一组）、采样率。
+//   不同采样率的句子不并（拼起来的音频只有一个采样率）。并段不按转写报的语言分开：没给语言的录音，一段里可能混着几种语言，段的语言照下面的规矩定。
+//   要按语言分开的，作者自己先切好，每段写上语言再交。
 // 组内按原来的次序分段。长短是参考段的要求（音质检查的正本在 tools/audio-quality.mjs 的 REFERENCE_THRESHOLDS.duration，这里不另写一份）：5 到 20 秒。
 //   · 当前的段已经够 5 秒，遇到下一句就关掉它，下一句另起一段；
 //   · 当前的段不够 5 秒，加上下一句会超过 20 秒，也关掉它；
@@ -22,27 +25,34 @@
 // 段里两句怎么接（段的长短按这样算）：
 //   · 原来就紧挨着的两句（同一段录音、次序相邻，并且前一句的原停顿留着，即 sentence.pauseSec 不是 null）：前一句的音频连同它后面的原停顿一起用，
 //     两句之间保持原来的停顿（房间底噪，不是静音）；
-//   · 其余（中间隔着别的句子，或者中间丢掉了零头）：前一句只用句子本身，后面接 0.3 秒静音（采样全是 0）。
+//   · 其余（中间隔着别的句子，或者中间丢掉了零头，或者是两段录音接在一起）：前一句只用句子本身，后面接 0.3 秒静音（采样全是 0）。
 //
-// 段的音频：WAV，16 位，单声道，采样率同句子。段的文字：句子的文字按次序接起来，两头都是中日韩字符就直接接，否则中间加一个空格。
-// 段的标签：语言是组里的语言；情绪是组里的情绪（没有情绪的组没有）；风格是组里的句子都一样才有。段的 tagging 写成听者的结果的样子
-//   （{ status: 'tagged', emotion?, style? }），所以 assembleTags 从它取情绪和风格，来源记作 audio-text-to-text。
-//   没有情绪、风格的段：几句的听的结果一样（都没听成、都作废、都没有标签）就照那一个 tagging（报告里看得到没听成和作废），否则没有 tagging。
+// 段的音频：WAV，16 位，单声道，采样率同句子。
+// 段的文字：一般是空的，做包接着把整段交给转写（一段一次，lib/make-pack-transcribe.mjs），段的文字就是整段转出来的。
+//   调用方给句子带了文字、段里每一句都有字的，才把句子的文字按次序接起来当段的文字，这一段不转写。接的地方：前一句的结尾（隔着收尾的引号、括号、省略号、破折号）
+//   或者后一句的开头（隔着开头的这些）是汉字、假名或它们的全角标点，就直接接；别的加一个空格，韩文和英文一样（词和词之间本来就有空格）。
+//   （长录音的句子模式不转写，句子不带文字：只有调用方自己交带文字的句子才走到这里。）
+//   有一句没有字，整段转写，句子带的文字不用。
+// 段的语言：这里不定，和别的段一样由 lib/make-pack-tags.mjs 定（转写以后）：素材给的（作者给了 --language 就是它）> 整段转写报的 > 从整段的文字认。
+//   段带着段里第一句素材给的语言（givenLanguage，同一组里都一样）。
+// 段的音色基底标签：段里的句子都带着同一个素材给的标签（givenTag）才有，不然没有（用段的名字，lib/make-pack-tags.mjs）。
+//   长录音自己不给句子标签（lib/long-recording.mjs），所以长录音做的段一律是「没有标签」。
 // 段的名字：段里第一句的名字。段的 source：{ recording?, startSec（第一句的开始）, endSec（最后一句的结束）, sentences（段里句子的名字，按次序） }，只放进报告，不进包。
 //
-// 读条目的：index、id、audio、text、textSource、language、labels、tagging、source、sentence、unused；不改原来的条目（合成的段是新的条目）。
+// 读条目的：index、id、audio、text、givenLanguage、givenTag、source、sentence、unused；不改原来的条目（合成的段是新的条目）。
 //
 // 抛出的错误：没有（句子的音频不是 WAV 的，解码的错原样往上抛）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { parseWav, encodeWav, wavInfo } from '../tools/wav.mjs';
 import { REFERENCE_THRESHOLDS } from '../tools/audio-quality.mjs';
+import { languageKey } from '../protocol/lib/manifest.mjs';
+import { hasWords } from './make-pack-transcribe.mjs';
+import { joinWritten } from '../protocol/lib/word-spacing.mjs';
 
 /** 句子之间不相邻时插进去的静音（秒）。 */
 const SILENCE_SECONDS = 0.3;
 const { warnBelow: MIN_SECONDS, warnAbove: MAX_SECONDS } = REFERENCE_THRESHOLDS.duration;
-/** 中日韩字符（含全角标点）：两头都是它的，接的时候不加空格。范围：CJK 标点和假名、统一汉字、谚文音节、兼容汉字、全角字符。 */
-const CJK = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
 
 /** 是不是句子（长录音的句子模式切出来的片段）。 */
 export const isSentence = (item) => item.sentence !== undefined;
@@ -80,27 +90,11 @@ function segmentsOf(members) {
   return out;
 }
 
-/** 句子的情绪：调用方给的盖过听出来的（同 assembleTags）。给了 null（明确没有）或者都没有，就是 undefined。 */
-function emotionOf(item) {
-  if (item.labels.emotion !== undefined) return item.labels.emotion || undefined;
-  return item.tagging?.status === 'tagged' ? item.tagging.emotion : undefined;
-}
+/** 组的键：素材给的语言（规范化以后的写法，没给是 null）、采样率。 */
+const keyOf = (item) => JSON.stringify([item.givenLanguage ? languageKey(item.givenLanguage) : null, wavInfo(item.audio.bytes).sampleRate]);
 
-/** 句子的风格（同 emotionOf）。 */
-function styleOf(item) {
-  if (item.labels.style !== undefined) return item.labels.style || undefined;
-  return item.tagging?.status === 'tagged' ? item.tagging.style : undefined;
-}
-
-/** 组的键：语言、采样率、情绪（没有情绪的是空的）。 */
-const keyOf = (item) => JSON.stringify([item.language.value, wavInfo(item.audio.bytes).sampleRate, emotionOf(item) ?? '']);
-
-/** 两头都是中日韩字符就直接接，否则中间加一个空格；空的文字跳过。 */
-function joinText(texts) {
-  return texts
-    .filter((text) => text !== '')
-    .reduce((acc, text) => (acc === '' ? text : CJK.test(acc.at(-1)) && CJK.test(text.charAt(0)) ? `${acc}${text}` : `${acc} ${text}`), '');
-}
+/** 几句的文字按次序接起来（规矩在文件头「段的文字」，程序在 protocol/lib/word-spacing.mjs 的 joinWritten）；空的文字跳过。 */
+const joinText = (texts) => texts.filter((text) => text !== '').reduce(joinWritten, '');
 
 /** 一段的音频（WAV 字节）：相邻的整段（句子加原停顿），不相邻的句子本身加静音（见文件头「段里两句怎么接」）。 */
 function composeAudio(list, rate) {
@@ -123,24 +117,18 @@ function composeAudio(list, rate) {
   return encodeWav({ sampleRate: rate, samples: [out] });
 }
 
-/** 一段的条目（见文件头「段的标签」「段的名字」「段的 source」）。 */
+/** 一段的条目（见文件头「段的文字」「段的语言」「段的名字」「段的 source」）。 */
 function mergedItem(list) {
   const first = list[0];
   const last = list.at(-1);
-  const emotion = emotionOf(first);
-  const styles = list.map(styleOf);
-  const style = styles.every((value) => value === styles[0]) ? styles[0] : undefined;
-  const sameOutcome = list.every((m) => m.tagging?.status === first.tagging?.status);
-  const tagging = emotion !== undefined || style !== undefined ? { status: 'tagged', ...(emotion === undefined ? {} : { emotion }), ...(style === undefined ? {} : { style }) } : sameOutcome && first.tagging !== undefined ? { ...first.tagging } : undefined;
+  const sameTag = list.every((m) => m.givenTag === first.givenTag);
   return {
     index: first.index,
     id: first.id,
     audio: { bytes: composeAudio(list, wavInfo(first.audio.bytes).sampleRate), mimeType: 'audio/wav' },
-    text: joinText(list.map((m) => m.text)),
-    textSource: first.textSource,
-    language: first.language,
-    labels: { ...first.labels },
-    ...(tagging === undefined ? {} : { tagging }),
+    text: list.every((m) => hasWords(m.text)) ? joinText(list.map((m) => m.text)) : '', // 一般是空的：整段转写
+    givenLanguage: first.givenLanguage,
+    givenTag: sameTag ? first.givenTag : undefined,
     source: {
       ...(first.source?.recording === undefined ? {} : { recording: first.source.recording }),
       startSec: first.source?.startSec,
@@ -153,7 +141,7 @@ function mergedItem(list) {
 
 /**
  * 句子合段。见文件头。
- * @param {object[]} items 条目（句子已经转写、定了语言、打过情绪标签）
+ * @param {object[]} items 条目（筛过片段，还没转写）
  */
 export function mergeSentences(items) {
   const usable = items.filter((item) => isSentence(item) && item.unused === undefined);
