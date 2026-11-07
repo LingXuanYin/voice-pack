@@ -1,5 +1,5 @@
 {
-  "$comment": "设计出来的声音做包时，agent 把其中一组写进清单的 `sampleLines`（不克隆成素材，做法见 `references/make-pack.md`），每种语言一组（zh、en）。口气和长度的规则写在 SKILL.md（第 2 节「设计」第 3 步，第 7 节）；这里的数字取自 pack-material.mjs 的 minHoldoutTokens 和 product-contract.json 的 minChars。app 和 agent 都从这一处取，改句子改这里。",
+  "$comment": "设计出来的声音做包时，agent 把其中一组写进清单的 `sampleLines`（不克隆成素材，做法见 `references/make-pack.md`），每种语言一组（zh、en）。每一项是 { text, feel, kind } 对象，`sampleLines`（`--sample-lines`）要的是字符串数组：取每一项的 `text`，写成 [\"…\", \"…\"]，不要把对象原样抄进去（会报 make_pack_input_invalid）。口气的规则写在 `references/make-pack.md` 讲示例台词的那一段（当面对人说的平常话，不照 `references/character-voice.md`「台本对谁说」），用法在 `references/make-pack.md`（SKILL.md 第 7 节指到那里）；这里的数字取自 pack-material.mjs 的 minHoldoutTokens 和 product-contract.json 的 minChars。app 和 agent 都从这一处取，改句子改这里。",
   "zh": [
     { "text": "你来啦，快进来坐，外面冷吧？我刚把水烧上。", "feel": "热情，高兴见到人", "kind": "greeting" },
     { "text": "你昨天说的那家店，到底在哪条路上呀？我找了半天都没找到。", "feel": "好奇，有点急", "kind": "question" },

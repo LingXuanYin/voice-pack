@@ -7,7 +7,7 @@
 //   guidanceForModel(guidance)        交给配音模型的那段：新式只有演法的正文（没有演法，或演法是空的：''）；旧式是整段。不是字符串：undefined。
 //   PERFORMANCE_SECTION               「演法」的标题名。
 //
-// 这一份服务基础部分的配音流程（lib/dub.mjs）和 app 的声音页。适配器（limits.mjs）有一份逐行一致的镜像：适配器不能 import 基础部分（那边的注释写了原因），
+// 基础部分自己的程序现在不用这一份：配音（lib/dub.mjs）不交指引。它留给还交指引的程序。适配器（limits.mjs）有一份逐行一致的镜像，app 的声音页读的是那一份：适配器不能 import 基础部分（那边的注释写了原因），
 // 两份由对照测试钉在一起；改这一份，那一份也要改。
 // 不 import 别的模块，所以它要小（同 lib/language-tag.mjs）。模块约定见 protocol/README.md：浏览器和 Node 都能跑。
 

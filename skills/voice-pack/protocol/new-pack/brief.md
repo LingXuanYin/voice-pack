@@ -11,9 +11,10 @@
 
 照 `attributes.json` 写这几个文件，放进 `output/`（没有这个目录就新建）：
 
-- `direction.json`：`description` 由你写；`tags`、`scenes` 原样抄 `attributes.json` 里的。
+- `direction.json`：`description` 由你写；`tags` 原样抄 `attributes.json` 里的。
 - `guidance.md`：配音指引的正文，小节照 `template/guidance.md`。
 - `sample-lines.json`：示例台词。
+- `card-line.txt`：卡片试听那一句（没有模板：UTF-8 的纯文字，整个文件就是这一句），写法见 `spec/README.md`「示例台词」那一段。可以从你写的示例台词里挑一句。
 
 `template/design-source.json` 不用填：设计来源由调用方给（见 `spec/README.md`「设计来源」）。
 

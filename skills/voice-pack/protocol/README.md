@@ -26,7 +26,8 @@
 | 清单 | `schema.mjs`（JSON Schema 子集的校验器）、`manifest.mjs`（读、写、检查清单）、`seal.mjs`（给一个部分生成清单） |
 | 检查 | `check.mjs`（检查一个部分：`checkPart` 是信任边界上的入口，要选验签的策略；`selfCheckPart` 是库内部自检）、`mutual.mjs`（角色部分和基础部分互相校验）、`audio.mjs`（按内容判断音频格式）、`skill-md.mjs`（SKILL.md 的读和检查，生成角色部分的骨架） |
 | 做包和分享文件 | `pack.mjs`（包 ID，做一个角色部分）、`share.mjs`（打成、打开、检查分享文件：`checkShareFile`、`inspectShareFile` 同样要选验签的策略） |
-| 预览卡片 | `preview-card.mjs`（`buildPreviewCard`：分享文件里那张自包含的 `index.html`，打包时生成；页面上有什么、怎么保证不联网不跑脚本，只在它的文件头写一份）、`preview-audio.mjs`（卡片里内嵌的试听：WAV 和 MP3 按帧截短、不重新编码，上限和理由在文件头）、`voice-orb.mjs`（卡片的配图，由包 ID 画） |
+| 预览卡片 | `preview-card.mjs`（`buildPreviewCard`：分享文件里那张自包含的 `index.html`，打包时生成；页面上有什么、怎么保证不联网不跑脚本，只在它的文件头写一份）、`preview-audio.mjs`（卡片里内嵌的试听：WAV 和 MP3 按帧截短、不重新编码，上限和理由在文件头）、`voice-orb.mjs`（卡片的配图，由包 ID 画）、`spoken-words.mjs`（`spokenWords`：一句台词去掉台本标记以后念出来的字，卡片上卡片试听那一句显示它；认哪几种标记、怎么收拾标点，只在它的文件头写） |
+| 台本的写法 | `script-markup.mjs`（提示、尖括号标签、舞台说明和强调的正则，只写在这里；写法的说明在基础部分的 `tools/markup.mjs`、`lib/line-hints.mjs` 的文件头，它们从这里引）、`word-spacing.mjs`（两截文字接起来中间放不放空格，去掉一处提示以后留不留空格；基础部分做包、配音也用它） |
 | 签名 | `signature.mjs`（Ed25519 签名和验签）、`official.mjs`（把信任名单做成检查用的验签钩子：基础部分和协议核心只认官方签名） |
 | 官方发布 | `releases.mjs`（官方地址、官方版本的文件名、版本索引的读写、读已发布的文件，布局见 `RELEASES.md`） |
 | 补全 | `base-choice.mjs`（纯判断：环境里已有的一份基础部分能不能用，官方版本索引里挑哪一个版本）、`complete.mjs`（补全的流程：先用环境里可用的，没有才读版本索引、挑版本、取官方的基础部分，放进包里以后再检查整个包；规则和理由见 `FORMAT.md`「补全」。读索引、取 zip、核对验签用 `release-fetch.mjs`，不在这里重写） |
@@ -70,8 +71,8 @@ const env = {
 
 - **用到才取**：功能在需要某项能力的那一刻才取它，不在启动时一次取齐。所以环境缺一项，只有用到它的功能报错，其他功能照常。
 - **环境可以什么都不提供**：`capabilities` 给 `{}` 就是一个合法的环境。环境把某项设成 `undefined`、`null`、`false`，也算没有这项。环境本身不是对象、没有 `capabilities` 容器，抛 `environment_invalid`。
-- **调用签名只在一处定义**。能力和运行时的实现是函数，库一律 `await` 它的返回值，所以同步、异步实现都行。所需能力的参数和返回值写在 `vocab/capability-signatures.md`（第一个用到一项新能力的功能，把它的签名加到那里）；用到它的模块在文件头 JSDoc 里加一行 `@capability <能力名>` 指过去，不重抄。运行时的签名写在第一个调用它的模块的文件头（`@runtime <名字>`）。找某项能力用在哪：`grep -rn "@capability text-to-speech" .`。参数名用能力词表第三层的 `ref_audio`、`ref_text`、`instructions`；音频一律用字节加 MIME 类型（`lib/audio-clip.mjs`），不收 URL。`fetch` 的用法（超时、重试、怎么读响应）由用到它的模块写在自己的文件头。
-- **适配器**（`adapters/<名字>/`，所有适配器合起来叫环境适配层）负责按这个形状组装环境：把能力词表里的名字对到这个环境里能用的具体模型。模型名只出现在适配器里。适配器的约定（工厂怎么写、返回什么、出错怎么报）只写在 `adapters/README.md`。
+- **调用签名只在一处定义**。能力和运行时的实现是函数，库一律 `await` 它的返回值，所以同步、异步实现都行。所需能力的参数和返回值写在 `vocab/capability-signatures.md`（第一个用到一项新能力的功能，把它的签名加到那里）；用到它的模块在文件头 JSDoc 里加一行 `@capability <能力名>` 指过去，不重抄。运行时的签名写在第一个调用它的模块的文件头（`@runtime <名字>`）。找某项能力用在哪：`grep -rn "@capability text-to-speech" .`。参数名用能力词表第三层的 `ref_audio`、`ref_text`；音频一律用字节加 MIME 类型（`lib/audio-clip.mjs`），不收 URL。`fetch` 的用法（超时、重试、怎么读响应）由用到它的模块写在自己的文件头。
+- **适配器**（`adapters/<名字>/`，所有适配器合起来叫环境适配层）负责按这个形状组装环境：把能力词表里的名字对到这个环境里能用的具体模型。模型名能出现在哪，见基础部分的 `README.md`「规则」。适配器的约定（工厂怎么写、返回什么、出错怎么报）只写在 `adapters/README.md`。
 
 ## 错误
 

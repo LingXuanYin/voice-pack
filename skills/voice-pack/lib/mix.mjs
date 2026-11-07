@@ -4,31 +4,40 @@
 //
 // 规则：
 //   1. 只接 dub.json 里状态为 ok 的句子，次序就是 units 的次序（dub 的次序就是台本的次序）。有一句不是 ok 就不出成品：planMix 返回 incomplete（列出是哪几句），
-//      命令行层报 mix_incomplete，提示用 dub --only 重做。dub 中途停下（stoppedBy）的也不出成品：没做的句子是停下以后才没做的。
+//      命令行层报 mix_incomplete，提示用 dub --only 重做（服务那头做完了、结果没取回的那几句不叫重做：说清再跑 dub 会重配、再计一次费，不想重配照适配器说的手动取回，见 cli/commands/mix.mjs）。dub 中途停下（stoppedBy）的也不出成品：没做的句子是停下以后才没做的（没跑完的 dub_unfinished，命令行层提示再跑同一条 dub 命令）。
 //   2. 停顿：每一句前面的 pauseBeforeMs、后面的 pauseAfterMs 插成静音（毫秒按这一句的采样率换算成帧）。前一句的后面和后一句的前面是两个缝，各插各的。
 //      一句的停顿只在它自己的两头，不跨句。
 //   3. 格式：成品的采样率和声道是第一句的。别的句子统一过去：声道按规则合（单声道时复制到每个声道，多声道时取平均），采样率用加窗 sinc 的重采样（纯 JS，不依赖 ffmpeg）。
 //      音高不变：重采样只改采样率，不改时长以外的东西。
-//   4. 语速：unit.speed 是要求的语速（台本的标记和提示，没有就用设定的 speed；0.85 放慢、1.15 加快）。有 ffmpeg（env.runtimes.ffmpeg）就用 atempo 变速（保持音高）；没有就照原速接上，报告里记一条 speed_not_applied，不报错。
+//   4. 语速：unit.speed 是还要变的语速（调用方或设定给的，0.85 放慢、1.15 加快；dub 合成以后自己变速，变过的是 null，没变成的才在这里，lib/dub.mjs 第 7b 步）。
+//      有 ffmpeg（env.runtimes.ffmpeg）就用 atempo 变速（保持音高）；没有就照原速接上，报告里记一条 speed_not_applied，不报错。
+//      变速有上下限（SPEED_LIMITS，0.5 到 2 倍，出处写在它上面）：要的倍数超出了，按最近的那一头变，不硬变。dub 的语速和目标时长（lib/dub.mjs 第 7b、8 步）用的是同一处（changeSpeed）。
 //      变速只在拼之前对这一句做，所以它的时长会变，报告里记下是哪几句变了速（speedChanged）。
 //   5. 非 WAV 的句子（mp3、flac 等）要解码：decodeAudio 会要 ffmpeg，没有就 runtime_missing（点名 ffmpeg）。WAV 自己能解，不要 ffmpeg。
 //      即使没有语速要求，mp3 句子也要解码（拼起来要同一种 PCM），所以它需要 ffmpeg。报告不另记它（它不是「格式不同」，是解码）。
-//   6. 报告：总时长（秒）、帧数、采样率、声道、接了几句（units）、插了几段静音（silences：次数和总毫秒数）、变了速的句子（speedChanged：{ number, speed }）、
+//   6. 报告：总时长（秒）、帧数、采样率、声道、接了几句（units）、插了几段静音（silences：次数和总毫秒数）、变了速的句子（speedChanged：{ number, speed }，speed 是实际用的倍数；
+//      超出上下限的另有 wanted（要的倍数）和 limit（'max' 或 'min'，按哪一头变的））、
 //      统一过格式的句子（converted：号数）、换人处削了静音的（turnTrims：几处、共几毫秒）、notes（speed_not_applied、silent_unit 等）。
-//   7. 换人处（相邻两句的包 unit.pack 不同）：上一句的尾、下一句的头，静音各削到 TURN_EDGE_MS（50 毫秒），再插这一处标的停顿（规则 2）。
+//   7. 换人处（上一句的 lastSpeakerPack 和下一句的 pack 不同；lastSpeakerPack 没有，就是它自己的 pack）：上一句的尾、下一句的头，静音各削到 TURN_EDGE_MS（50 毫秒），再插这一处标的停顿（规则 2）。
+//      一场戏（一个请求配完几个人的几轮，dub 的第 5a 步）的头是第一个说话人的包（pack），尾是最后一个说话人的包（lastSpeakerPack）；场内的换人由模型定间隔，这里不碰。
 //      只削、不补：头或尾本来就不到 50 毫秒的，原样。同一个包接着说的两句不削。只有一个包（没有换人处）时，成品和没有这一条以前一字节不差。
 //      静音的判法：每 SILENCE_FRAME_MS（10 毫秒）取一次 RMS，低于 SILENCE_DBFS（-40 dBFS）的算静音。整句都低于门限的不削，notes 里记 silent_unit。
+//   7a. 几个 dub 输出目录（命令行层 mix 收几个，一个台本拆成几次 dub 配的）：每个目录各自 planMix，parts 按给的次序接成一串交给 mixParts，
+//      所以目录之间的接法和同一个目录里相邻两句一样：前一个目录最后一句后面的停顿、后一个目录第一句前面的停顿照插（规则 2），包不同就是换人处（规则 7），语速照变（规则 4）。
+//      只有一个包的 dub，units 里不写 pack，这时 planMix 用报告的 pack.id：两个目录的包不同，接缝处才认得出是换人处。
 //   8. 长度：停顿没有上限，写多长停多长。成品超过一份 16 位 WAV 能装的（RIFF 长度字段 32 位，单声道 44.1 kHz 时约 13.5 小时），抛 mix_too_long，
 //      details 点名是哪一句、哪一边、多长。先按长度查，再分配：超大的停顿只是一个数字，不占内存。
 //
-// 输入的 dub.json 形状（dub 命令写的）：{ units: [{ index, status, file, audio?… , pauseBeforeMs, pauseAfterMs, speed, pack, stoppedBy? }], pack?, packs?, stoppedBy? }。
-// 这里只用 units 里的 status、file、pauseBeforeMs、pauseAfterMs、speed、pack；音频字节由命令行层按 file 读出来，作为 parts 传进来。
+// 输入的 dub.json 形状（dub 命令写的）：{ units: [{ index, status, file, audio?… , pauseBeforeMs, pauseAfterMs, speed, pack, lastSpeakerPack?, stoppedBy? }], pack?, packs?, stoppedBy? }。
+// 这里只用 units 里的 status、file、pauseBeforeMs、pauseAfterMs、speed、pack（没有就是报告的 pack.id，规则 7a）、lastSpeakerPack（只有一场戏的 unit 有）；
+// 音频字节由命令行层按 file 读出来，作为 parts 传进来。
 //
 // 导出：
 //   planMix(report)          检查报告，返回 { ok, stopped, incomplete, units }：stopped 是 dub 中途停下的 stoppedBy（没有就 null）；incomplete 是没做成的句子
-//                            （{ number, status, error? }）；units 是要接的句子（{ number, file, pack, pauseBeforeMs, pauseAfterMs, speed }）。ok 为假时命令行层不读音频、不写文件。
-//   mixParts(env, parts)     parts 是 [{ number, bytes, speed, pauseBeforeMs, pauseAfterMs, pack }]（次序就是台本的次序；pack 没有就是 null）。返回 { wav, report }：wav 是 Uint8Array（16 位 PCM 的 WAV），
+//                            （{ number, status, error? }）；units 是要接的句子（{ number, file, pack, lastSpeakerPack?, pauseBeforeMs, pauseAfterMs, speed }；lastSpeakerPack 只有一场戏的 unit 有）。ok 为假时命令行层不读音频、不写文件。
+//   mixParts(env, parts)     parts 是 [{ number, bytes, speed, pauseBeforeMs, pauseAfterMs, pack, lastSpeakerPack? }]（次序就是台本的次序；pack 没有就是 null；lastSpeakerPack 没有就是 pack）。返回 { wav, report }：wav 是 Uint8Array（16 位 PCM 的 WAV），
 //                            report 见第 6 条（不含文件名，文件名由命令行层加）。
+//   SPEED_LIMITS、changeSpeed(ffmpeg, bytes, 倍数)   变速的上下限和变速本身（见第 4 条）：拼接和 dub 的语速、目标时长共用，不另写一份。
 //   resampleChannel、remixChannels：内部用，导出给测试。
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { encodeWav, RIFF_SIZE_MAX, wavFileBytes } from '../tools/wav.mjs';
@@ -46,6 +55,27 @@ const SILENCE_FRAME_MS = 10;
 /** 变速（atempo）用的 ffmpeg 参数：输入、输出各一个文件（约定见 tools/audio-decode.mjs 的 @runtime ffmpeg；覆盖输出由运行环境加 -y）。 */
 const ATEMPO_ARGS = (speed) => ['-hide_banner', '-nostdin', '-v', 'error', '-protocol_whitelist', 'file', '-i', '{input}', '-filter:a', `atempo=${speed}`, '-f', 'wav', '-acodec', 'pcm_f32le', '{output}'];
 
+/**
+ * 变速的上下限（倍数：大于 1 是加快，小于 1 是放慢）。拼接（规则 4）、dub 的语速（lib/dub.mjs 第 7b 步）和目标时长（第 8 步）都按这一处，不另写。
+ * 出处：变速用 ffmpeg 的 atempo（保持音高），一个 atempo 只收 0.5 到 100（`ffmpeg -h filter=atempo`，8.1）；ffmpeg 的滤镜文档（ffmpeg-filters 的 atempo 一节）写明
+ * 倍数超过 2 的会跳过一些采样、不再混合。所以下限取它收的最小值 0.5，上限取 2。要的倍数在这外面的，按最近的那一头变（不硬变），报告里写明。
+ */
+export const SPEED_LIMITS = Object.freeze({ min: 0.5, max: 2 });
+
+/**
+ * 变一段音频的速（保持音高）：ffmpeg 的 atempo，倍数落在 SPEED_LIMITS 里，要的超出了就按最近的那一头变。拼接、dub 的语速（第 7b 步）和目标时长（第 8 步）共用这一处。
+ * 只在有 ffmpeg 时调：没有 ffmpeg 怎么办，由调用的一方说（都是照原样交出、记一条，不报错）。
+ * @param {(args: string[], input: Uint8Array) => Promise<Uint8Array>} ffmpeg 运行环境的 ffmpeg（签名见 tools/audio-decode.mjs 的 @runtime ffmpeg）
+ * @param {Uint8Array} bytes 原来的音频
+ * @param {number} wanted 要的倍数
+ * @returns {Promise<{ bytes: Uint8Array, speed: number, limit: 'min'|'max'|null }>} bytes 是 ffmpeg 给的 WAV（32 位浮点）；speed 是实际用的倍数；limit 是按哪一头变的（没超出是 null）
+ */
+export async function changeSpeed(ffmpeg, bytes, wanted) {
+  const speed = Math.min(SPEED_LIMITS.max, Math.max(SPEED_LIMITS.min, wanted));
+  const limit = speed < wanted ? 'max' : speed > wanted ? 'min' : null;
+  return { bytes: await ffmpeg(ATEMPO_ARGS(speed), bytes), speed, limit };
+}
+
 /** 检查 dub.json：能不能接成成品。 */
 export function planMix(report) {
   const units = Array.isArray(report?.units) ? report.units : [];
@@ -54,7 +84,8 @@ export function planMix(report) {
   }
   const incomplete = units.filter((unit) => unit.status !== 'ok').map((unit) => ({ number: unit.index + 1, status: unit.status, ...(unit.error === undefined ? {} : { error: unit.error }) }));
   if (incomplete.length > 0) return { ok: false, stopped: null, incomplete, units: [] };
-  return { ok: true, stopped: null, incomplete: [], units: units.map((unit) => ({ number: unit.index + 1, file: unit.file, pack: unit.pack ?? null, pauseBeforeMs: unit.pauseBeforeMs ?? 0, pauseAfterMs: unit.pauseAfterMs ?? 0, speed: unit.speed ?? null })) };
+  const reportPack = typeof report.pack?.id === 'string' ? report.pack.id : null; // 只有一个包的 dub，units 里不写 pack（规则 7a）
+  return { ok: true, stopped: null, incomplete: [], units: units.map((unit) => ({ number: unit.index + 1, file: unit.file, pack: unit.pack ?? reportPack, ...(unit.lastSpeakerPack === undefined ? {} : { lastSpeakerPack: unit.lastSpeakerPack }), pauseBeforeMs: unit.pauseBeforeMs ?? 0, pauseAfterMs: unit.pauseAfterMs ?? 0, speed: unit.speed ?? null })) };
 }
 
 /**
@@ -226,9 +257,10 @@ export async function mixParts(env, parts) {
     const slow = part.speed !== null && part.speed !== undefined && part.speed !== 1;
     let audio;
     if (slow && typeof ffmpeg === 'function') {
-      // 变速：ffmpeg 吃这一句原来的字节（保持音高），吐出 WAV，再解。这一句的时长随之改变，拼接时用的就是变了的长度。
-      audio = await decodeAudio(env, await ffmpeg(ATEMPO_ARGS(part.speed), part.bytes));
-      speedChanged.push({ number: part.number, speed: part.speed });
+      // 变速：ffmpeg 吃这一句原来的字节（保持音高），吐出 WAV，再解。这一句的时长随之改变，拼接时用的就是变了的长度。超出上下限的按最近的那一头变（changeSpeed）
+      const changed = await changeSpeed(ffmpeg, part.bytes, part.speed);
+      audio = await decodeAudio(env, changed.bytes);
+      speedChanged.push({ number: part.number, speed: changed.speed, ...(changed.limit === null ? {} : { wanted: part.speed, limit: changed.limit }) });
     } else {
       audio = await decodeAudio(env, part.bytes); // 非 WAV 要 ffmpeg（没有就 runtime_missing）
       if (slow) unapplied.push(part.number);
@@ -236,12 +268,14 @@ export async function mixParts(env, parts) {
     decoded.push({ ...part, audio });
   }
   if (unapplied.length > 0) {
-    notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着要求的语速：台本的，没有就是设定的）`, details: { units: unapplied } });
+    notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着要的语速：调用方或设定给的，dub 合成时没变成的）`, details: { units: unapplied } });
   }
   // 换人处（规则 7）：相邻两句的包不同。第 i 句的头削的是它和第 i-1 句之间的那一处，尾削的是它和第 i+1 句之间的那一处
+  // 一场戏的头是 pack，尾是 lastSpeakerPack（别的句子没有 lastSpeakerPack，头尾都是 pack）：换人处看「前一个的尾」和「后一个的头」
   const packOf = (part) => part.pack ?? null;
-  const turnBefore = decoded.map((item, i) => i > 0 && packOf(decoded[i - 1]) !== packOf(item));
-  const turnAfter = decoded.map((item, i) => i + 1 < decoded.length && packOf(decoded[i + 1]) !== packOf(item));
+  const lastPackOf = (part) => part.lastSpeakerPack ?? packOf(part);
+  const turnBefore = decoded.map((item, i) => i > 0 && lastPackOf(decoded[i - 1]) !== packOf(item));
+  const turnAfter = decoded.map((item, i) => i + 1 < decoded.length && lastPackOf(item) !== packOf(decoded[i + 1]));
   const trimmedTurns = new Set(); // 削了静音的换人处（用前一句的下标）
   let trimmedMs = 0;
   const silentTurnUnits = []; // 整句低于门限的（号数）：它的静音不削
