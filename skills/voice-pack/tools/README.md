@@ -19,7 +19,7 @@
 - `.mjs`，写法见 `../protocol/README.md` 的「模块约定」：只用平台自带的 API，浏览器和 Node 都能跑。
 - 不取所需能力（`env.capabilities`）：这里的东西不用模型。
 - 可以用 `../protocol/lib/`（核心层）。
-- 用到的平台 API 里有 `Intl.Segmenter`（分句、`[spell]` 按字素簇拆开）：Chrome 87、Firefox 125、Safari 14.1 起才有。没有它，分句抛 `segmenter_missing`（没有退路，按标点硬切会切坏缩写和小数）；`[spell]` 退回按码点拆（普通文字结果一样）。
+- 用到的平台 API 里有 `Intl.Segmenter`（分句）：Chrome 87、Firefox 125、Safari 14.1 起才有。没有它，分句抛 `segmenter_missing`（没有退路，按标点硬切会切坏缩写和小数）。
 
 ## 运行时
 
@@ -38,7 +38,7 @@
 
 - 验证：每一份实现都要把这份用例全跑一遍，结果和 `expected` 一样；用 2 万条随机台本逐条比较两份实现的输出，能补上标准用例想不到的组合（随机比较的程序不随基础部分发布）。
 - 加用例：在 `cases/markup.json` 里加一条 `{ name, input, options?, expected }`，`expected` 里省略等于默认值的字段（默认值在文件开头的 `defaults`）；用例名不重复；不可见的字符写成 `\uXXXX`。语法有变，先改 `markup.mjs` 文件头，再改两份实现和用例。
-- `vocab/markup.json` 是台本标记的词表；词表里的每个词在每一份解析器里都要生效，词表加了新词，每一份解析器都要实现它。
+- `vocab/markup.json` 是台本标记的词表（现在只有 `pause` 和 `voice`，章节标题不是方括号的标记，不在词表里）；词表里的每个词在每一份解析器里都要生效，词表加了新词，每一份解析器都要实现它。词表以外的方括号都是提示，原样留在文字里。
 
 ## 测试
 
