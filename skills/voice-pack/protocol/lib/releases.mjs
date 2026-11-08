@@ -16,7 +16,9 @@
 //   { "protocol": "1.0",
 //     "versions": [ { "version": "1.0.0", "protocol": "1.0", "size": 361234, "sha256": "<64 位小写十六进制>" }, ... ] }
 //
-//   protocol        这份索引按哪一版协议写的（「主.次」）。主版本读不懂就不读，次版本比自己新的，不认识的字段忽略
+//   protocol        这份索引按哪一版协议的索引写法写的（「主.次」）。主版本读不懂就不读（这一版读得懂 1.x、2.x，READABLE_INDEX_MAJORS），次版本比自己新的，不认识的字段忽略。
+//                   这一版库写 INDEX_PROTOCOL（2.0），不写 PROTOCOL_VERSION：索引的写法从 2.0 起没变（3.0 改的是包的格式），
+//                   而同一个官方地址上的索引，已经装在外面的 2.x 的程序也要读（补全 2.x 的包、嵌着 2.x 的 app 导出完整包），写成 3.0 它们就读不了（protocol_unsupported）
 //   versions[]      发布过的每个版本，按语义化版本号的优先级从小到大排，版本号不重复，不带构建信息（+）
 //     protocol      这个版本的基础部分清单里的协议版本，补全时不用下载就能挑出协议主版本对得上的版本
 //     size, sha256  这个版本的 zip 的字节数和 SHA-256（对 zip 文件的原始字节算）
@@ -31,7 +33,7 @@
 //   invalid_version         官方版本号不能带构建信息（+）。别的版本号问题抛 version.mjs 的同名 code
 //   index_invalid           版本索引读不了。details.reason：not_json、shape、protocol、version、size、sha256、duplicate_version、versions_unsorted、
 //                           too_large（字节数超过 JSON 的上限，details: { size, limit }；或者列的版本超过 MAX_VERSIONS 个，没有 details）
-//   protocol_unsupported    索引的协议主版本不是这一版认得的（同清单的同名 code）
+//   protocol_unsupported    索引的写法主版本不是这一版读得懂的（1.x、2.x，READABLE_INDEX_MAJORS；不是包的协议认得的那几个）。同清单的同名 code。details: { protocol, supported }
 //   release_conflict        同一个版本号已经发布了，内容却不一样。details: { version, reason }
 //   published_unreadable    读已发布的文件失败（网络出错、等响应头超时、正文空闲超时、总时限超时、服务器答了 404 以外的失败、太大）。details: { url, reason, status? }；reason 是 network、headers、idle、timeout、status、too_large 之一
 //
@@ -52,12 +54,20 @@ import { requireFetch } from './env.mjs';
 import { toHex } from './bytes.mjs';
 import { PROTOCOL_VERSION, parseSemver, compareSemver, parseProtocolVersion } from './version.mjs';
 import { resolveLimits } from './limits.mjs';
-import { releaseFilePrefixOf, isReadableProtocol, READABLE_PROTOCOLS_TEXT } from './names.mjs';
+import { releaseFilePrefixOf } from './names.mjs';
 import { SHARE_SUFFIX } from './share.mjs';
 import { readCapped } from './check.mjs';
 
 export const OFFICIAL_URL_FIELD = 'official_url';
 export const VERSION_INDEX_FILE = 'index.json';
+/** 这一版库写版本索引时，索引自己的 protocol（文件头「版本索引」）：索引的写法从 2.0 起没变，2.x 的程序照旧读得懂。 */
+export const INDEX_PROTOCOL = '2.0';
+/**
+ * 这一版库读得懂的索引写法的主版本。跟着索引的写法走，不跟包的协议走（包的协议认哪些主版本在 names.mjs 的表里，那张表随包的协议加，这张不跟着加）：
+ * 索引的写法有了新的主版本，才在这里加。
+ */
+const READABLE_INDEX_MAJORS = Object.freeze([1, 2]);
+const READABLE_INDEX_TEXT = READABLE_INDEX_MAJORS.map((major) => `${major}.x`).join('、');
 
 const FILE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -147,7 +157,7 @@ function checkIndex(value) {
   if (!isObject(value)) throw indexProblem('shape', '根上要是一个对象');
   let major;
   try { major = parseProtocolVersion(value.protocol).major; } catch { throw indexProblem('protocol', `protocol 要写成「主.次」，这里是 ${JSON.stringify(value.protocol)}`); }
-  if (!isReadableProtocol(major)) throw fail('protocol_unsupported', `版本索引的协议主版本是 ${major}，这一版只认得 ${READABLE_PROTOCOLS_TEXT}`, { protocol: value.protocol, supported: READABLE_PROTOCOLS_TEXT });
+  if (!READABLE_INDEX_MAJORS.includes(major)) throw fail('protocol_unsupported', `版本索引的写法主版本是 ${major}，这一版只读得懂 ${READABLE_INDEX_TEXT} 的索引写法`, { protocol: value.protocol, supported: READABLE_INDEX_TEXT });
   if (!Array.isArray(value.versions)) throw indexProblem('shape', 'versions 要是数组');
   if (value.versions.length > MAX_VERSIONS) throw indexProblem('too_large', `列了 ${value.versions.length} 个版本，上限 ${MAX_VERSIONS}`);
   const versions = value.versions.map((item, i) => checkEntry(item, `versions[${i}]`));
@@ -197,7 +207,7 @@ export function serializeVersionIndex(index) {
  * @throws {VoicePackError} index_invalid、protocol_unsupported、release_conflict
  */
 export function addVersionToIndex(index, newEntry) {
-  const current = checkIndex(index ?? { protocol: PROTOCOL_VERSION, versions: [] });
+  const current = checkIndex(index ?? { protocol: INDEX_PROTOCOL, versions: [] });
   const added = checkEntry(newEntry, '新的版本');
   const existing = current.versions.find((item) => item.version === added.version);
   if (existing !== undefined) {
@@ -205,7 +215,7 @@ export function addVersionToIndex(index, newEntry) {
     throw fail('release_conflict', `版本 ${added.version} 已经发布过了，内容却不一样：已发布的版本不可变，改了内容就要换版本号`, { version: added.version, reason: 'index_entry_differs', published: existing, new: added });
   }
   const versions = [...current.versions, added].sort((a, b) => compareSemver(a.version, b.version));
-  return { index: { protocol: PROTOCOL_VERSION, versions }, added: true }; // 加了版本，索引就是这一版库重写的：写它自己的协议版本，不照抄老索引的
+  return { index: { protocol: INDEX_PROTOCOL, versions }, added: true }; // 加了版本，索引就是这一版库重写的：写它自己的索引写法（INDEX_PROTOCOL），不照抄老索引的
 }
 
 // ---------------------------------------------------------------- 读已发布的文件

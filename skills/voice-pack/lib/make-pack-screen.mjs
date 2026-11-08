@@ -6,13 +6,14 @@
 //   screen(env, items, { thresholds, loudness })   就地改条目，返回 Promise<void>。thresholds 是音质检查的阈值（judgeReference 的写法，省略用默认），
 //                                                  loudness 是 readOptions 补全的调响度设置（发新版本查重用，见下）
 //
-// 读条目的：id、audio、previous；写条目的：format（认出的格式）、sha256、quality（音质检查留下的几个量和结论，status 是 'checked'；
+// 取音频那一步（lib/make-pack-take-audio.mjs）已经淘汰的段（写了 unused）跳过，不再看。
+// 读条目的：id、audio、previous、unused；写条目的：format（认出的格式）、sha256、quality（音质检查留下的几个量和结论，status 是 'checked'；
 // 环境没有 ffmpeg 又不是 WAV 的、上一版带来的又解不了的，status 是 'unchecked'，不做音质检查也不淘汰；解不了的带 code 和 message）。淘汰的写 unused: { reason, details? }：
-//   audio_unrecognized  认不出是哪种音频。details: { mimeType }
+//   audio_unrecognized  认不出是哪种音频。details: { mimeType }（新补的段在这之前取过音轨，lib/make-pack-take-audio.mjs；到这里还认不出的是外部资源（externalUrl）：它不取音轨）
 //   duplicate_audio     和前面一段是同一段音频（字节的哈希一样）。details: { sameAs }
 //   audio_undecodable   解不了。details: { code, message }（message 是解码报的话：ffmpeg 说的话全文，令牌形状的串和签名地址去掉，见 tools/audio-decode.mjs）
 // 音质检查只量、只给提醒（tools/audio-quality.mjs），不淘汰任何一段：能不能用由模型和平台说了算。提醒写在 quality.reasons 里，挑参考时排在后面。
-// 上一版带过来的段（item.previous）只量一遍音质（给优先级和能量的基准用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考。
+// 上一版带过来的段（item.previous）只量一遍音质（给优先级用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考。
 // 它们排在前面，新补的和它们字节一样就是重复（sameAs 是上一版里的那一段）。
 // 句子（长录音的句子模式，lib/make-pack-sentences.mjs）只认格式：不量音质，也不查重；句子的音质在它合成的段上量（那一段也过这里）。
 // 发新版本查重：上一版里的段是调过响度存进包的（lib/make-pack-loudness.mjs），新补的要是同一段录音，原始字节对不上它，所以新补的再按这次的调响度设置调一遍，
@@ -44,7 +45,7 @@ function summarizeQuality(result) {
 
 /**
  * 认格式、查重、量音质。每一段的结论写在条目上：条目被淘汰就带 unused: { reason, details? }。
- * 上一版带过来的段（item.previous）只量一遍音质（给优先级和能量的基准用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考；
+ * 上一版带过来的段（item.previous）只量一遍音质（给优先级用），不淘汰：发新版本不因为现在的阈值换了就悄悄丢掉原来的参考；
  * 它们排在前面，新补的和它们字节一样就是重复（sameAs 是上一版里的那一段）。
  * @returns {Promise<void>}
  */
@@ -61,6 +62,7 @@ export async function screen(env, items, { thresholds, loudness }) {
     busySince = nowMs();
   };
   for (const item of items) {
+    if (item.unused !== undefined) continue; // 取音频那一步已经淘汰了（取不出音轨、切不出东西，lib/make-pack-take-audio.mjs）
     await breathe();
     const carried = item.previous !== undefined;
     const sniffed = sniffAudio(item.audio.bytes);
