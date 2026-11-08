@@ -12,11 +12,13 @@
 //
 // evaluation.json（路径相对于这个 JSON 所在的目录；音频一律是文件路径，后缀认出是什么音频）：
 //   {
-//     "references": [ { "id": "ref-1", "audio": "audio/ref-1.wav", "text": "可省略", "labels": { "emotion": "calm" } } ],
-//     "holdouts":   [ { "id": "h-1", "audio": "audio/h-1.wav", "text": "这条里说的话", "labels": { "emotion": "calm" },
+//     "references": [ { "id": "ref-1", "audio": "audio/ref-1.wav", "text": "可省略", "labels": { "language": "zh-CN", "tag": "平常" } } ],
+//     "holdouts":   [ { "id": "h-1", "audio": "audio/h-1.wav", "text": "这条里说的话", "labels": { "language": "zh-CN" },
 //                       "generated": "audio/gen-h-1.mp3",   // 用这个包把 text 合成出来的录音；不给就用 voice-cloning 合成一条
 //                       "reference": "ref-1" } ]            // 合成时用哪段参考；省略用第一段
 //   }
+//   labels 是分组用的标签（lib/fidelity.mjs 按它一组一组报，有什么键就分什么）：做包存下的评测集，参考写 { language, tag }（语言和音色基底标签），
+//   留出录音写 { language }（留出录音没有音色基底标签）。
 //   参考里 "synthetic": true 的是克隆出来的，不是这个人录的：不进真人基线，也不数进真录音段数（不写就是真录音，和清单里的 synthetic 一样）。
 //   id 在参考和留出录音之间不能重名（读进来以后由 lib/fidelity.mjs 核对）；留出录音的 text 必须有（收音校验要拿它核对模型的转写）。
 //   读出来每一条是 { id, audio, text?, labels?, reference?, generated?, synthetic? }：audio 和 generated 是 { bytes, mimeType }。

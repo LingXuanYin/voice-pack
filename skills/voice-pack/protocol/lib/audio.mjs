@@ -20,7 +20,7 @@
 //   audio_disguised           扩展名说是音频，内容不是（或是另一种音频）；或者内容是音频，扩展名却不是音频。
 //                             details: { path, claimed（扩展名，没有就是空串）, actual（认出的格式，认不出是 null） }
 //   audio_format_not_allowed  扩展名是认得的音频格式，但不在允许的格式里。details: { path, extension }
-// 清单里标明是音频的文件（参考段、留出录音）传 designated: true：扩展名也必须是允许的音频扩展名。
+// 清单里标明是音频的文件（参考段、留出录音、卡片试听那一句）传 designated: true：扩展名也必须是允许的音频扩展名。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 
@@ -248,7 +248,7 @@ function extensionOf(path) {
  * 这个文件的扩展名和内容对得上吗？对得上（或者它根本不是音频、也没被说成是音频）给 null，否则给一个问题。
  * @param {string} path 包里的路径（只用最后一段的扩展名）
  * @param {Uint8Array} bytes 文件内容
- * @param {{ designated?: boolean }} [options] designated：清单里标明这个文件是音频（参考段、留出录音）
+ * @param {{ designated?: boolean }} [options] designated：清单里标明这个文件是音频（参考段、留出录音、卡片试听那一句）
  * @returns {null | { code: 'audio_disguised' | 'audio_format_not_allowed', message: string, details: object }}
  */
 export function audioProblem(path, bytes, options = {}) {
