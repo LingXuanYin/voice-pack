@@ -3,10 +3,13 @@
 // 预览卡片里内嵌的试听：从参考集里挑一段，截短到放得下，不重新编码。
 //
 //   trimAudio(bytes, limits)                       一段音频字节 → { bytes, mimeType, seconds, trimmed }，放不下就是 null
-//   choosePreviewAudio(manifest, files, limits)    用哪一段：默认参考段，放不下换下一段 → { segmentId, bytes, mimeType, seconds, trimmed } 或 null
+//   choosePreviewAudio(manifest, files, limits)    用哪一段：卡片试听那一句，没有就默认参考段，放不下换下一段 → { cardLine: true, … } 或 { segmentId, … }（bytes、mimeType、seconds、trimmed），或 null
 //
-// 试听用哪一段：参考集里的默认段。示例台词（sampleLines）只是文字，格式里没有它的音频，所以试听总是一段真录音。
-// 默认段的字节不在包里（外部资源）、放不下又切不了的，换清单里的下一段；留出录音从不拿来当试听（它们只用来量还原度）。
+// 试听用哪一段：清单里有卡片试听那一句（cardLine，FORMAT.md 4.4：做包时用这个包自己的声音配的一句台词）就放它的音频。没有，放参考集里主语言的默认段
+// （reference.defaultSegment；别的语言的默认段 languageDefaults 不当试听）：这时试听是参考集里的一段录音，不合成（默认段是重生成的、标了 synthetic 的，放的就是它）。
+// 示例台词（sampleLines）只是文字，格式里没有它的音频，不当试听。
+// 那一句的音频放不下（不能截的格式整个超过字节上限，或者认不出），照没有它处理；默认段的字节不在包里（外部资源）、放不下又切不了的，换清单里的下一段；
+// 留出录音从不拿来当试听（它们只用来量还原度）。
 //
 // 上限（卡片会进每个分享文件，所以要小；下面的取舍是判断，不是实测的结论）：
 //   时长 PREVIEW_MAX_SECONDS = 8 秒。一段参考是 5 到 20 秒，8 秒够听出一两句话的音色和语气；再长不帮着认声音，只多占字节。
@@ -203,13 +206,17 @@ export function trimAudio(bytes, limits) {
 }
 
 /**
- * 给角色部分的预览卡片挑一段试听：默认参考段，放不下换清单里的下一段。
- * @param {{ reference: { defaultSegment: string, segments: { id: string, audio: string }[] } }} manifest 角色部分的清单
+ * 给角色部分的预览卡片挑一段试听：清单里有卡片试听那一句（cardLine）就是它；没有、或者它放不下，用默认参考段，再放不下换清单里的下一段。
+ * @param {{ reference: { defaultSegment: string, segments: { id: string, audio: string }[] }, cardLine?: { audio: string, text: string } }} manifest 角色部分的清单
  * @param {Map<string, Uint8Array>} files 角色部分的文件（路径相对角色部分的目录）；外部资源的字节不在里面，那一段自然跳过
  * @param {{ maxSeconds?: number, maxBytes?: number }} [limits]
- * @returns {{ segmentId: string, bytes: Uint8Array, mimeType: string, seconds: number | null, trimmed: boolean } | null}
+ * @returns {{ cardLine: true, bytes: Uint8Array, mimeType: string, seconds: number | null, trimmed: boolean }
+ *   | { segmentId: string, bytes: Uint8Array, mimeType: string, seconds: number | null, trimmed: boolean } | null} 放的是那一句时带 cardLine: true，是参考段时带 segmentId
  */
 export function choosePreviewAudio(manifest, files, limits) {
+  const card = typeof manifest?.cardLine?.audio === 'string' ? files.get(manifest.cardLine.audio) : undefined;
+  const line = card === undefined ? null : trimAudio(card, limits);
+  if (line !== null) return { cardLine: true, ...line };
   const segments = manifest?.reference?.segments ?? [];
   const preferred = segments.find((segment) => segment.id === manifest.reference.defaultSegment);
   const order = preferred === undefined ? segments : [preferred, ...segments.filter((segment) => segment !== preferred)];

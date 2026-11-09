@@ -28,7 +28,7 @@
 
 **没有单独的配置文件**：选项写在命令行上；要固定下来，用 `adapter new … --kind process` 生成的 `adapter.mjs`（里面的 `command`、`capabilities` 就是上面的选项），命令行上再给 `--adapter-option` 就盖过里面的同名项。
 
-名字在 `DECLARED_CAPABILITIES`（只是声明的能力，目前有 `style-instruction` 和 `style-cues`，见 `../README.md`）里的，适配器返回 `true`，不发请求；程序在 `ready` 里仍然要说有它：这是程序对「合成会按 `instructions` 里的话调整」的承诺。
+名字在 `DECLARED_CAPABILITIES`（只是声明的能力，目前有 `phoneme-in-text`、`phoneme-markers`、`scene-in-request`、`seed-in-request`，见 `../README.md`）里的，适配器返回 `true`，不发请求；程序在 `ready` 里仍然要说有它：这是程序对「合成认文字里的这种写法」的承诺。
 
 ## 进程协议（版本 1）
 
@@ -39,7 +39,7 @@
 1. 程序写 `ready`：程序载入完模型以后写**一次**，在这之前适配器不发任何请求。
 
    ```json
-   {"event":"ready","protocol":1,"capabilities":["text-to-speech","style-instruction"],"info":{"program":"my_tts","device":"cuda"}}
+   {"event":"ready","protocol":1,"capabilities":["text-to-speech","phoneme-in-text"],"info":{"program":"my_tts","device":"cuda"}}
    ```
 
    `protocol` 必须是 `1`；`capabilities` 是能力名的数组（非空字符串，重复的合并），包括只是声明的能力；`info` 可选，写什么都行（程序名、版本、设备），适配器不看。
@@ -64,7 +64,7 @@
    {"id":1,"ok":false,"error":{"code":"gpu_busy","message":"the device is busy","transient":true,"details":{"device":0}}}
    ```
 
-   - `ok` 必给，是 `true` 或 `false`。`ok` 为 `true` 时 `result` 必须是对象，字段就是这项能力的返回值（音频同样是 Base64 加 `mimeType`；`model` 愿意报就报，见 `../README.md`「验证记录里的模型名从哪来」）。
+   - `ok` 必给，是 `true` 或 `false`。`ok` 为 `true` 时 `result` 必须是对象，字段就是这项能力的返回值（音频同样是 Base64 加 `mimeType`；`model` 愿意报就报，见 `../README.md`「验证记录里的模型名从哪来」；程序这一次换了模型，`model` 写实际用的那个，另写 `"modelChange":{"from":"原来要用的模型","reason":"为什么换"}`，见 `../README.md`「换了模型」）。`result` 里的字段适配器原样传过来，只把音频的 Base64 换回字节。
    - `ok` 为 `false` 时 `error.code` 必给（非空字符串）。`code` 是小写字母、数字、下划线、字母开头，就原样成为这个错误的 code；不是这个写法（例如 `"Out Of Memory"`），错误的 code 是 `process_program_error`，原来的放在 `details.programCode`。`message` 可选。`transient: true` 表示服务暂时出错、稍后重来也许就成（含义见 `../README.md`「出错的约定」）：**只认 `error.transient`**，`error.details` 里夹带的 `transient` 不算。`details` 可选，是对象，并进错误的 `details`（适配器再加上 `capability`）。
    - 请求的是程序没有的能力：回一个 `error`（骨架里的 `code` 是 `capability_unsupported`）。
 
@@ -102,17 +102,18 @@
 
 ## 费用说明和字数上限
 
-进程适配器只返回 `capabilities`：它不知道你的程序花不花钱、一次最多合成多少字。要告诉命令（`dub` 在开始之前说明费用、按字数上限切句子），在自己的适配器里加上：
+进程适配器只返回 `capabilities`：它不知道你的程序花不花钱、一个请求最多多少字、用的是哪个模型。要告诉命令（花钱之前说明费用；`dub` 按上限并、切请求；`dub --dry-run` 的汇总写模型名），在自己的适配器里加上 `billing`、`limits`（`maxChars`、`minChars`、`maxPauseInRequestMs`；程序声明了 `scene-in-request` 的再加 `maxSpeakers`）和 `models`：
 
 ```js
 export default async ({ use }) => ({
   ...(await use('process', { command: ['python', 'my_tts.py'] })),
   billing: '在我自己的服务器上调用，费用记在我自己的账户上',
   limits: { maxChars: 200 },
+  models: { 'voice-cloning': 'my-tts-v1' },
 });
 ```
 
-两个键的意思和不给的后果见 `../README.md`「返回的形状」。
+这几个键的意思和不给的后果见 `../README.md`「返回的形状」。
 
 ## 写程序
 
