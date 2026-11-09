@@ -1,23 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写、打标签和试合成、长录音的转写、命令行和用这个库的 app（含 app 听设计试听）都用它
-// （它先是给转写写的，后来打标签也用它，所以名字不再只说转写）。规则一处写，调用方 import，不各抄一份（同 capability-calls.mjs 的 isServiceError）。
+// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写、挑默认段、标提示标注和试合成、长录音的转写、命令行和用这个库的 app（含 app 听设计试听）都用它
+// （它先是给转写写的，后来听音频的几种调用也用它，所以名字不再只说转写）。规则一处写，调用方 import，不各抄一份（同 capability-calls.mjs 的 isServiceError）。
 //
 // 规则：
 //   - 每段最多试 MAX_ATTEMPTS（3）次。暂时出错（details.transient，lib/capability-calls.mjs 的 isServiceError）和 app 听设计试听时
 //     「转写里整句找不到」（在 app 里判断）都从这 3 次里出，不是各 3 次。
 //   - 暂时出错就再来：第 2 次之前等 RETRY_DELAYS_MS[0]（5 秒），第 3 次之前等 RETRY_DELAYS_MS[1]（15 秒）；最后一次失败以后不再等。
-//     3 次都暂时出错：转写的这一段没转成，做包把它记成 transcription_failed，用不上，页面照实说「稍后再做一次」；打标签的这一段没听成，记成 not_heard，不打标签，照实说；
+//     3 次都暂时出错：转写的这一段没转成，做包把它记成 transcription_failed，用不上，页面照实说「稍后再做一次」（最后一次的错是照暂时出错报的被拦下的除外：记成 transcription_blocked，见下一条）；挑默认段、标提示标注的那一次没听成，记成 not_heard，照实说；
 //     试合成的这一条合成不出来，记在 trial.failed 里，不进评测，照实说。
 //   - 别的错（401、被服务商拦下 provider_blocked、参数错、认不了的语言、返回的形状不对、这一句的文字被拒 textRejected）不重试，原样往上抛：重来也没用。
-//     回答不是固定格式（tag_answer_invalid）不是错误，是能力返回了一个读不懂的回答：打标签记成作废，同一段录音再问还是一样，不重试。回答没正常结束或是空的（能力标 details.unusable，lib/capability-calls.mjs 的 isUnusableAnswer；打标签记成 tag_answer_unusable）也一样。
+//     provider_blocked 说的是不带 transient 的（听音频的能力被拦都是这样）；转写被拦、适配器照暂时出错报的（标了 transient，details.problem 是 provider_blocked；
+//     同一段再问有时就过的服务，vocab/capability-signatures.md），照上一条暂时出错再来。这里只管再不再来、次数用完把最后一次的错交回去；
+//     问满了、最后一次的错还是被拦下的，转写记成被拦下（transcription_blocked），不说「稍后再做一次」：那是调用方的事（lib/make-pack-transcribe.mjs、lib/long-recording.mjs）。
+//     回答不是固定格式（例如 annotation_answer_invalid）不是错误，是能力返回了一个读不懂的回答：记成作废，同一段录音再问还是一样，不重试。回答没正常结束或是空的（能力标 details.unusable，lib/capability-calls.mjs 的 isUnusableAnswer；标提示标注记成 annotation_answer_unusable）也一样。
 //   - 多听的上限写进「确认费用」：N 段要调，最多 N 次，另外最多再加 extraAttempts(N)（2N）次，用户同意的是这个总数，实际调用不超过它
 //     （plan.extraCalls，lib/make-pack-plan.mjs；app 记进用户同意的计划里）。
 //
 // 谁用它（用法都是：调用方自己调能力，把「调一次」包成 ask 交给 callWithRetries）：
 //   转写（automatic-speech-recognition）   lib/make-pack-transcribe.mjs、lib/long-recording.mjs、app 听试听
-//   打标签（audio-text-to-text）           lib/segment-tags.mjs 的 tagSegment（options.attempts），lib/make-pack-tags.mjs 的 tagAll 给它 MAX_ATTEMPTS
-//   试合成（voice-cloning）                lib/make-pack-trial.mjs 的 envForTrial：每条留出录音的合成调用包一层
+//   挑默认段（audio-text-to-text）          lib/default-pick.mjs 的 pickByListening（options.attempts），lib/make-pack-pick.mjs 给它 MAX_ATTEMPTS
+//   标提示标注（audio-text-to-text）        lib/segment-annotation.mjs 的 annotateSegment（options.attempts，一段听 3 次，每一次听有自己的重试），lib/make-pack-annotation.mjs 的 annotateReferences 给它 MAX_ATTEMPTS
+//   量停顿和快慢（automatic-speech-recognition） lib/point-measure.mjs 的 measurePoints：每块一次，规则同转写
+//   试合成、卡片试听那一句（voice-cloning） lib/make-pack-trial.mjs 的 envForPackDub：每条留出录音、那一句的合成调用包一层
 //   不用它的：盲听（lib/fidelity.mjs，也调 audio-text-to-text）。盲听暂时出错记成「没听成」，事后由调用方补做（fidelity --redo），不在这条规则里
 //
 // 为什么是 3 次、5 秒和 15 秒：
@@ -25,9 +30,9 @@
 //   - 在一个真实的云端转写服务上量到过（2026-10-19）：服务会有一阵整个不接新连接，至少 60 秒，每次连不上还要等满连接超时。
 //     所以第一次出错以后紧接着重试、或者等得太短，都会撞在同一阵里；这条规则救得了短暂的断开和单次超时（再连一次就成的那种），
 //     一分钟以上的中断救不了，试满 3 次以后照实说。
-//   - 打标签也用它：做包时让听者（audio-text-to-text）给每段录音打情绪、风格标签，听者暂时出错的那一段原来记成「没听成」，不再问，这一段就没有听者打的标签。
-//     规则对它的意义和转写一样，次数和间隔就是上面那一套，不为打标签另起。
-//     打标签是一次可能计费的调用：适配器约定不替会计费的调用重试（adapters/README.md「出错的约定」第 4 条），重试由库做，所以次数一定要进「确认费用」。
+//   - 听音频的调用也用它（以前是打标签，后来拿掉了；现在是挑默认段、标提示标注）：暂时出错的那一次原来记成「没听成」，不再问。
+//     规则对它们的意义和转写一样，次数和间隔就是上面那一套，不另起。
+//     这几种都是可能计费的调用：适配器约定不替会计费的调用重试（adapters/README.md「出错的约定」第 4 条），重试由库做，所以次数一定要进「确认费用」。
 //   - 失败的调用收不收费由运行环境定，库不知道：「确认费用」一律按最多的调用次数写，用户同意的是上限，多出来的次数不会超过它（每段最多 3 次，计划里的段数是上界）。
 //     某个环境上量出来的数（连不上的那一阵、失败的调用有没有计费记录），写在那个环境的适配器里。
 //

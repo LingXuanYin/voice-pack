@@ -304,8 +304,8 @@ async function checkOne(files, prefix, expectedKind, ctx) {
       }
     }
 
-    // 音频：这个部分自己管的每个文件，按扩展名和内容对一对；清单里标明是音频的（参考段、留出录音）扩展名也必须是音频
-    const designated = new Set(kind === 'role' ? [...manifest.reference.segments, ...(manifest.holdout ?? [])].map((s) => s.audio) : []);
+    // 音频：这个部分自己管的每个文件，按扩展名和内容对一对；清单里标明是音频的（参考段、留出录音、卡片试听那一句）扩展名也必须是音频
+    const designated = new Set(kind === 'role' ? [...manifest.reference.segments, ...(manifest.holdout ?? []), ...(typeof manifest.cardLine?.audio === 'string' ? [manifest.cardLine] : [])].map((s) => s.audio) : []);
     for (const path of present) {
       const found = audioProblem(path, files.get(path), { designated: designated.has(path) });
       if (found) add(found.code, found.message, { ...found.details, path: join(prefix, path) });
