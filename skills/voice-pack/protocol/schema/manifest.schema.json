@@ -44,10 +44,10 @@
         },
         "reference": { "$ref": "#/$defs/referenceSet" },
         "holdout": {
-          "description": "留出录音：只用来量还原度，从不当参考。",
+          "description": "留出录音：只用来量还原度，从不当参考。只记语言，不带音色基底标签、不带提示标注。",
           "type": "array",
           "maxItems": 500,
-          "items": { "$ref": "#/$defs/segment" }
+          "items": { "$ref": "#/$defs/holdoutSegment" }
         },
         "files": { "$ref": "#/$defs/fileList" },
         "externals": {
@@ -88,12 +88,11 @@
           }
         },
         "direction": {
-          "description": "配音指引里的结构化部分：一句音色描述、音色标签（取自设计词表）、适合的场景（取自场景词表）。",
+          "description": "配音指引里的结构化部分：一句音色描述、音色标签（取自设计词表）。",
           "type": "object",
           "properties": {
             "description": { "type": "string", "minLength": 1, "maxLength": 500 },
-            "tags": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/label" } },
-            "scenes": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/slug" } }
+            "tags": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
           }
         },
         "sampleLines": {
@@ -102,8 +101,25 @@
           "maxItems": 50,
           "items": { "type": "string", "minLength": 1, "maxLength": 500 }
         },
+        "cardLine": {
+          "description": "卡片试听那一句：预览卡片上放的一句台词（text）和它的录音（audio，包内文件，files 里的一项，用这个包自己的声音配的），可选记着配它用的 seed（seed）。台词的写法同示例台词：可以带舞台提示，格式只存这条字符串、不解析它；不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。它不是参考，也不是留出录音：配音、变声、量还原度、挑默认段都不读它。",
+          "type": "object",
+          "required": ["audio", "text"],
+          "properties": {
+            "audio": { "$ref": "#/$defs/packPath" },
+            "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "expressiveness": { "description": "配这一句时单独取的起伏（0 到 100 的整数）：可选，做包时明说了才有。", "type": "integer", "minimum": 0, "maximum": 100 },
+            "seed": { "description": "配这一句时交给合成能力的 seed（0 到 2^53−1 的整数）：环境收 seed 时才有。用同样的请求重配这一句时，做包程序换一个（上一版的加 1），所以要记下来；格式只存这个数，读的人不拿它做别的。", "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          }
+        },
+        "expressiveness": {
+          "description": "这个声音的起伏（全局值，0 到 100 的整数）：可选。配音时没有更靠后的一层声明起伏，就用它；设定（setups 的 expressiveness）和配音时给的盖过它。",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
         "setups": {
-          "description": "几套设定：把配音时「怎么说」的固定值写进包里（情绪、风格、能量、语言、语速、一段给模型的说明），例如一套叫「平静播报」、一套叫「生气」。每套有名字，同一个包里不能重名（语义规则，见 FORMAT.md「语义规则」）；最多一套带 default: true（语义规则），配音时不点名就用它。换设定的值要发新版本（包一经发布就不变）；配音时用哪一套是配音的参数，不在清单里。带 setups 的包对基础部分的最低要求（requires.baseMin）怎么写，见 FORMAT.md 4.4 的 setups 一行。",
+          "description": "几套设定：把配音时「怎么说」的固定值写进包里（情绪、风格、能量、语言、默认参考 referenceTag、语速、一段给模型的说明），例如一套叫「平静播报」、一套叫「生气」。每套有名字，同一个包里不能重名（语义规则，见 FORMAT.md「语义规则」）；最多一套带 default: true（语义规则），配音时不点名就用它。换设定的值要发新版本（包一经发布就不变）；配音时用哪一套是配音的参数（也可以明确这一次一套都不用，带 default 的也不套），不在清单里。带 setups 的包对基础部分的最低要求（requires.baseMin）怎么写，见 FORMAT.md 4.4 的 setups 一行。",
           "type": "array",
           "maxItems": 500,
           "items": { "$ref": "#/$defs/setup" }
@@ -194,17 +210,53 @@
     },
 
     "referenceSet": {
-      "description": "参考集：多段原声，每段配逐字文本和标签，defaultSegment 指出哪一段是默认。",
+      "description": "参考集：多段原声，每段配逐字文本、语言和一个音色基底标签。defaultSegment 是主语言的默认段（它的语言就是包的主语言）；languageDefaults 是别的语言各自的默认段（段的 id，一种语言最多一段，可选）。",
       "type": "object",
       "required": ["defaultSegment", "segments"],
       "properties": {
         "defaultSegment": { "$ref": "#/$defs/slug" },
+        "languageDefaults": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/slug" } },
         "segments": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/$defs/segment" } }
       }
     },
 
     "segment": {
-      "description": "一段录音：音频文件、逐字文本、标签。",
+      "description": "一段参考：音频文件、逐字文本、提示标注（可选）、语言、音色基底标签。tag 只用来在一个包的几段参考之间切换（同一种语言里不重名，语义规则见 FORMAT.md「语义规则」），自由文字，中文、英文都行。",
+      "type": "object",
+      "required": ["id", "audio", "text", "language", "tag"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "audio": { "$ref": "#/$defs/packPath" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "annotatedText": { "$ref": "#/$defs/annotatedText" },
+        "language": { "$ref": "#/$defs/languageTag" },
+        "tag": { "$ref": "#/$defs/referenceTag" },
+        "synthetic": { "type": "boolean" }
+      }
+    },
+
+    "holdoutSegment": {
+      "description": "一条留出录音：音频文件、逐字文本、语言。它不当参考，用不着切换，所以没有音色基底标签，也不标提示标注。",
+      "type": "object",
+      "required": ["id", "audio", "text", "language"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "audio": { "$ref": "#/$defs/packPath" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "language": { "$ref": "#/$defs/languageTag" },
+        "synthetic": { "type": "boolean" }
+      }
+    },
+
+    "referenceTag": {
+      "description": "音色基底标签：一段参考的短名字，例如「愤怒」「少年」「平常」，1–64 个字符（按码点算）。逐字比，大小写不同就是两个标签。设定的 referenceTag 用它指一段默认参考。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+
+    "legacySegment": {
+      "description": "协议 1.x、2.x 的包里参考段和留出录音的写法（只为读旧包、检查旧包用，这一版不写它）：语言和情绪、风格、能量写在 tags 里。协议 3.x 的清单不用它，用 segment 和 holdoutSegment（FORMAT.md 第 14 节）。",
       "type": "object",
       "required": ["id", "audio", "text", "tags"],
       "properties": {
@@ -225,20 +277,27 @@
       }
     },
 
+    "annotatedText": {
+      "description": "提示标注：参考段的逐字文本在说法变化的地方加上方括号提示的整句，例如 [laughs]呵呵，[happy]太可爱了吧。提示以外的字和 text 一样。配音时和参考一起交给模型。没有就不写这个键。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+
     "languageTag": {
-      "description": "语言标签：形如 en、zh-CN。参考段的 tags.language 和设定的 labels.language 写法一样。",
+      "description": "语言标签：2 到 3 个字母，后面可以接几段「连字符 + 2 到 8 个字母或数字」，例如 en、zh-CN、zh-Hans-CN；不收下划线（zh_CN 不合格）。参考段、留出录音的 language 和设定的 labels.language 写法一样。",
       "type": "string",
       "maxLength": 35,
       "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
     },
 
     "energyLevel": {
-      "description": "能量：low、medium、high 三档。参考段的 tags.energy 和设定的 labels.energy 写法一样。",
+      "description": "能量：low、medium、high 三档。设定的 labels.energy 用它（协议 1.x、2.x 的参考段的 tags.energy 也是这个写法）。",
       "enum": ["low", "medium", "high"]
     },
 
     "setup": {
-      "description": "一套设定：name 是名字；labels 是固定的标签，写法和参考段的 tags 一样（语言、情绪、风格、能量，都可选）；speed 是语速，正数，意思和台本里的语速一样（1 是不变，0.85 放慢，1.15 加快）；instructions 是一段给模型的说明，例如口音、方言；default 为 true 的那一套是不点名时用的。",
+      "description": "一套设定：name 是名字；labels 是固定的标签（语言、情绪、风格、能量，都可选；和参考段的音色基底标签不是同一批东西）；referenceTag 是这套设定的默认参考，用参考段的音色基底标签指（可选，必须是参考集里某段的标签，语义规则见 FORMAT.md「语义规则」）；speed 是语速的倍数，正数（1 是不变，0.85 放慢，1.15 加快），配音在合成以后按它变速（不是台本里写的放慢、加快那种交给模型的提示）；expressiveness 是这个声音固定的起伏，0 到 100 的整数，配音时调用方没给就用它（可选）；instructions 是一段给模型的说明，例如口音、方言；default 为 true 的那一套是不点名时用的。",
       "type": "object",
       "required": ["name"],
       "properties": {
@@ -252,7 +311,9 @@
             "energy": { "$ref": "#/$defs/energyLevel" }
           }
         },
+        "referenceTag": { "$ref": "#/$defs/referenceTag" },
         "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "expressiveness": { "type": "integer", "minimum": 0, "maximum": 100 },
         "instructions": { "$ref": "#/$defs/longText" },
         "default": { "type": "boolean" }
       }
