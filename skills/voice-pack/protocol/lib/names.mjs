@@ -8,8 +8,10 @@
 //   写   这一版库写的协议版本是 PROTOCOL_VERSION（version.mjs），新做的包、新打的分享文件用它的名字（CURRENT_NAMES）。
 //        打已有清单的包（打包命令、官方发布）用清单自己的协议版本对应的名字，同样的目录打出同样的字节。
 //   读   两套名字都认，但一个包里的名字要和它的协议版本对得上：2.0 的包里是老名字、1.x 的包里是新名字，检查不过（protocol_name_mismatch，check.mjs、share.mjs）。
+// 3.0 改的是格式，不是名字（FORMAT.md 第 14 节）：3.x 和 2.x 用同一套名字。所以从名字认不出是 2.x 还是 3.x，要看清单里的协议版本；
+// 认得的名字（KNOWN_BASE_DIRECTORIES、KNOWN_SHARE_MIMES）每个只列一次。
 //
-// 函数的 protocol 参数写「主.次」的协议版本（"2.0"），或者协议主版本（整数 2）：只有主版本决定名字。
+// 函数的 protocol 参数写「主.次」的协议版本（"3.0"），或者协议主版本（整数 3）：只有主版本决定名字。
 //
 // 错误：
 //   protocol_unsupported   协议主版本不在表里（这一版库读不了）。details: { protocol, supported }
@@ -33,11 +35,12 @@ const deepFreeze = (value) => {
 export const PROTOCOL_NAMES = deepFreeze({
   1: { baseDirectory: 'cohub-voice-studio', releaseFilePrefix: 'cohub-voice-studio', shareMime: 'application/vnd.cohub.voicepack+zip' },
   2: { baseDirectory: 'voice-pack', releaseFilePrefix: 'voice-pack', shareMime: 'application/vnd.voice-pack+zip' },
+  3: { baseDirectory: 'voice-pack', releaseFilePrefix: 'voice-pack', shareMime: 'application/vnd.voice-pack+zip' },
 });
 
 /** 这一版库读得了的协议主版本，从小到大。 */
 export const READABLE_PROTOCOL_MAJORS = Object.freeze(Object.keys(PROTOCOL_NAMES).map(Number).sort((a, b) => a - b));
-/** 写进错误详情和文字里的写法：「1.x、2.x」。 */
+/** 写进错误详情和文字里的写法：「1.x、2.x、3.x」。 */
 export const READABLE_PROTOCOLS_TEXT = READABLE_PROTOCOL_MAJORS.map((major) => `${major}.x`).join('、');
 
 /**
@@ -81,12 +84,12 @@ export const releaseFilePrefixOf = (protocol) => namesOf(protocol).releaseFilePr
 /** 这一版库写的名字：新做的包、新打的分享文件用它们（PROTOCOL_VERSION 对应的那一行）。 */
 export const CURRENT_NAMES = namesOf(PROTOCOL_VERSION);
 
-/** 认得的所有基础部分目录名（每个主版本一个）。 */
-export const KNOWN_BASE_DIRECTORIES = Object.freeze(READABLE_PROTOCOL_MAJORS.map((major) => PROTOCOL_NAMES[major].baseDirectory));
-/** 认得的所有类型标识（每个主版本一个）。 */
-export const KNOWN_SHARE_MIMES = Object.freeze(READABLE_PROTOCOL_MAJORS.map((major) => PROTOCOL_NAMES[major].shareMime));
+/** 认得的所有基础部分目录名，按最早用它的主版本排，每个名字一次（2.x、3.x 同名）。 */
+export const KNOWN_BASE_DIRECTORIES = Object.freeze([...new Set(READABLE_PROTOCOL_MAJORS.map((major) => PROTOCOL_NAMES[major].baseDirectory))]);
+/** 认得的所有类型标识，按最早用它的主版本排，每个标识一次（2.x、3.x 同一个）。 */
+export const KNOWN_SHARE_MIMES = Object.freeze([...new Set(READABLE_PROTOCOL_MAJORS.map((major) => PROTOCOL_NAMES[major].shareMime))]);
 
-/** 这个基础部分目录名是哪个协议主版本的；不是任何一个认得的名字就是 null。 */
+/** 用这个基础部分目录名的协议主版本里最早的那个（2.x、3.x 同名，给的是 2）；不是任何一个认得的名字就是 null。名字认不出 2.x 还是 3.x，要看清单的协议版本。 */
 export const protocolMajorOfBaseDirectory = (name) => READABLE_PROTOCOL_MAJORS.find((major) => PROTOCOL_NAMES[major].baseDirectory === name) ?? null;
-/** 这个类型标识是哪个协议主版本的；不是任何一个认得的标识就是 null。 */
+/** 用这个类型标识的协议主版本里最早的那个（2.x、3.x 同一个，给的是 2）；不是任何一个认得的标识就是 null。 */
 export const protocolMajorOfShareMime = (mime) => READABLE_PROTOCOL_MAJORS.find((major) => PROTOCOL_NAMES[major].shareMime === mime) ?? null;
