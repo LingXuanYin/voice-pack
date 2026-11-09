@@ -7,7 +7,7 @@
 // 对所有输入都做（options.loudness 可以关）。怎么调（整体响度、采样峰值、增益怎么取）的正本在 tools/loudness-normalize.mjs：默认目标是 REFERENCE_LOUDNESS_LUFS（参考音频的目标响度，
 // 产品里只有这一个数），采样峰值不超过 PEAK_CEILING_DBFS；降增益不受限制；加增益会让峰值超过上限的（峰值比响度高 19 dB 以上的录音），默认用预读限幅器压住过高的峰再加（最多压 LIMITER_MAX_DB，
 // 参数和依据都在 tools/loudness-normalize.mjs 的文件头「限幅器」），压到最多还是到不了目标的，只加到能加的，没到目标，在 notes 里写明差多少、压了多少（loudness_target_not_reached）。
-//   先量后调：音质检查、能量（响度跟这一批的中位数比）、打标签，都是照原始音频做的，调响度在这些之后、写进包之前，所以不影响它们；报告里每段的 quality 是原始的，
+//   先量后调：音质检查、挑默认段、标提示标注，都是照原始音频做的，调响度在这些之后、写进包之前，所以不影响它们；报告里每段的 quality 是原始的，
 //   loudness 记着调之前、调之后的响度、峰值、增益和限幅压了多少 dB（limitedDb；没限幅是 0）。steps.loudness 记着这次的目标、上限和限幅器（limiter：{ maxDb }，关了是 null），
 //   数一数各状态的段数（adjusted、peakLimited、unchanged、skipped、carried），limiterUsed 是其中限幅压过的段数。
 //   写进包里的、试合成用的参考和量还原度用的留出录音，都是调过的那份字节（试合成和包里的一致）。
@@ -74,7 +74,7 @@ export async function adjustedClip(env, bytes, { targetLufs, peakCeilingDbfs, li
 /**
  * 把写进包里的参考和留出录音统一到目标响度（怎么调见 tools/loudness-normalize.mjs）。
  * 生成时每句话挑不同的参考，参考之间响度差得多，配出来的整段就会一句响一句轻。
- * 在量完音质和能量、打完标签以后做：这些都是照原始音频量的，调的只是放进包里的那份字节（条目的 audio 和 format 换成调过的，存成 16 位 PCM 的 WAV）。
+ * 在量完音质、挑完默认段、标完提示标注以后做：这些都是照原始音频做的，调的只是放进包里的那份字节（条目的 audio 和 format 换成调过的，存成 16 位 PCM 的 WAV）。
  * 不动的：上一版带过来的段（字节要和上一版一样）、外部资源（包里只记网址和哈希）、解不了或量不出响度的段；各自在条目的 loudness 上记原因。
  * 加增益会让峰值超过上限的段，默认用限幅器压住过高的峰（每段的 loudness.limitedDb 记着压了多少）；压到最多还是到不了目标的（peak_limited），没到目标，写进说明（loudness_target_not_reached）。
  * @param {object} env
