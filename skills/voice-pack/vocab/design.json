@@ -53,7 +53,7 @@
     { "id": "bedtime", "zh": "睡前故事", "en": "Bedtime story", "attrs": { "Gender": "female", "Age": "young adult", "Pitch": "moderate pitch" }, "extra": ["温暖", "舒缓", "温柔"], "desc": "温柔安心的睡前故事讲述者" },
     { "id": "host", "zh": "活力播客", "en": "Energetic host", "attrs": { "Gender": "male", "Age": "young adult", "Pitch": "high pitch" }, "extra": ["清亮", "轻快", "活泼"], "desc": "热情有感染力的播客主持人" },
     { "id": "kid", "zh": "好奇小孩", "en": "Curious kid", "attrs": { "Gender": "Auto", "Age": "child", "Pitch": "high pitch" }, "extra": ["甜美", "轻快", "活泼"], "desc": "天真好奇、语调上扬的孩子" },
-    { "id": "villain", "zh": "反派船长", "en": "Gravelly villain", "attrs": { "Gender": "male", "Age": "elderly", "Pitch": "very low pitch" }, "extra": ["沙哑", "自然", "神秘"], "desc": "嗓音沙哑、带点戏剧感的老船长反派（原创角色）" },
+    { "id": "villain", "zh": "反派船长", "en": "Gravelly villain", "attrs": { "Gender": "male", "Age": "elderly", "Pitch": "very low pitch" }, "extra": ["沙哑", "自然", "神秘"], "desc": "嗓音沙哑低沉、说话不紧不慢的老船长反派（原创角色）" },
     { "id": "asmr", "zh": "耳语 ASMR", "en": "Whisper", "attrs": { "Gender": "female", "Age": "young adult", "Style": "whisper" }, "extra": ["空灵", "舒缓", "平静"], "desc": "贴耳轻语、气声明显的 ASMR 风格" },
     { "id": "dongbei", "zh": "东北大叔", "en": "Northeast uncle", "attrs": { "Gender": "male", "Age": "middle-aged", "ChineseDialect": "东北话" }, "extra": ["浑厚", "自然", "热情"], "desc": "豪爽幽默、带东北口音的大叔" }
   ]

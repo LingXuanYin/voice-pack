@@ -7,26 +7,39 @@
 //   transcribe(env, items, { concurrency, wait }) 转写，返回这一步的情况（steps.transcription）：
 //                                             { status: 'not_needed' }（没有要转写的）、
 //                                             { status: 'skipped', capability, reason: 'capability_missing', segments }（环境没有转写能力，segments 是因此没法补文本的段数）、
-//                                             { status: 'done', capability, transcribed, failed, retried, models }：retried 是这一步为暂时出错多调了几次（0 就是一次也没重试）
+//                                             { status: 'done', capability, transcribed, failed, blocked, retried, models }：retried 是这一步为暂时出错多调了几次（照暂时出错报的被拦下也算在内；0 就是一次也没重试），
+//                                             failed 是记成 transcription_failed 的段数，blocked 是记成 transcription_blocked（被服务商拦下）、丢掉的段数（见下）
 //   settleText(items)                       转写以后，给每个还能用的片段定文本是哪来的（textSource），还是没有文本的淘汰（no_text）
+//   writeFromScripts(items)                 标完提示标注以后：素材给了台本原文（scriptText）、逐字稿是转写来的中文段，读音一样的几截写成台本的写法（lib/script-writing.mjs），见函数的说明
 //
-// 暂时出错的段在这一步里自己再试：每段最多转写 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，打标签、命令行和 app 用的是同一份）；
+// 暂时出错的段在这一步里自己再试：每段最多转写 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，挑默认段、标提示标注、命令行和 app 用的是同一份）；
 // 最多多调几次在规划里（plan.extraCalls，lib/make-pack-plan.mjs），花钱之前已经说清楚。`wait` 是等待函数（makePack 的 options.retryWait），不给就真的等。
 //
-// 读条目的：unused、previous、text、labels（language：知道就交给转写）；写条目的：text、textSource（'caller' 调用方给的、'transcription' 转写来的、'previous' 上一版带来的）、
+// 读条目的：unused、previous、text、givenLanguage（素材给的语言：知道就交给转写）；写条目的：text、textSource（'caller' 调用方给的、'transcription' 转写来的、'previous' 上一版带来的）、
 // transcribedLanguage（转写报的语言，整理成清单的写法）。上一版带过来的段不转写。淘汰的写 unused: { reason, details }：
-//   transcription_failed  试满了次数，转写还是暂时出错（details.transient），这一段用不上。details: { error, attempts }（error 是最后一次的错误摘要：code、message、details；attempts 是试了几次）
+//   transcription_failed  试满了次数，转写还是暂时出错（details.transient），最后一次的错不是被拦下（见下一条），这一段用不上：稍后重做一次也许就成。
+//                         details: { error, attempts }（error 是最后一次的错误摘要：code、message、details；attempts 是试了几次）
+//   transcription_blocked 转写被服务商的内容过滤拦下了：这一段用不上，别的段照做，不整次停下；要补上逐字文本，或者换一个转写，重做多半还被拦。认法（lib/capability-calls.mjs 的 isProviderBlocked，
+//                         写法见 vocab/capability-signatures.md 的转写一节）有两种：
+//                           - 能力抛 provider_blocked 这个码：不重试（同一段再问多半还被拦）；
+//                           - 能力照暂时出错报（details.transient），details.problem 是 provider_blocked（同一段再问有时就过的服务这样报）：照暂时出错再试，
+//                             试满了次数、最后一次的错还是这样，才记成这一条（最后一次只是暂时出错的，记成 transcription_failed）。
+//                         details: { error, attempts }（同 transcription_failed：最后一次的错的摘要、试了几次；能力抛 provider_blocked 这个码的，被拦下以后不再问，attempts 是问到被拦下那一次为止的次数，第一次就被拦是 1）
 //   no_text               没有文本，也没转写出来。details: { transcribed: true }（转写过、转出来是空的）或 {}
 //
 // 抛出的错误：
 //   capability_result_invalid  转写的返回不是 { text: 字符串, language?, model? }。details: { capability, problem }（lib/capability-calls.mjs 的 badResult）
-//   转写暂时出错（details.transient 为 true）先重试，试满了次数也没成就不抛，记在片段上；别的错原样往上抛，不重试：401 之类，和环境认不了片段的语言（capability_input_invalid，details.field 是 language，规则见 vocab/capability-signatures.md）
+//   转写暂时出错（details.transient 为 true）先重试，试满了次数也没成就不抛，记在片段上（transcription_failed，被拦下的是 transcription_blocked）；
+//   能力抛 provider_blocked 这个码的不重试、不抛，记在片段上（transcription_blocked）；
+//   别的错原样往上抛，不重试：401 之类，和环境认不了片段的语言（capability_input_invalid，details.field 是 language，规则见 vocab/capability-signatures.md）
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
-import { normalizeLanguage } from './line-hints.mjs';
+import { isVoicePackError } from '../protocol/lib/errors.mjs';
+import { normalizeLanguage, primaryLanguage } from './line-hints.mjs';
+import { writtenFromScript, annotationWrittenAs } from './script-writing.mjs';
 import { tokenizeTranscript } from './fidelity.mjs';
-import { summarizeError, badResult, pool } from './capability-calls.mjs';
+import { summarizeError, badResult, pool, isProviderBlocked } from './capability-calls.mjs';
 import { callWithRetries } from './call-attempts.mjs';
 
 export const hasWords = (text) => tokenizeTranscript(text).length > 0;
@@ -37,19 +50,28 @@ export async function transcribe(env, items, { concurrency, wait }) {
   if (todo.length === 0) return { status: 'not_needed' };
   if (!hasCapability(env, 'automatic-speech-recognition')) return { status: 'skipped', capability: 'automatic-speech-recognition', reason: 'capability_missing', segments: todo.length };
   const recognize = requireCapability(env, 'automatic-speech-recognition');
-  const step = { status: 'done', capability: 'automatic-speech-recognition', transcribed: 0, failed: 0, retried: 0, models: [] };
+  const step = { status: 'done', capability: 'automatic-speech-recognition', transcribed: 0, failed: 0, blocked: 0, retried: 0, models: [] };
   await pool(todo, concurrency, async (item) => {
-    // 片段的语言知道（调用方给的：片段自己的标签，或 input.labels 里的默认）就告诉转写；不知道就不带这个键（规则的正本：vocab/capability-signatures.md 的转写一节）
+    // 片段的语言知道（素材给的：片段自己的 language，或 input.language 给的默认）就告诉转写；不知道就不带这个键（规则的正本：vocab/capability-signatures.md 的转写一节）
     let calls = 0;
     const ask = () => {
       calls += 1;
-      return recognize({ audio: item.audio, ...(item.labels.language ? { language: item.labels.language } : {}) });
+      return recognize({ audio: item.audio, ...(item.givenLanguage ? { language: item.givenLanguage } : {}) });
     };
-    const outcome = await callWithRetries(ask, { wait }); // 暂时出错就再试，试满了返回 { error }；别的错抛出来
+    let outcome;
+    try {
+      outcome = await callWithRetries(ask, { wait }); // 暂时出错就再试，试满了返回 { error, attempts }；别的错抛出来
+    } catch (error) {
+      if (!isVoicePackError(error, 'provider_blocked')) throw error;
+      outcome = { error, attempts: calls }; // 被服务商拦下（provider_blocked 这个码）：不再问，下面按被拦下记
+    }
     step.retried += calls - 1;
     if ('error' in outcome) {
-      item.unused = { reason: 'transcription_failed', details: { error: summarizeError(outcome.error), attempts: outcome.attempts } };
-      step.failed += 1;
+      // 这一段用不上，别的段照做。被拦下的（provider_blocked 这个码，或者问满了次数、最后一次照暂时出错报的是被拦下）记成 transcription_blocked，别的记成 transcription_failed（见文件头）
+      const blocked = isProviderBlocked(outcome.error);
+      item.unused = { reason: blocked ? 'transcription_blocked' : 'transcription_failed', details: { error: summarizeError(outcome.error), attempts: outcome.attempts } };
+      if (blocked) step.blocked += 1;
+      else step.failed += 1;
       return;
     }
     const { result } = outcome;
@@ -70,5 +92,26 @@ export function settleText(items) {
     if (item.previous !== undefined) item.textSource = 'previous';
     else if (hasWords(item.text)) item.textSource ??= 'caller';
     else item.unused = { reason: 'no_text', details: item.textSource === 'transcription' ? { transcribed: true } : {} };
+  }
+}
+
+/**
+ * 素材给了台本原文（scriptText）、逐字稿是这次转写出来的段：读音一样的几截写成台本的写法（规则在 lib/script-writing.mjs），提示标注照同样的字换。
+ * 只对中文的段（主语言 zh）：别的语言没有读音依据，照听到的留着。调用方给了逐字稿的段、上一版带来的段不动。
+ * 写条目的：text、annotatedText（换了字的）、writtenFromScript（换了的几截 [{ heard, written }]，报告里有）；给了台本、一截都没换的标 scriptTextUnused。
+ * 提示标注去掉方括号和逐字稿对不上（不该有），这一段一个字都不换，同样标 scriptTextUnused。
+ */
+export function writeFromScripts(items) {
+  for (const item of items) {
+    if (item.unused !== undefined || item.scriptText === undefined || item.textSource !== 'transcription') continue;
+    const { text, fromScript } = primaryLanguage(item.language?.value ?? '') === 'zh' ? writtenFromScript(item.scriptText, item.text) : { text: item.text, fromScript: [] };
+    const annotated = item.annotatedText === undefined || fromScript.length === 0 ? item.annotatedText : annotationWrittenAs(item.annotatedText, item.text, text);
+    if (fromScript.length === 0 || (item.annotatedText !== undefined && annotated === undefined)) {
+      item.scriptTextUnused = true;
+      continue;
+    }
+    item.text = text;
+    if (annotated !== undefined) item.annotatedText = annotated;
+    item.writtenFromScript = fromScript;
   }
 }
