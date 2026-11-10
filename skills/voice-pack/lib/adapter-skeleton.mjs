@@ -28,8 +28,10 @@
 //   }
 // 返回 { files: [{ path, content }]（path 相对目录，用 /，content 是文字）, fillIn: 一句话：填写什么、在哪个文件里 }。
 //
-// @capability style-instruction
-// @capability style-cues
+// @capability phoneme-in-text
+// @capability phoneme-markers
+// @capability scene-in-request
+// @capability seed-in-request
 import { DECLARED_CAPABILITIES } from '../protocol/lib/env.mjs';
 
 export const NOT_IMPLEMENTED = 'adapter_not_implemented';
