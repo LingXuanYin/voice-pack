@@ -9,7 +9,8 @@
 //                3 index.html          预览卡片（打包时生成，没有也行；角色部分才有：基础部分里没有声音）
 //                4 README.md           写给人和 agent 的说明
 //   类型标识   文件名 mimetype，内容跟协议版本走（names.mjs 的表；没有换行）。开头的字节是固定的：
-//              50 4B 03 04（zip 本地头）、方法 0（存储）、文件名 mimetype 在第 30 字节、内容在第 38 字节。isShareFile、detectShareMime 只看这几十个字节，两套标识都认。
+//              50 4B 03 04（zip 本地头）、方法 0（存储）、文件名 mimetype 在第 30 字节、内容在第 38 字节。isShareFile、detectShareMime 只看这几十个字节，两套标识都认
+//              （2.x 和 3.x 共用一个标识，从这里分不出来，要看清单的协议版本：FORMAT.md 第 14 节「认」）。
 //   写的时候   同样的输入写出同样的字节（zip-write.mjs）：包目录里的文件按路径的 UTF-8 字节序排，其余按上面的次序。
 //   README 和预览卡片在打包时生成，不列进清单。卡片是什么、页面上有什么、怎么保证自包含，只在 preview-card.mjs 的文件头写一份；
 //   这里只管它在哪、什么时候生成：buildShareFile 默认给角色部分生成一张（options.card 给产品名和两个入口的链接，false 是不要，options.indexHtml 是用现成的）。
@@ -166,11 +167,15 @@ export function buildReadme(manifest, options = {}) {
       '',
       '## 在 agent 环境里使用 / Use in an agent environment',
       '',
+      `想用这个包做一个新的声音（不是用这个声音配音）的，先不要放进下面第 1 步的目录：解压到别的地方，让 agent 读 \`${dir}/SKILL.md\` 的「怎么做新包」。放进去以后，它的说明文字会自动载入之后的会话，写新包文字的 agent 就见过它了，新包不算净室（净室：写新包文字的 agent 没见过来源包，这样新包才是新的）。`,
+      '',
       `1. 解压，把目录 \`${dir}/\` 放进项目的 \`.agents/skills/\`（Codex、Gemini CLI、Cursor、OpenCode 等读这里），再复制一份到 \`.claude/skills/\`（Claude Code 读这里）。目录里有基础部分（\`${baseDirectory}/\`）时，用它的放进环境命令一次做完这两步，并且先检查，命令见 \`${baseDirectory}/SKILL.md\` 的「用音色包配音和变声」一节。`,
       `2. 让 agent 读 \`${dir}/SKILL.md\`：里面写了这是谁的声音、能拿来做什么、配音指引。`,
       `3. 给台本配音：用基础部分的配音命令，命令的写法见 \`${baseDirectory}/SKILL.md\` 的「用音色包配音和变声」一节；用这个包配音要留意的，见 \`${dir}/SKILL.md\`。`,
       `4. 目录里没有 \`${baseDirectory}/\`（基础部分）时，需要先补全，见 \`${dir}/SKILL.md\` 里讲补全的那一节。`,
       '5. 检查这个包有没有被改过：在解压出来的目录里运行 `node protocol/cli.mjs check .`。',
+      '',
+      `If you want to make a new voice from this pack (rather than dub with this voice), do not put it into the directories in step 1 below: unzip it somewhere else and ask your agent to read "怎么做新包" (how to make a new pack) in \`${dir}/SKILL.md\`. Once installed, its description is loaded into later sessions automatically, so the agent writing the new text has seen it and the new pack is no longer clean-room (clean room: the agent writing the new text has never seen the source pack, so that the new pack really is new).`,
       '',
       `1. Unzip it and put the directory into the project's \`.agents/skills/\` (read by Codex, Gemini CLI, Cursor, OpenCode and others), plus a copy in \`.claude/skills/\` (read by Claude Code). When the base part is inside (\`${baseDirectory}/\`), its install command does both and checks first; the command is written in the section "用音色包配音和变声" of \`${baseDirectory}/SKILL.md\`.`,
       `2. Ask your agent to read \`${dir}/SKILL.md\`.`,

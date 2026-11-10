@@ -5,9 +5,9 @@
 // `node cli.mjs adapter check` 只是在外面包一层。app 的测试可以直接调这里的函数，去验 app 自己组装的环境。
 // 适配器的约定（工厂的签名、返回的形状、出错的约定、模型名从哪来）只写在 adapters/README.md，这里只实现检查，不重述。
 //
-//   checkAdapterShape(adapter)                  只看容器和类型：是对象、键都认识、capabilities 和 runtimes 是对象、fetch 是函数、billing、limits 和 previewCard 的写法。
+//   checkAdapterShape(adapter)                  只看容器和类型：是对象、键都认识、capabilities 和 runtimes 是对象、fetch 是函数、billing、limits、previewCard 和 models 的写法。
 //                                               命令行加载适配器时用它（不评论能力名）。→ { ok, issues }
-//   checkAdapterStructure(adapter, options)     结构检查，不调用任何能力：形状，加上每项能力：名字在能力词表里，函数是函数，只是声明的写 true。
+//   checkAdapterStructure(adapter, options)     结构检查，不调用任何能力：形状，加上每项能力：名字在能力词表里，函数是函数，只是声明的写 true；models 里的能力名也要在能力词表里。
 //                                               options.expect 点名要提供的能力，没有的报 capability_missing；options.vocabulary 换词表（默认用 vocab/capabilities.json）。
 //                                               → { ok, issues, capabilities: [{ name, kind: 'function' | 'declaration' }], runtimes: [名字] }，列出的只是合格的那些
 //   planLiveCalls(env, options)                 真调用要调哪几项、各几次，哪些不调、为什么（费用说明用它）。options.capabilities 只算点名的。
@@ -35,9 +35,11 @@
 //   container_not_object      capabilities 或 runtimes 不是对象。details.key
 //   fetch_not_function        fetch 不是函数
 //   billing_invalid           billing 不是非空字符串
-//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 10 的整数、minChars 不是不小于 1 的整数、maxPromptTokens 不是不小于 1 的整数、maxPauseInTextMs 不是不小于 1 的整数。details.key
+//   limits_invalid            limits 不是对象、里面有不认识的键、maxChars 不是不小于 MIN_MAX_CHARS（lib/synthesis-limits.mjs）的整数、minChars 不是不小于 1 的整数、maxPromptTokens 不是不小于 1 的整数、maxPauseInRequestMs 不是不小于 0 的整数、maxPauseInTextMs 不是不小于 1 的整数、maxSpeakers 不是不小于 2 的整数。details.key
 //   preview_card_invalid      previewCard 不是对象、里面有不认识的键、productName 或 links 里的链接不是非空字符串。details.key
-//   capability_unknown        能力名不在能力词表里（多半拼错了）。details.capability
+//   models_invalid            models 不是对象，或者里面的模型名不是非空字符串。details.key（models 本身，或者那一项的能力名）
+//   prices_invalid            prices 不是对象，或者里面的单价不是不小于 0 的数。details.key（prices 本身，或者那一项的能力名）
+//   capability_unknown        能力名不在能力词表里（多半拼错了）。details.capability；是 models 里的能力名时另有 details.key: 'models'
 //   capability_not_function   能力的值不是函数。details.capability
 //   declaration_not_true      只是声明的能力（DECLARED_CAPABILITIES）的值不是 true。details.capability
 //   runtime_not_function      运行时的值不是函数。details.runtime
@@ -59,7 +61,7 @@
 // 每项能力的输入和返回的规则，照 vocab/capability-signatures.md 写（那里是正本）。签名表里没有写法的能力这里不猜：真调用时跳过，原因是 no_signature；
 // 表里有写法而这里一时没接上的，列在 NOT_WIRED 里，跳过的原因是 not_wired（测试对着真的签名表核对：表里有写法的能力，必须是接上的、声明的或列在 NOT_WIRED 里的，
 // 所以「表里有、这里没接」不会悄悄被说成「没有签名」）。
-// 「只是声明的能力」的名单在 protocol/lib/env.mjs 的 DECLARED_CAPABILITIES（目前有 style-instruction 和 style-cues），这里按它认。
+// 「只是声明的能力」的名单在 protocol/lib/env.mjs 的 DECLARED_CAPABILITIES（目前有 phoneme-in-text、phoneme-markers、scene-in-request、seed-in-request），这里按它认。
 //
 // voice-design 的真调用：输入固定，一句够长的试听文本加一句短描述，不带参考音频，不跟 options.text 走。试听文本不能是 Hello. 这样的短句（有的服务要至少 15 个字符），
 // 所以不能借 options.text 的默认值；两句都只有基本平面的英文字符（有的服务处理不了增补平面的字），也远在见过的上限（试听文本 200、描述 500 个字符）以内。核对的是「返回的是音频」，
@@ -67,7 +69,7 @@
 //
 // 要音频输入的能力（voice-cloning、两项变声、转写、音频问答、说话人比对、分离、说话区间检测）用 options.voice：调用方给的一段人声。命令行上给的是基础部分附带的那段
 // （lib/adapter-check-voice.wav，5–8 秒，一个人念一句话，逐字文本在旁边的 .json 里），这里不读文件（纯函数，app 的测试也直接调）。时长取自解码后的长度，VAD 的区间不能超出它。
-// 旧的 1 秒正弦音已经不用：有的模型的克隆参考至少要 3 秒，正弦音又不是人声（历史见 CHANGELOG 2.0.5）。
+// 旧的 1 秒正弦音已经不用：有的模型的克隆参考至少要 3 秒，正弦音又不是人声（历史见 2.0.5 的更新记录，在 2.7.0 发布的 CHANGELOG.md 里）。
 //
 // @capability text-to-speech
 // @capability voice-cloning
@@ -80,8 +82,10 @@
 // @capability speaker-verification
 // @capability audio-source-separation
 // @capability voice-activity-detection
-// @capability style-instruction
-// @capability style-cues
+// @capability phoneme-in-text
+// @capability phoneme-markers
+// @capability scene-in-request
+// @capability seed-in-request
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import defaultVocabulary from '../vocab/capabilities.json' with { type: 'json' };
@@ -92,11 +96,13 @@ import { isVoicePackError } from '../protocol/lib/errors.mjs';
 import { reportable } from '../protocol/lib/scrub.mjs';
 import { decodeAudio } from '../tools/audio-decode.mjs';
 import { isServiceError } from './capability-calls.mjs';
+import { MIN_MAX_CHARS } from './synthesis-limits.mjs';
 
 /** 适配器的返回值里认的键。 */
-export const ADAPTER_KEYS = Object.freeze(['capabilities', 'runtimes', 'fetch', 'billing', 'limits', 'previewCard']);
-/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）、maxPromptTokens（text-generation 一次请求最多收多少输入，判情绪按它分批，见 lib/reference-pick.mjs）、maxPauseInTextMs（声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒，见 lib/dub.mjs 第 5c 步）。 */
-export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptTokens', 'maxPauseInTextMs']);
+export const ADAPTER_KEYS = Object.freeze(['capabilities', 'runtimes', 'fetch', 'billing', 'limits', 'previewCard', 'models', 'prices']);
+/** limits 里认的键：maxChars（一次合成最多多少个字）、minChars（合成能力一次至少要多少个字，见 lib/dub.mjs）、maxPromptTokens（text-generation 一次请求最多收多少输入；基础部分的命令现在都不用它，声明了照样认）、maxPauseInRequestMs（一个请求里一处停顿最多多少毫秒，长过它的切开交给拼接，见 lib/dub.mjs 第 5c 步）、maxSpeakers（声明了 scene-in-request 的环境，一场戏最多几个说话人，见 lib/dub.mjs 第 5a 步）、
+ * maxPauseInTextMs（旧的：一个请求里写进 <break> 的停顿加起来最多多少毫秒；配音不再写 <break>，基础部分的命令都不用它，为照旧接得上以前的适配器，声明了照样认）。 */
+export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptTokens', 'maxPauseInRequestMs', 'maxSpeakers', 'maxPauseInTextMs']);
 /** previewCard 里认的键，和 links 里认的键（形状同核心层 buildShareFile 的 card 选项）。 */
 export const PREVIEW_CARD_KEYS = Object.freeze(['productName', 'links']);
 export const PREVIEW_LINK_KEYS = Object.freeze(['open', 'make']);
@@ -115,10 +121,11 @@ export const DEFAULT_TEXT = 'Hello, this is a check.';
 /** voice-design 的固定输入（见文件头）：试听文本至少 15 个字符（见过的服务里最严的下限），描述短。 */
 const DESIGN_TEXT = 'This is a short audition of a designed voice.';
 const DESIGN_PROMPT = 'A calm adult woman with a warm, clear voice.';
-const MIN_MAX_CHARS = 10; // 同 lib/dub.mjs 的 maxChars
 const MIN_MIN_CHARS = 1; // 同 lib/dub.mjs 的 minChars：一个字也算下限
-const MIN_PROMPT_TOKENS = 1; // 同 lib/dub.mjs 的 maxPromptTokens
-const MIN_PAUSE_IN_TEXT_MS = 1; // 同 lib/dub.mjs 的 maxPauseInTextMs：一毫秒也算上限（平台的上下限由适配器按平台文档写，这里不替它加限制）
+const MIN_PROMPT_TOKENS = 1; // 一次请求至少收得下一个单位的输入
+const MIN_SCENE_SPEAKERS = 2; // 同 lib/dub.mjs 的 maxSpeakers：一场戏至少两个说话人
+const MIN_PAUSE_IN_REQUEST_MS = 0; // 同 lib/dub.mjs 的 maxPauseInRequestMs：0 就是停顿都切开交给拼接（平台的上限由适配器按平台和模型写，这里不替它加限制）
+const MIN_PAUSE_IN_TEXT_MS = 1; // 旧的 maxPauseInTextMs 以前的下限，照旧核
 /** VAD 给的区间末尾可以比录音长这么多秒（同 lib/long-recording.mjs）。 */
 const SPEECH_TOLERANCE_SECONDS = 0.05;
 /** mimeType（去掉参数、小写）对应 sniffAudio 认的格式。不在表里的，没法核对字节。 */
@@ -164,7 +171,7 @@ function shapeIssues(adapter) {
       for (const key of Object.keys(adapter.limits)) {
         if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits 里有不认识的键 ${JSON.stringify(key)}（只认 ${LIMIT_KEYS.join('、')}）`, { key }));
       }
-      const { maxChars, minChars, maxPromptTokens, maxPauseInTextMs } = adapter.limits;
+      const { maxChars, minChars, maxPromptTokens, maxPauseInRequestMs, maxPauseInTextMs, maxSpeakers } = adapter.limits;
       if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxChars 要是不小于 ${MIN_MAX_CHARS} 的整数（一次合成最多多少个字），收到 ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
       }
@@ -174,12 +181,20 @@ function shapeIssues(adapter) {
       if (maxPromptTokens !== undefined && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < MIN_PROMPT_TOKENS)) {
         issues.push(issue('error', 'limits_invalid', `limits.maxPromptTokens 要是不小于 ${MIN_PROMPT_TOKENS} 的整数（text-generation 一次请求最多收多少输入），收到 ${JSON.stringify(maxPromptTokens)}`, { key: 'maxPromptTokens' }));
       }
+      if (maxPauseInRequestMs !== undefined && (!Number.isInteger(maxPauseInRequestMs) || maxPauseInRequestMs < MIN_PAUSE_IN_REQUEST_MS)) {
+        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInRequestMs 要是不小于 ${MIN_PAUSE_IN_REQUEST_MS} 的整数（一个请求里一处停顿最多多少毫秒），收到 ${JSON.stringify(maxPauseInRequestMs)}`, { key: 'maxPauseInRequestMs' }));
+      }
       if (maxPauseInTextMs !== undefined && (!Number.isInteger(maxPauseInTextMs) || maxPauseInTextMs < MIN_PAUSE_IN_TEXT_MS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInTextMs 要是不小于 ${MIN_PAUSE_IN_TEXT_MS} 的整数（声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒），收到 ${JSON.stringify(maxPauseInTextMs)}`, { key: 'maxPauseInTextMs' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInTextMs 要是不小于 ${MIN_PAUSE_IN_TEXT_MS} 的整数（旧的键，配音不再用它），收到 ${JSON.stringify(maxPauseInTextMs)}`, { key: 'maxPauseInTextMs' }));
+      }
+      if (maxSpeakers !== undefined && (!Number.isInteger(maxSpeakers) || maxSpeakers < MIN_SCENE_SPEAKERS)) {
+        issues.push(issue('error', 'limits_invalid', `limits.maxSpeakers 要是不小于 ${MIN_SCENE_SPEAKERS} 的整数（声明了 scene-in-request 的环境，一场戏最多几个说话人），收到 ${JSON.stringify(maxSpeakers)}`, { key: 'maxSpeakers' }));
       }
     }
   }
   if (adapter.previewCard !== undefined) issues.push(...previewCardIssues(adapter.previewCard));
+  if (adapter.models !== undefined) issues.push(...modelsIssues(adapter.models));
+  if (adapter.prices !== undefined) issues.push(...pricesIssues(adapter.prices));
   return issues;
 }
 
@@ -208,6 +223,22 @@ function previewCardIssues(card) {
     }
   }
   return issues;
+}
+
+/** prices 的问题：{ 能力名: 每次约多少美元 }，单价是不小于 0 的数（能力名在不在词表里，结构检查再看）。 */
+function pricesIssues(prices) {
+  if (!isPlainObject(prices)) return [issue('error', 'prices_invalid', 'prices 要是对象：{ 能力名: 每次约多少美元 }，例如 { "voice-cloning": 0.01 }', { key: 'prices' })];
+  return Object.entries(prices)
+    .filter(([, price]) => typeof price !== 'number' || !Number.isFinite(price) || price < 0)
+    .map(([capability]) => issue('error', 'prices_invalid', `prices.${capability} 要是不小于 0 的数（这项能力每次约多少美元）`, { key: capability }));
+}
+
+/** models 的问题：{ 能力名: 模型名 }，模型名是非空字符串（能力名在不在词表里，结构检查再看）。 */
+function modelsIssues(models) {
+  if (!isPlainObject(models)) return [issue('error', 'models_invalid', 'models 要是对象：{ 能力名: 模型名 }，例如 { "voice-cloning": "某个模型" }', { key: 'models' })];
+  return Object.entries(models)
+    .filter(([, model]) => typeof model !== 'string' || model.trim() === '')
+    .map(([capability]) => issue('error', 'models_invalid', `models.${capability} 要是非空字符串（这项能力用的模型名）`, { key: capability }));
 }
 
 const report = (issues, extra = {}) => ({ ok: !hasErrors(issues), issues, ...extra });
@@ -248,6 +279,12 @@ export function checkAdapterStructure(adapter, { vocabulary = defaultVocabulary,
     }
   }
   if (names.length === 0) issues.push(issue('warning', 'no_capabilities', '适配器没有提供任何能力'));
+  for (const name of isPlainObject(adapter.prices) ? Object.keys(adapter.prices) : []) {
+    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `prices 里的能力名 ${JSON.stringify(name)} 不在能力词表里（vocab/capabilities.json；多半是拼错了）`, { capability: name, key: 'prices' }));
+  }
+  for (const name of isPlainObject(adapter.models) ? Object.keys(adapter.models) : []) {
+    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `models 里的能力名 ${JSON.stringify(name)} 不在能力词表里（vocab/capabilities.json；多半是拼错了）`, { capability: name, key: 'models' }));
+  }
   for (const name of expect) {
     if (!provided(name)) issues.push(issue('error', 'capability_missing', `适配器没有提供要求的能力 ${name}`, { capability: name }));
   }

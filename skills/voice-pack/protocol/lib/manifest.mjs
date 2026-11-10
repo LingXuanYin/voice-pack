@@ -18,24 +18,37 @@
 //     path_conflict        重复、只差大小写、既是文件又是目录（文件列表和外部资源合起来查）。details: { kind, path, other }
 //     listed_self          列了清单自己或它的签名
 //     listed_delegated     列了交给子部分的清单管的目录里的文件。details: { directory }
-//     reference_unresolved 参考音频、留出录音、增强件、脚本入口指向的路径，不在文件列表（也不是外部资源，脚本只能在文件列表）里
-//     default_segment_unknown 默认参考段不是参考集里的一段（留出录音不算）
+//     reference_unresolved 参考音频、留出录音、增强件、脚本入口、卡片试听那一句的音频（cardLine.audio）指向的路径，不在文件列表（也不是外部资源；脚本和 cardLine.audio 只能在文件列表）里
+//     default_segment_unknown 默认参考段（defaultSegment，或 languageDefaults 的某一项）不是参考集里的一段（留出录音不算）。details: { pointer, id }
+//     duplicate_language_default  一种语言有了两段默认段：languageDefaults 的某一项和主默认段（defaultSegment）、或者和前面的一项同一种语言（按 languageKey 比）。
+//                          details: { pointer, id, language, other }：pointer 指到后出现的那一项，other 是先有的那一段默认段的 pointer
 //     duplicate_id         参考段、留出录音、增强件的 id 重复
 //     duplicate_setup      设定（setups）的名字重复（同一个包里不能重名）。details: { pointer, name }
 //     duplicate_default_setup  不止一套设定带 default: true（最多一套）。details: { pointer, name, other }：name 是后出现的那一套，other 是第一套带 default 的
+//     duplicate_reference_tag  同一种语言（按 languageKey 比）里两段参考是同一个音色基底标签（逐字比，大小写不同就是两个）。details: { pointer, id, language, tag, other }：
+//                          pointer 指到后出现的那一段的 tag，other 是先有这个标签的那一段的 pointer。不同语言可以同一个标签
+//     reference_tag_unknown  设定的 referenceTag 不是参考集里任何一段的音色基底标签。details: { pointer, name, referenceTag, tags }：pointer 指到这套设定的 referenceTag，
+//                          name 是设定的名字，tags 是参考集里按语言列的标签 [{ language, tags: [标签…] }]（referenceTagsByLanguage：语言按 languageKey 归在一起，写这种语言在参考集里
+//                          第一次出现的写法；语言、标签都按参考集里的次序）
 //     duplicate_runtime    基础部分的 runtimes 里，同一个运行时登记了两次。details: { pointer, runtime }
 //     holdout_is_reference 一个音频文件既当参考又当留出录音
 //     feature_unknown      脚本指向的功能不在 features 里
-//     text_blank           参考段的文本、示例台词的某一条、设计来源里试听台词的某一项只有空白或看不见的字符（空串由 schema 的 minLength 管）。
-//                          details: { pointer, id }（参考段，id 是段的名字）或 { pointer }（示例台词，pointer 是 /sampleLines/<序号>；试听台词，pointer 是 /designSource/auditionLines/<序号>；序号从 0 起）
+//     text_blank           参考段的文本、提示标注（annotatedText）或音色基底标签（tag）、示例台词的某一条、卡片试听那一句（cardLine.text）、设计来源里试听台词的某一项只有空白或看不见的字符（空串由 schema 的 minLength 管）。
+//                          details: { pointer, id }（参考段，id 是段的名字，pointer 指到 text、annotatedText 或 tag）或 { pointer }（示例台词，pointer 是 /sampleLines/<序号>；卡片试听那一句，pointer 是 /cardLine/text；试听台词，pointer 是 /designSource/auditionLines/<序号>；序号从 0 起）
 //     truncated            问题太多，只列了前面的
 //     too_deep             写清单时嵌套深到调用栈放不下（serializeManifest、assertDraftManifest；描述是作者给的 JSON 文件，能嵌得很深）。只有这一个问题，没有 pointer
+//
+// 协议 3.x 的角色部分，参考段写 { id, audio, text, annotatedText?, language, tag, synthetic? }，留出录音写 { id, audio, text, language, synthetic? }（schema 的 segment、holdoutSegment）。
+// 这一版库还读得了 1.x、2.x 的清单（names.mjs 的表）。协议主版本小于 3 的角色部分，段是老写法 { …, tags: { language, emotion?, style?, energy? } }，换用 schema 的 legacySegment 查；
+// 3.0 才有的段上的 tag、annotatedText 当不认识的字段，不查：duplicate_reference_tag、reference_tag_unknown，tag 和 annotatedText 的 text_blank。
+// 段以外的字段一律按 3.0 的规则查：新版不为 2.x 的格式写兼容，查出来的结论和 1.x、2.x 的程序不一定一样（protocol/FORMAT.md 第 14 节）。
+// 读段的语言用 segmentLanguage，两种写法都认（核心层读得了的协议都要读；基础部分的流程层只认 3.x 的写法）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import schema from '../schema/manifest.schema.json' with { type: 'json' };
 import { VoicePackError } from './errors.mjs';
 import { PROTOCOL_VERSION, isProtocolVersion } from './version.mjs';
-import { baseDirectoryOf, isReadableProtocol, KNOWN_BASE_DIRECTORIES, READABLE_PROTOCOLS_TEXT } from './names.mjs';
+import { baseDirectoryOf, isReadableProtocol, protocolMajorOf, KNOWN_BASE_DIRECTORIES, READABLE_PROTOCOLS_TEXT } from './names.mjs';
 import { validateSchema } from './schema.mjs';
 import { pathProblem, findPathConflict, compareUtf8 } from './paths.mjs';
 import { resolveLimits, jsonSizeProblem } from './limits.mjs';
@@ -123,11 +136,54 @@ export function isManagedPath(path, part, protocol) {
 }
 /** 协议核心里的清单 schema（protocol/schema/manifest.schema.json）。 */
 export const MANIFEST_SCHEMA = deepFreeze(schema);
+/** 协议 1.x、2.x 的角色部分用的那一份：参考段和留出录音换成老写法（$defs.legacySegment，见文件头），别的一样。 */
+const LEGACY_SEGMENT_SCHEMA = deepFreeze({ ...schema, $defs: { ...schema.$defs, segment: schema.$defs.legacySegment, holdoutSegment: schema.$defs.legacySegment } });
+/** 音色基底标签出现在协议 3.0：主版本比它小的角色部分，段是老写法。 */
+const REFERENCE_TAG_PROTOCOL_MAJOR = 3;
+/** 这份清单的段是不是老写法（协议 1.x、2.x 的角色部分）。协议写得不对的不算（按这一版的写法查，由 schema 报协议的写法）。 */
+function hasLegacySegments(manifest) {
+  if (!isObject(manifest) || manifest.part !== 'role' || typeof manifest.protocol !== 'string' || !isProtocolVersion(manifest.protocol)) return false;
+  return protocolMajorOf(manifest.protocol) < REFERENCE_TAG_PROTOCOL_MAJOR;
+}
 
 const MAX_SCHEMA_PROBLEMS = 100;
 // 只有空白（\s：空格、制表、换行、不换行空格、Unicode 的各种空格）、控制字符（Cc）、格式字符（Cf：零宽空格、字节序标记……）的文本，等于没写
 const BLANK_TEXT = /^[\s\p{Cc}\p{Cf}]*$/u;
+/** 一段文字是不是「等于没写」（只有空白和看不见的字符）：清单的 text_blank 就是这一条。流程层在花钱之前查作者给的文字也用它，不另写一份。 */
+export const isBlankText = (text) => BLANK_TEXT.test(text);
+/**
+ * 语言标签规范化以后的写法：兼容分解（NFKC）、转小写、去两头空白、下划线当连字符。两段参考是不是「同一种语言」按它比（zh-CN、zh-cn、zh_CN 是同一种，zh 和 zh-CN 不是）：
+ * 清单检查的 duplicate_language_default 用它，流程层挑参考、做包挑默认段也用它，不另写一份。
+ * 清单里的语言标签不收下划线（schema 的 $defs.languageTag），下划线当连字符只对清单以外交进来的语言有用（例如配音时调用方给的台词语言）。
+ */
+export const languageKey = (tag) => String(tag).normalize('NFKC').toLowerCase().trim().replace(/_/g, '-');
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * 一段参考或留出录音的语言（语言标签）：协议 3.x 写在段的 language 上，1.x、2.x 写在 tags.language 上（见文件头），两种都认；都没有给 undefined。
+ * 核心层里读段的语言都用它（检查、SKILL.md 骨架、预览卡片），不各写一份。
+ */
+export const segmentLanguage = (segment) => (typeof segment?.language === 'string' ? segment.language : typeof segment?.tags?.language === 'string' ? segment.tags.language : undefined);
+
+/**
+ * 参考集里的音色基底标签按语言列出来：[{ language, tags: [标签…] }]。语言按 languageKey 归在一起，写这种语言在参考集里第一次出现的写法；
+ * 语言按在参考集里第一次出现的次序，每种语言的标签按参考集里的次序（同一个标签只列一次）。没有标签的段（老写法的包）不列。
+ * 清单检查的 reference_tag_unknown、角色部分 SKILL.md 骨架的标签那一条，和基础部分报同一个错的地方（配音、变声），都用这一份写法。
+ * @param {object[]} segments 参考集的段（清单的 reference.segments）
+ * @returns {{ language: string, tags: string[] }[]}
+ */
+export function referenceTagsByLanguage(segments) {
+  const groups = new Map();
+  for (const segment of segments ?? []) {
+    const language = segmentLanguage(segment);
+    if (language === undefined || typeof segment.tag !== 'string') continue;
+    const key = languageKey(language);
+    if (!groups.has(key)) groups.set(key, { language, tags: [] });
+    const group = groups.get(key);
+    if (!group.tags.includes(segment.tag)) group.tags.push(segment.tag);
+  }
+  return [...groups.values()];
+}
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }); // ignoreBOM: 保留 BOM，让我们自己看见它
 
 const problem = (code, message, details) => ({ code, message, details });
@@ -177,6 +233,8 @@ function semanticProblems(manifest) {
   const resolvable = (path) => inFiles.has(path) || inExternals.has(path);
   const unresolved = (pointer, path, what, where) => add('reference_unresolved', `${what}指向 ${JSON.stringify(path)}，它不在${where}里`, { pointer, path });
   const segments = manifest.reference.segments;
+  // 协议 1.x、2.x 的角色部分：段是老写法，3.0 才有的段上的东西（音色基底标签、提示标注）不查（文件头）
+  const legacy = hasLegacySegments(manifest);
   const holdout = manifest.holdout ?? [];
   const enhancers = manifest.enhancers ?? [];
   const scripts = manifest.scripts ?? [];
@@ -185,6 +243,8 @@ function semanticProblems(manifest) {
   holdout.forEach((s, i) => { if (!resolvable(s.audio)) unresolved(`/holdout/${i}/audio`, s.audio, '留出录音', '文件列表和外部资源'); });
   enhancers.forEach((e, i) => { if (!resolvable(e.path)) unresolved(`/enhancers/${i}/path`, e.path, '增强件', '文件列表和外部资源'); });
   scripts.forEach((s, i) => { if (!inFiles.has(s.entry)) unresolved(`/scripts/${i}/entry`, s.entry, '脚本入口', '文件列表（脚本必须放进包里）'); });
+  // 卡片试听那一句的音频：要放进包里（卡片把它内嵌进去，外部资源的字节不在分享文件里）
+  if (isObject(manifest.cardLine) && !inFiles.has(manifest.cardLine.audio)) unresolved('/cardLine/audio', manifest.cardLine.audio, '卡片试听那一句的音频', '文件列表（它必须放进包里）');
 
   const seen = new Map();
   const duplicate = (pointer, id, what) => add('duplicate_id', `${what}的 id ${JSON.stringify(id)} 重复了（已经在 ${seen.get(id)} 用过）`, { pointer, id });
@@ -206,9 +266,24 @@ function semanticProblems(manifest) {
     else enhancerIds.set(e.id, `/enhancers/${i}`);
   });
 
-  if (!segments.some((s) => s.id === manifest.reference.defaultSegment)) {
+  const mainDefault = segments.find((s) => s.id === manifest.reference.defaultSegment);
+  if (mainDefault === undefined) {
     add('default_segment_unknown', `默认参考段 ${JSON.stringify(manifest.reference.defaultSegment)} 不是参考集里的一段（留出录音不能当参考）`, { pointer: '/reference/defaultSegment', id: manifest.reference.defaultSegment });
   }
+  // 别的语言各自的默认段（languageDefaults）：每一项是参考集里的一段；一种语言（按 languageKey 比）最多一段默认段，主默认段的语言也算在里面
+  const defaultOf = new Map(mainDefault === undefined ? [] : [[languageKey(segmentLanguage(mainDefault)), '/reference/defaultSegment']]);
+  (manifest.reference.languageDefaults ?? []).forEach((id, i) => {
+    const pointer = `/reference/languageDefaults/${i}`;
+    const segment = segments.find((s) => s.id === id);
+    if (segment === undefined) {
+      add('default_segment_unknown', `languageDefaults 里的 ${JSON.stringify(id)} 不是参考集里的一段（留出录音不能当参考）`, { pointer, id });
+      return;
+    }
+    const language = segmentLanguage(segment);
+    const key = languageKey(language);
+    if (defaultOf.has(key)) add('duplicate_language_default', `${JSON.stringify(id)} 的语言 ${JSON.stringify(language)} 已经有默认段了（${defaultOf.get(key)}）：一种语言最多一段默认段`, { pointer, id, language, other: defaultOf.get(key) });
+    else defaultOf.set(key, pointer);
+  });
   const referenceAudio = new Set(segments.map((s) => s.audio));
   holdout.forEach((s, i) => {
     if (referenceAudio.has(s.audio)) add('holdout_is_reference', `留出录音 ${JSON.stringify(s.id)} 用的音频 ${JSON.stringify(s.audio)} 同时是参考段：留出录音从不当参考`, { pointer: `/holdout/${i}/audio`, path: s.audio });
@@ -221,11 +296,32 @@ function semanticProblems(manifest) {
   // 互相校验（mutual.mjs）不再查这一条，同一条规则只在这里报一次。
   segments.forEach((s, i) => {
     if (BLANK_TEXT.test(s.text)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的文本是空的（只有空白或看不见的字符）：每段参考音频都要有对应的逐字文本`, { pointer: `/reference/segments/${i}/text`, id: s.id });
+    if (legacy) return; // 老写法的段没有提示标注和音色基底标签（文件头）
+    // 提示标注是可选的：写了就要有看得见的字（没有提示标注就不写这个键）
+    if (typeof s.annotatedText === 'string' && BLANK_TEXT.test(s.annotatedText)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的提示标注是空的（只有空白或看不见的字符）：没有提示标注就不写 annotatedText`, { pointer: `/reference/segments/${i}/annotatedText`, id: s.id });
+    // 音色基底标签同一条规则：只有空白和看不见的字符的标签，列出来、切换时都看不出是哪一段
+    if (typeof s.tag === 'string' && BLANK_TEXT.test(s.tag)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的音色基底标签是空的（只有空白或看不见的字符）：每段参考要有一个看得见的标签`, { pointer: `/reference/segments/${i}/tag`, id: s.id });
   });
+  // 音色基底标签（协议 3.x，老写法的包没有）：同一种语言里不重名（语言按 languageKey 比，标签逐字比），设定的 referenceTag 要是参考集里某段的标签
+  if (!legacy) {
+    const tagged = new Map(); // 规范化以后的语言 + 标签 -> 先有这个标签的那一段的 pointer
+    segments.forEach((s, i) => {
+      const key = JSON.stringify([languageKey(s.language), s.tag]);
+      if (tagged.has(key)) add('duplicate_reference_tag', `参考段 ${JSON.stringify(s.id)} 的音色基底标签 ${JSON.stringify(s.tag)} 在 ${s.language} 里已经有了（${tagged.get(key)}）：同一种语言里两段参考不能同一个标签`, { pointer: `/reference/segments/${i}/tag`, id: s.id, language: s.language, tag: s.tag, other: tagged.get(key) });
+      else tagged.set(key, `/reference/segments/${i}/tag`);
+    });
+    const known = new Set(segments.map((s) => s.tag));
+    (manifest.setups ?? []).forEach((setup, i) => {
+      if (setup.referenceTag === undefined || known.has(setup.referenceTag)) return;
+      add('reference_tag_unknown', `设定 ${JSON.stringify(setup.name)} 的默认参考 ${JSON.stringify(setup.referenceTag)} 不是参考集里任何一段的音色基底标签`, { pointer: `/setups/${i}/referenceTag`, name: setup.name, referenceTag: setup.referenceTag, tags: referenceTagsByLanguage(segments) });
+    });
+  }
   // 示例台词同一条规则：一条只有空白和看不见的字符的台词，念出来是一片安静，等于没写。（空串、太长、不是字符串，由 schema 管）
   (manifest.sampleLines ?? []).forEach((line, i) => {
     if (BLANK_TEXT.test(line)) add('text_blank', `示例台词第 ${i + 1} 条是空的（只有空白或看不见的字符）：每条示例台词都要有看得见的字`, { pointer: `/sampleLines/${i}` });
   });
+  // 卡片试听那一句同一条规则：只有空白和看不见的字符的一句，卡片上旁边写的是一片空白。（空串、太长、不是字符串，由 schema 管）
+  if (isObject(manifest.cardLine) && typeof manifest.cardLine.text === 'string' && BLANK_TEXT.test(manifest.cardLine.text)) add('text_blank', '卡片试听那一句是空的（只有空白或看不见的字符）：要有看得见的字', { pointer: '/cardLine/text' });
   // 设计来源里的试听台词同一条规则：试听用的原文，一项只有空白和看不见的字符，等于没写。（空串、太长、不是字符串、项数超了，由 schema 管）
   (manifest.designSource?.auditionLines ?? []).forEach((line, i) => {
     if (BLANK_TEXT.test(line)) add('text_blank', `设计来源的试听台词第 ${i + 1} 项是空的（只有空白或看不见的字符）：每项试听台词都要有看得见的字`, { pointer: `/designSource/auditionLines/${i}` });
@@ -245,7 +341,7 @@ export function validateManifest(value, options = {}) {
     // 别的主版本的字段不一定还是这个样子，不去猜，也不报它的字段问题
     return { ok: false, problems: [problem('protocol_unsupported', `清单按协议 ${protocol} 写，这一版库只认主版本 ${READABLE_PROTOCOLS_TEXT}`, { protocol, supported: READABLE_PROTOCOLS_TEXT })] };
   }
-  const result = validateSchema(MANIFEST_SCHEMA, value, { maxProblems: MAX_SCHEMA_PROBLEMS });
+  const result = validateSchema(hasLegacySegments(value) ? LEGACY_SEGMENT_SCHEMA : MANIFEST_SCHEMA, value, { maxProblems: MAX_SCHEMA_PROBLEMS });
   const problems = result.problems.map((p) => problem('manifest_invalid', `清单 ${p.pointer || '/'}：${p.message}`, { pointer: p.pointer, keyword: p.keyword }));
   if (result.truncated) problems.push(problem('manifest_invalid', `清单的问题太多，只列出前 ${MAX_SCHEMA_PROBLEMS} 条`, { reason: 'truncated' }));
   if (problems.length === 0 && options.schemaOnly !== true) problems.push(...semanticProblems(value));

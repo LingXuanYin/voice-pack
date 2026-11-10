@@ -28,7 +28,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from './errors.mjs';
-import { assertDraftManifest } from './manifest.mjs';
+import { assertDraftManifest, languageKey, referenceTagsByLanguage, segmentLanguage } from './manifest.mjs';
 
 /** frontmatter 里允许的字段。 */
 export const SKILL_FIELDS = Object.freeze(['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools']);
@@ -406,20 +406,27 @@ const plural = (count, word) => `${count} ${count === 1 ? word : `${word}s`}`;
 /** 放进 Markdown 正文的作者文字：折成一行，转义会被当成 Markdown 记号的字符（名字里写 [x](u) 不能变成链接）。 */
 const md = (text) => wellFormed(text).replace(/\s+/g, ' ').trim().replace(/[\\`*_{}[\]<>#|~!]/g, '\\$&');
 
-/** 参考集里某个标签（language、emotion、style……）出现过的取值，去重、排好序；没有标注就是空数组。 */
-const tagValues = (manifest, key) => [...new Set(manifest.reference.segments.map((segment) => segment.tags[key]).filter((value) => typeof value === 'string' && value !== ''))].sort();
+/** 换参考用的配音选项：骨架里唯一写出来的基础部分选项（为什么破例见 playSteps 的注释和 FORMAT.md 第 5 节）。 */
+const REFERENCE_TAG_FLAG = '--reference-tag';
 
 /**
- * 「能拿来做什么」里的步骤：放进环境、配音、（这个包有的话）增强件、脚本、变声。
+ * 「能拿来做什么」里的步骤：放进环境、配音、写台本（提示怎么写指到基础部分的 references/dub.md），参考段带音色基底标签的再加标签那一条，（这个包有的话）增强件、脚本、变声。
  * 命令、选项和报告怎么读，只在基础部分的 SKILL.md「用音色包配音和变声」一节写一份（正本在那里），这里不写命令和选项，只指到那一节：
  * 命令行是基础部分的，它一改选项，写在协议核心里的用法就错了，协议核心还得跟着发版本。
+ * 只有一个破例：音色基底标签那一条写配音的 --reference-tag（REFERENCE_TAG_FLAG）。骨架按语言列出这个包的标签，读骨架的 agent 得知道拿标签做什么：
+ * 换参考就用这个选项，台本里的提示不换参考。只指到基础部分的 SKILL.md 说不清这一点，它就会以为写个提示就换了参考（3.0 以前的骨架就是这么教的）。
+ * 这个选项和音色基底标签一起出现在协议 3.0，基础部分要改它就得跟着改这里（FORMAT.md 第 5 节「骨架里不写基础部分命令行的命令和选项」）。
  * 这里只写和这个包有关的几条；没有增强件、没有脚本、没有变声功能的包，就不提它们。
  */
 function playSteps(manifest, t) {
-  const labels = [['语言', 'language'], ['情绪', 'emotion'], ['风格', 'style']]
-    .map(([title, key]) => [t(title, key), tagValues(manifest, key)])
-    .filter(([, values]) => values.length > 0)
-    .map(([title, values]) => t(`${title} ${values.map(md).join('、')}`, `${title}: ${values.map(md).join(', ')}`));
+  // 音色基底标签按语言列（归法、次序同清单检查的 reference_tag_unknown：manifest.mjs 的 referenceTagsByLanguage）；老写法的段（协议 1.x、2.x）没有标签，不列这一条
+  const tagGroups = referenceTagsByLanguage(manifest.reference.segments)
+    .map(({ language, tags }) => t(`${md(language)}：${tags.map(md).join('、')}`, `${md(language)}: ${tags.map(md).join(', ')}`));
+  // 不点名标签时用哪段，照配音的次序：设定写的默认参考（清单 setups 的 referenceTag），再是这句语言的默认段。包里没有设定写了 referenceTag，就只说默认段
+  const setupReference = (manifest.setups ?? []).some((setup) => typeof setup?.referenceTag === 'string');
+  const unnamed = setupReference
+    ? ['不点名时，先用选中的那套设定写的默认参考（清单 setups 的 referenceTag），没写的再用这句语言的默认段', "without one, a line uses the default reference written in the chosen setup (referenceTag in the manifest's setups), and failing that the default segment of its language"]
+    : ['不点名时用这句语言的默认段', 'without one, a line uses the default segment of its language'];
   const steps = [
     t(
       `**放进环境**：整个包目录（目录名是包 ID ${code(manifest.id)}）放进项目的 ${code('.agents/skills/')}（Codex、Gemini CLI、Cursor、OpenCode 等读这里），再复制一份到 ${code('.claude/skills/')}（Claude Code 读这里）。基础部分有一个命令把这两步一起做，而且先检查（包括官方签名）再放。`,
@@ -430,13 +437,15 @@ function playSteps(manifest, t) {
       `**Dub**: use the base part's dub command on a dubbing script; the pack is this directory. To use a model, connect an adapter first (an official one by name, your own by module file): see the section "接自己的模型" (connecting your own model) of the base part's SKILL.md. Before a real dub, rehearse it: it shows which reference segment each line will pick and what the pronunciation lexicon changes, and it synthesizes nothing and costs nothing.`,
     ),
     t(
-      `**写台本**：照最后一节「配音指引」写，指引里的语气、节奏、口头禅落在台本上；情绪和风格用括号提示，例如 ${code('（耳语）')}、${code('（生气）')}，会挑到参考集里对得上的那一段，没有对得上的用默认参考。`,
-      `**Write the dubbing script**: follow the last section, the voice guidance, so that its tone, pace and verbal habits show in the script. Mark emotion and style with a bracketed stage direction, for example ${code('(whisper)')} or ${code('(angry)')}: the line then uses the matching segment of the reference set, or the default reference when none matches.`,
+      `**写台本**：照最后一节「配音指引」写，指引里的语气、节奏、口头禅落在台本上；情绪和风格写成方括号的提示，放在它管的字前面，例如 ${code('[耳语]')}、${code('[生气]')}。提示怎么写、模型认哪种写法，由运行环境定，见基础部分 ${code('references/dub.md')} 的「一句话是怎么变成合成的」第 2 步。`,
+      `**Write the dubbing script**: follow the last section, the voice guidance, so that its tone, pace and verbal habits show in the script. Mark emotion and style with a cue in square brackets before the words it applies to, for example ${code('[whispering]')} or ${code('[angry]')}. How cues are written, and which forms the model understands, depends on the environment: see the base part's ${code('references/dub.md')}, step 2 of how a line becomes a synthesis request.`,
     ),
-    t(
-      `**参考集里有的标签**：${labels.length > 0 ? labels.join('；') : '没有标注语言、情绪、风格'}。括号提示和这些标签对得上才会换参考（近义词也认）。`,
-      `**Labels in the reference set**: ${labels.length > 0 ? labels.join('; ') : 'no language, emotion or style is labeled'}. A stage direction switches the reference only when it matches one of these labels (synonyms count too).`,
-    ),
+    ...(tagGroups.length > 0
+      ? [t(
+        `**参考集里的音色基底标签**：${tagGroups.join('；')}。每段参考一个标签，只用来在这几段之间切换；${unnamed[0]}。换参考用配音命令的 ${code(REFERENCE_TAG_FLAG)}，后面跟标签；台本里的提示（方括号的、括号的舞台说明）不换参考。`,
+        `**Reference tags in the reference set**: ${tagGroups.join('; ')}. Each reference segment has one tag, used only to switch between these segments; ${unnamed[1]}. Switch the reference with the dub command's ${code(REFERENCE_TAG_FLAG)} followed by the tag; the hints in the script (in square brackets, or stage directions in parentheses) do not switch it.`,
+      )]
+      : []),
   ];
   const enhancers = manifest.enhancers ?? [];
   if (enhancers.length > 0) {
@@ -537,26 +546,28 @@ function completeSteps(manifest, t) {
  * 流程、每个字段怎么写、查重比什么的正本是 protocol/new-pack/README.md，查重的规则和阈值的正本是基础部分的 lib/duplicate-check.mjs，这里只写 agent 要照着做的，不重抄。
  * 这一节要堵的是「读过来源包的 agent 自己去写新包」：它读到的会漏进新写的文字里，所以第 2 步明说当前这个 agent 不写，要交给一个看不到来源包的新会话或子 agent；
  * 这个环境里装着的 skill，说明文字（里面有音色描述）会自动载入会话，所以还要说新会话得开在读不到这个包的地方。查重是最后一道关，不是净室的替代。
+ * 第 3 步设计的声音，试听文本和照试听配的那段话也不由当前这个 agent 写，从写作会话写的示例台词里取：试听文本原样记进设计来源的 auditionLines，
+ * 查重现在不比这一项（基础部分的 lib/duplicate-check.mjs 文件头「不比的」），照抄的来源包台词只能靠这一步拦（同基础部分的 references/clean-room.md 第 3 步）。
  */
 function makeSteps(t) {
   return [
     t('做新包分四步，次序不能换：', 'Making a new pack takes four steps, and the order must not change:'),
     '',
     t(
-      '1. **先生成净室输入**（这一步不读这个包的角色内容）：用基础部分的净室命令，把设计词表里的标签、场景词表里的场景和使用者自己的话放进一个新目录。使用者的话原样放进去：不改写，也不把这个包里的描述、指引、台词贴进去。净室输入目录建在本目录外面。',
-      '1. **First generate the clean-room input** (this step does not read the role content of this pack): use the base part\'s clean-room command to put the labels from the design vocabulary, the scenes from the scene vocabulary and the user\'s own words into a new directory. Put the user\'s words in as they are: do not rewrite them, and do not paste the description, guidance or lines of this pack into it. Create the clean-room input directory outside this directory.',
+      '1. **先生成净室输入**（这一步不读这个包的角色内容）：用基础部分的净室命令，把设计词表里的标签和使用者自己的话放进一个新目录。使用者的话原样放进去：不改写，也不把这个包里的描述、指引、台词贴进去。净室输入目录建在本目录外面。',
+      '1. **First generate the clean-room input** (this step does not read the role content of this pack): use the base part\'s clean-room command to put the labels from the design vocabulary and the user\'s own words into a new directory. Put the user\'s words in as they are: do not rewrite them, and do not paste the description, guidance or lines of this pack into it. Create the clean-room input directory outside this directory.',
     ),
     t(
-      `2. **把净室输入目录交给一个新会话或子 agent，由它写新包的文字内容**：只给它净室输入目录，它照里面的 ${code('BRIEF.md')} 把描述、配音指引、示例台词写进 ${code('output/')}。**当前这个 agent 不写**：你读过这个包（它的清单、指引、台词），读到的会漏进新写的文字里。新会话要开在读不到这个包的地方：这个包装在 ${code('.agents/skills/')} 或 ${code('.claude/skills/')} 里（项目的，或用户级的）时，它的说明文字（里面有音色描述）会自动载入读到它的会话，那就不是净室，先告诉使用者，不要说成是净室做的。`,
-      `2. **Hand the clean-room input directory to a new session or a sub-agent, which writes the text of the new pack**: give it only the clean-room input directory; following the ${code('BRIEF.md')} in it, it writes the description, the voice guidance and the sample lines into ${code('output/')}. **The current agent does not write them**: you have read this pack (its manifest, guidance and lines), and what you read would leak into the new text. Open the new session where this pack cannot be read: when this pack is installed in ${code('.agents/skills/')} or ${code('.claude/skills/')} (the project's or the user's), its description text (which holds the voice description) is loaded automatically into any session that reads it, so that is not a clean room; tell the user first, and do not describe it as made in a clean room.`,
+      `2. **把净室输入目录交给一个新会话或子 agent，由它写新包的文字内容**（净室的意思：写新包文字的 agent 没见过来源包，也就是这个包，这样新包才是新的）：只给它净室输入目录，它照里面的 ${code('BRIEF.md')} 把描述、配音指引、示例台词和卡片试听那一句写进 ${code('output/')}。**当前这个 agent 不写**：你读过这个包（它的清单、指引、台词），读到的会漏进新写的文字里。你的环境能开子 agent 的，自己开一个，不用问使用者：只给它这个目录的路径和一句「读 ${code('BRIEF.md')}，照它写」，不把这个包的内容放进给它的话里。不能开的，告诉使用者：这一步要一个没看过这个包的新会话来写，新包才是新的；请新开一个会话或聊天窗口，工作目录设成净室输入目录（或者把这个目录传上去），第一句话发「读 ${code('BRIEF.md')}，照它写，写到 ${code('output/')}」，写完回来说一声。新会话和子 agent 都要开在读不到这个包的地方：这个包装在 ${code('.agents/skills/')} 或 ${code('.claude/skills/')} 里（项目的，或用户级的）时，它的说明文字（里面有音色描述）会自动载入读到它的会话，那就不是净室，先告诉使用者，不要说成是净室做的。`,
+      `2. **Hand the clean-room input directory to a new session or a sub-agent, which writes the text of the new pack** (a clean room means the agent writing the new text has never seen the source pack, which is this pack, so that the new pack really is new): give it only the clean-room input directory; following the ${code('BRIEF.md')} in it, it writes the description, the voice guidance, the sample lines and the card preview line into ${code('output/')}. **The current agent does not write them**: you have read this pack (its manifest, guidance and lines), and what you read would leak into the new text. If your environment can start a sub-agent, start one yourself without asking the user: give it only the path of this directory and one sentence, "Read ${code('BRIEF.md')} and do what it says", and put nothing from this pack into what you tell it. If it cannot, tell the user: this step needs a new session that has never seen this pack, so that the new pack really is new; please open a new session or chat window, set its working directory to the clean-room input directory (or upload that directory), send "Read ${code('BRIEF.md')}, follow it, and write into ${code('output/')}" as the first message, and come back when it is done. Open the new session or sub-agent where this pack cannot be read: when this pack is installed in ${code('.agents/skills/')} or ${code('.claude/skills/')} (the project's or the user's), its description text (which holds the voice description) is loaded automatically into any session that reads it, so that is not a clean room; tell the user first, and do not describe it as made in a clean room.`,
     ),
     t(
-      '3. **备素材**：使用者自己的录音，或者设计一个声音，不用这个包里的录音。设计的声音由你设计、试听锁定：设计描述从使用者的话写，不照这个包的音色描述写；三句情绪台词照第 2 步写出的配音指引里讲台词的那一节写；设计时用的描述、模型、日期和试听台词记下来，第 4 步交给做包命令（设计来源）。',
-      '3. **Prepare the material**: the user\'s own recordings, or design a voice; do not use the recordings in this pack. Design a designed voice and lock its audition yourself: write the design description from the user\'s words, not from this pack\'s voice description; write the three emotion lines from the lines section of the voice guidance written in step 2; keep the description, the model, the date and the audition lines used in the design, and give them to the make-pack command in step 4 (the design source).',
+      `3. **备素材**：使用者自己的录音，或者设计一个声音，不用这个包里的录音。设计的声音由你设计、试听锁定：设计描述从使用者的话写，不照这个包的音色描述写。试听文本你不另写：从第 2 步写进 ${code('output/')} 的示例台词里挑一两句，去掉方括号里的提示。试听只当原料，素材是照它配的一段带表演的话；这段话你也不另写：从同一批示例台词里挑几句连成。你读过这个包，自己写的试听文本和这段话都会带着它的痕迹。设计时用的描述、模型、日期和试听台词记下来，第 4 步交给做包命令（设计来源）。`,
+      `3. **Prepare the material**: the user's own recordings, or design a voice; do not use the recordings in this pack. Design a designed voice and lock its audition yourself: write the design description from the user's words, not from this pack's voice description. Do not write the audition text yourself: pick one or two of the sample lines written into ${code('output/')} in step 2, and drop the cues in square brackets. The audition is raw material only, and the material is an acted passage dubbed from it; do not write that passage yourself either: put it together from a few of the same sample lines. You have read this pack, and an audition text or a passage you write would carry its traces. Keep the description, the model, the date and the audition lines used in the design, and give them to the make-pack command in step 4 (the design source).`,
     ),
     t(
-      `4. **做包，同时查重**：用基础部分的做包命令，交给它素材和第 2 步写进 ${code('output/')} 的文件，并把这个包（本目录）交给它当来源包。来源包只在这一步读：在花钱的几步（转写、打标签、试合成）之前，把新包的文字和录音同它比一遍，重合太多报 ${code('duplicate_detected')}，说明是哪一项，改成自己的话或换掉录音再做。要转写、试合成，先接上适配器（见基础部分 SKILL.md 的「接自己的模型」一节）；设计出来的声音再交设计来源。`,
-      `4. **Make the pack, with the duplicate check**: use the base part's make-pack command; give it the material and the files written into ${code('output/')} in step 2, and give it this pack (this directory) as the source pack. The source pack is read in this step only: before the steps that cost money (transcription, labeling, trial synthesis), the text and recordings of the new pack are compared with it, and when they overlap too much it reports ${code('duplicate_detected')} and says which item; put that in your own words or replace the recordings, then make it again. For transcription and trial synthesis, connect an adapter first (see the section "接自己的模型" (connecting your own model) of the base part's SKILL.md); for a designed voice, also give the design source.`,
+      `4. **做包，同时查重**：用基础部分的做包命令，交给它素材和第 2 步写进 ${code('output/')} 的文件，并把这个包（本目录）交给它当来源包。来源包只在这一步读：在花钱的几步之前，把新包的文字和录音同它比一遍，重合太多报 ${code('duplicate_detected')}，说明是哪一项，改成自己的话或换掉录音再做。要转写、试合成，先接上适配器（见基础部分 SKILL.md 的「接自己的模型」一节）；设计出来的声音再交设计来源。`,
+      `4. **Make the pack, with the duplicate check**: use the base part's make-pack command; give it the material and the files written into ${code('output/')} in step 2, and give it this pack (this directory) as the source pack. The source pack is read in this step only: before the steps that cost money, the text and recordings of the new pack are compared with it, and when they overlap too much it reports ${code('duplicate_detected')} and says which item; put that in your own words or replace the recordings, then make it again. For transcription and trial synthesis, connect an adapter first (see the section "接自己的模型" (connecting your own model) of the base part's SKILL.md); for a designed voice, also give the design source.`,
     ),
     '',
     t(
@@ -607,6 +618,7 @@ export function extractGuidance(text) {
  * 各节写清楚：这是谁的声音，能拿来做什么，需要哪个版本的基础部分，没有时怎么补全，怎么做新包；正文是配音指引。
  * 「能拿来做什么」「没有时怎么补全」「怎么做新包」写的都是做实了的步骤（放进环境、配音，按这个包有什么再写增强件、脚本、变声；补全用 protocol/cli.mjs 的 complete 命令；
  * 做新包先生成净室输入、交给新会话去写、再做包并查重）。基础部分命令行的命令和选项不写在这里：只指到基础部分的 SKILL.md，用法只在那里写一份。
+ * 破例只有一个：音色基底标签那一条写配音换参考的选项（REFERENCE_TAG_FLAG），为什么见 playSteps 的注释。
  * 同样的输入生成同样的文字（LF 换行，末尾一个换行）。
  * 语言：options.textLanguage 是 'zh'（不给就是它）或 'en'，由调用方按作者的语言给（例如 app 给作者做包时用的界面语言），不给就是中文。
  * 两种语言的版面一样：同样的节、同样的步骤、同样的命令和文件名；只有标题和说明的语言不同，英文的 frontmatter 也只有英文。
@@ -634,7 +646,13 @@ export function buildRoleSkillMd(manifest, options = {}) {
   const features = Object.entries(manifest.features ?? {});
   const capabilities = [...new Set(features.flatMap(([, feature]) => feature.capabilities))];
   const direction = manifest.direction ?? {};
-  const languages = [...new Set(manifest.reference.segments.map((s) => s.tags.language))].sort();
+  // 参考集的语言：按 languageKey 归在一起（zh-CN、zh-cn 是一种），写这种语言在参考集里第一次出现的写法（同 referenceTagsByLanguage），按写法排
+  const byLanguage = new Map();
+  for (const tag of manifest.reference.segments.map(segmentLanguage)) {
+    const key = tag === undefined ? undefined : languageKey(tag);
+    if (!byLanguage.has(key)) byLanguage.set(key, tag);
+  }
+  const languages = [...byLanguage.values()].sort();
 
   // frontmatter 的 description：中文骨架是中文一段加英文一段（agent 按它匹配任务，两种语言的请求都要匹得上）；英文骨架只有英文，一段。
   // 作者的音色描述放不下时先截它（room 是别的部分用完以后剩下的字数）。
@@ -664,20 +682,22 @@ export function buildRoleSkillMd(manifest, options = {}) {
   );
 
   const segmentCount = manifest.reference.segments.length;
+  // 别的语言各自的默认段（FORMAT.md 4.4「默认段」）：清单写了 languageDefaults 才接在默认参考段后面，没写的包这一行和以前一字不差
+  const otherDefaults = (manifest.reference.languageDefaults ?? []).map((id) => `${segmentLanguage(manifest.reference.segments.find((s) => s.id === id)) ?? '?'} ${code(id)}`);
+  const otherDefaultsNote = otherDefaults.length === 0 ? ['', ''] : [`；别的语言的默认段：${otherDefaults.join('、')}`, `; other languages' default segments: ${otherDefaults.join(', ')}`];
   const sampleLineCount = manifest.sampleLines?.length ?? 0;
   const who = [
     t(`- 名字：${md(name)}`, `- Name: ${md(name)}`),
     t(
-      `- 包 ID：${code(manifest.id)}（目录名、SKILL.md 的 name、清单的 id 三处一致，以后不改）`,
-      `- Pack ID: ${code(manifest.id)} (the same in the directory name, the name in SKILL.md and the id in the manifest; it never changes)`,
+      `- 包 ID：${code(manifest.id)}（SKILL.md 的 name、清单的 id 都是它，放进环境时目录名也是它，以后不改；要交出去、传给别人的，把目录改成它）`,
+      `- Pack ID: ${code(manifest.id)} (the name in SKILL.md and the id in the manifest are this, and so is the directory name once installed; it never changes; rename the directory to it before you hand the pack to anyone)`,
     ),
     t(`- 版本：${manifest.version}`, `- Version: ${manifest.version}`),
     ...(direction.description ? [t(`- 音色：${md(direction.description)}`, `- Voice: ${md(direction.description)}`)] : []),
     ...(direction.tags?.length ? [t(`- 音色标签：${direction.tags.map(md).join('、')}`, `- Voice tags: ${direction.tags.map(md).join(', ')}`)] : []),
-    ...(direction.scenes?.length ? [t(`- 适合的场景：${direction.scenes.map(md).join('、')}`, `- Suitable scenes: ${direction.scenes.map(md).join(', ')}`)] : []),
     t(
-      `- 参考集：${segmentCount} 段，语言 ${languages.join('、')}；默认参考段 ${code(manifest.reference.defaultSegment)}`,
-      `- Reference set: ${plural(segmentCount, 'segment')}, ${languages.length === 1 ? 'language' : 'languages'} ${languages.join(', ')}; default reference segment ${code(manifest.reference.defaultSegment)}`,
+      `- 参考集：${segmentCount} 段，语言 ${languages.join('、')}；默认参考段 ${code(manifest.reference.defaultSegment)}${otherDefaultsNote[0]}`,
+      `- Reference set: ${plural(segmentCount, 'segment')}, ${languages.length === 1 ? 'language' : 'languages'} ${languages.join(', ')}; default reference segment ${code(manifest.reference.defaultSegment)}${otherDefaultsNote[1]}`,
     ),
     // 示例台词只写有几句、在哪里：台词在清单里写全一处，这里不抄（改了清单，SKILL.md 不用跟着改）
     ...(sampleLineCount > 0 ? [t(`- 示例台词：${sampleLineCount} 句，在清单的 ${code('sampleLines')} 里`, `- Sample lines: ${plural(sampleLineCount, 'line')}, in ${code('sampleLines')} of the manifest`)] : []),
@@ -692,7 +712,7 @@ export function buildRoleSkillMd(manifest, options = {}) {
 
   // 英文骨架里讲「配音指引」一节是什么的一段。中文骨架用不着它：那一节的标题就是中文，下面还有一段提示。
   // 它必须写在标记行的上面：标记行下面的全部内容都会被当成指引读回去。里面提到标记行，是写成行内代码，不独占一行（独占一行就成了第二个标记行）。
-  const guidanceNote = `After this comes the last section, the voice guidance. Its heading line ${code(GUIDANCE_HEADING)} is the marker the base part finds the guidance by: it is the same in every language and is never translated, so keep it exactly as it is. Everything below that line, to the end of the file, is the author's voice guidance, which an agent follows when it dubs; it holds only the intent, the effect wanted (tone, pace, emotion, verbal habits, suitable scenes), not the instruction syntax of a particular model. If nothing follows the marker line, the author has not written any voice guidance yet.`;
+  const guidanceNote = `After this comes the last section, the voice guidance. Its heading line ${code(GUIDANCE_HEADING)} is the marker the base part finds the guidance by: it is the same in every language and is never translated, so keep it exactly as it is. Everything below that line, to the end of the file, is the author's voice guidance, which an agent follows when it dubs; it holds only the intent, the effect wanted (tone, pace, emotion, verbal habits, how the voice fits itself to a scene), not the instruction syntax of a particular model. If nothing follows the marker line, the author has not written any voice guidance yet.`;
 
   const body = [
     `# ${md(name)}`,
