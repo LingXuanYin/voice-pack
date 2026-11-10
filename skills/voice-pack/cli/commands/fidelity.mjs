@@ -2,6 +2,8 @@
 //
 // fidelity 命令：读一份评测集（JSON，里面是真人录音和用这个包合成出来的录音），量还原度，输出报告。
 // 流程层量还原度的入口是 lib/fidelity.mjs 的 measureFidelity；这个命令只管读文件、组装运行环境、把报告写出来。
+//   @capability voice-cloning  评测集里没给 generated 的留出录音，在这里现场合成一条（synthesizeMissing）：念留出录音的 text，参考是它的 reference 指的那段（省略用第一段），
+//                              ref_text 交参考自己的 text，不给 seed，不经过配音（lib/dub.mjs），暂时出错不重试。说话人相似度、盲听由 lib/fidelity.mjs 调，见那里的 @capability
 //
 //   node cli.mjs fidelity <评测集.json> [--adapter <名字|模块文件>]... [--adapter-option <键=值>]... [--seed <整数>] [--max-error-rate <数>]
 //                                       [--redo <上一次的报告.json>] [--save-report <文件>] [--json]

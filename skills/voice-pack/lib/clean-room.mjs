@@ -14,9 +14,8 @@
 //                    new-pack/README.md、brief.md      抽象规格、任务说明
 //                    new-pack/template/*               空白模板（direction.json、guidance.md、sample-lines.json、design-source.json 必须有，别的有就一起带上）
 //                    schema/manifest.schema.json       清单的 schema：从里面取和写文字有关的三个字段（direction、sampleLines、designSource）的格式，上限都在那里
-//   attributes     使用者想要的声音的属性，至少给 tags、scenes、words 里的一个：
+//   attributes     使用者想要的声音的属性，至少给 tags、words 里的一个：
 //                    tags?      设计词表里的标签（lib/design-vocab.mjs 认的写法，中文名和别名也认），换成规范写法交给做包 agent
-//                    scenes?    场景词表里的场景，同上
 //                    words?     使用者自己的话（至少一个字符，最长 MAX_WORDS 个），原样交给做包 agent：不改写，不补充，不删减（前后的空白也不动）
 //                    language?  语言标签（zh、en、zh-CN……）
 //                    designed?  true：这个声音是设计出来的。它只记在属性里，写作 agent 不因此写设计来源；设计来源由调用方给（见 protocol/new-pack/README.md「设计来源」）；默认 false
@@ -26,7 +25,7 @@
 //
 //   files        一个目录的内容 Map<路径, Uint8Array>，只有这几样（命令行层把它写成目录，交给新开的会话或子 agent）：
 //                  BRIEF.md              任务说明（new-pack/brief.md 原样）
-//                  attributes.json       属性：{ tags?, scenes?, language?, designed, words? }
+//                  attributes.json       属性：{ tags?, language?, designed, words? }
 //                  spec/README.md        抽象规格（new-pack/README.md 原样）
 //                  spec/fields.json      三个字段的格式：清单 schema 里 direction、sampleLines、designSource 的定义，引用的小定义（label、slug、longText……）展开写进去
 //                  template/<文件>       空白模板（new-pack/template/ 里的每个文件原样）
@@ -48,7 +47,7 @@ import { isLanguageTag, MAX_LANGUAGE_TAG } from './language-tag.mjs';
 /** 使用者的话的字符数上限：和清单 schema 里 longText 的一样（lib/manifest-limits.mjs），不另定一个数。 */
 export const MAX_WORDS = LONG_TEXT_MAX;
 
-const KEYS = ['tags', 'scenes', 'words', 'language', 'designed'];
+const KEYS = ['tags', 'words', 'language', 'designed'];
 const TEMPLATE_DIRECTORY = 'new-pack/template/';
 const REQUIRED_TEMPLATES = ['direction.json', 'guidance.md', 'sample-lines.json', 'design-source.json'];
 /** 净室输入里的路径 <- 协议核心里的路径。 */
@@ -69,19 +68,15 @@ function invalid(problems) {
 
 /** 属性检查并整理成要写进 attributes.json 的样子。 */
 function normalizeAttributes(attributes) {
-  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: '必须是对象 { tags?, scenes?, words?, language?, designed? }' }]);
+  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: '必须是对象 { tags?, words?, language?, designed? }' }]);
   const problems = [];
   for (const key of Object.keys(attributes)) if (!KEYS.includes(key)) problems.push({ field: `attributes.${key}`, problem: `不认识的键（只有 ${KEYS.join('、')}）` });
 
   const out = {};
-  const direction = {};
-  if (attributes.tags !== undefined) direction.tags = attributes.tags;
-  if (attributes.scenes !== undefined) direction.scenes = attributes.scenes;
-  if (Object.keys(direction).length > 0) {
-    const result = normalizeDirection(direction);
+  if (attributes.tags !== undefined) {
+    const result = normalizeDirection({ tags: attributes.tags });
     for (const problem of result.problems) problems.push({ field: `attributes.${problem.field}`, problem: problem.message });
     if (result.direction?.tags !== undefined && result.direction.tags.length > 0) out.tags = result.direction.tags;
-    if (result.direction?.scenes !== undefined && result.direction.scenes.length > 0) out.scenes = result.direction.scenes;
   }
   if (attributes.language !== undefined) {
     if (!isLanguageTag(attributes.language)) problems.push({ field: 'attributes.language', problem: `必须是语言标签，例如 zh、en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）` });
@@ -93,8 +88,8 @@ function normalizeAttributes(attributes) {
     if (typeof attributes.words !== 'string' || attributes.words.trim() === '' || [...attributes.words].length > MAX_WORDS) problems.push({ field: 'attributes.words', problem: `必须是 1–${MAX_WORDS} 个字符的一段话（不能只有空白）` });
     else out.words = attributes.words;
   }
-  if (problems.length === 0 && out.tags === undefined && out.scenes === undefined && out.words === undefined) {
-    problems.push({ field: 'attributes', problem: '至少给 tags、scenes、words 里的一个：什么属性都没有，做包 agent 没有东西可写' });
+  if (problems.length === 0 && out.tags === undefined && out.words === undefined) {
+    problems.push({ field: 'attributes', problem: '至少给 tags、words 里的一个：什么属性都没有，做包 agent 没有东西可写' });
   }
   if (problems.length > 0) throw invalid(problems);
   return out;
@@ -141,7 +136,7 @@ function fieldFormats(protocolCore) {
 
 /**
  * 组装净室输入。规则见文件头。
- * @param {{ protocolCore: Map<string, Uint8Array>, attributes: { tags?: string[], scenes?: string[], words?: string, language?: string, designed?: boolean } }} input
+ * @param {{ protocolCore: Map<string, Uint8Array>, attributes: { tags?: string[], words?: string, language?: string, designed?: boolean } }} input
  * @returns {{ files: Map<string, Uint8Array>, attributes: object }}
  * @throws {VoicePackError} clean_room_input_invalid、clean_room_protocol_incomplete
  */
