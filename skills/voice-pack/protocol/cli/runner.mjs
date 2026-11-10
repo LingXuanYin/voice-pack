@@ -11,6 +11,7 @@
 //
 //   export const summary = '一行说明（help 里显示）';   // 必填
 //   export const usage = 'check <路径> [--json]';         // 可选，<命令> --help 和 help <命令> 里显示
+//   export const help = '几行说明';                       // 可选，<命令> --help 和 help <命令> 里接在 summary 后面：用法里看不出来的要紧的事（选项能给几次、细则在哪）
 //   export async function run(args, ctx) { ... return 0; } // 必填；args 是命令名之后的参数
 //
 //   run 的返回值是退出码（0–255 的整数；不返回就是 0）。抛出 VoicePackError，这里统一报告 code 并退出 1；
@@ -119,7 +120,7 @@ async function helpOverview({ commands, programName, stdout }) {
 }
 
 function helpCommand({ name, mod, programName, stdout }) {
-  stdout([`用法：${programName} ${mod.usage ?? `${name} [参数...]`}`, mod.summary ?? '', ''].join(NL));
+  stdout([`用法：${programName} ${mod.usage ?? `${name} [参数...]`}`, mod.summary ?? '', ...(typeof mod.help === 'string' ? ['', mod.help] : []), ''].join(NL));
 }
 
 function normalizeExit(code) {

@@ -3,10 +3,9 @@
 // 试合成和还原度（流程层）：用做出来的包，把每条留出录音的文本合成一遍，再量还原度，写进验证记录。
 // 量还原度的规则和读法，正本是 lib/fidelity.mjs 的文件头；合成走配音的流程（lib/dub.mjs）。
 //   @capability voice-cloning         试合成留出录音；缺了不能试合成，所以不量还原度
-//   @capability style-instruction     可选：环境声明有它，试合成才把配音指引通过 instructions 传给模型（lib/dub.mjs）；没有不是错误
-//   @capability speaker-verification  说话人相似度、真人基线（lib/fidelity.mjs）；缺了说话人相似度量不了（盲听照做）
+//   @capability speaker-verification  说话人相似度、真人基线（lib/fidelity.mjs）；缺了说话人相似度量不了（盲听照做）。试合成那一遍不给配音用（envForPackDub），配音不另量每段的相似度（lib/dub.mjs 第 9 步）
 //   @capability audio-text-to-text    盲听（lib/fidelity.mjs）；缺了盲听量不了
-// 试合成不用 text-generation：envForTrial 把它去掉，理由和核对见它的说明。
+// 试合成不调 text-generation：配音的流程不判情绪（lib/reference-pick.mjs），所以做包的费用清单里也没有它。
 //
 //   evaluatePack(env, made, byId, { enabled, concurrency, maxErrorRate, random, externals, minChars })
 //        made 是 packRolePart 做出来的包，byId 是 Map<段名, 条目>，externals 是外部资源 [{ path, url, data }]（读外部资源时不联网，用手上的字节）。
@@ -14,8 +13,10 @@
 //        返回 { trial, fidelity, evaluation, redo }：
 //          trial       steps.trial：{ status: 'done', capability, synthesized, failed, retried, models, items } 或 { status: 'skipped', reason, ... }。
 //                      synthesized 是合成出来的条数（作废的也算在内）；retried 是暂时出错多合成了几次；
-//                      items 每条留出录音一项：{ id, status: 'ok' | 'failed' | 'skipped', pick, model?, error?, check? }。
-//                      status 是 'failed' 的是没合成出来的：暂时出错、试满次数还没合成出来的，和文字被拒的（details.textRejected，例如内容审核拒了这一句，lib/dub.mjs；不重试），都在 trial.failed 里（服务商拒了 3 句、还没有一句成功的例外，dub 停下，见下面「抛出的错误」）；'skipped' 的是文字比字数下限短的：
+//                      items 每条留出录音一项：{ id, status: 'ok' | 'failed' | 'skipped', pick, model?, error?, check? }，pick 是 { segmentId, by }（用的哪一段参考、为什么，同 dub 的 pick）。
+//                      status 是 'failed' 的是没合成出来的：暂时出错、试满次数还没合成出来的，文字被拒的（details.textRejected，例如内容审核拒了这一句，lib/dub.mjs；不重试），
+//                      和没取回的（details.unretrieved：合成那头做完了、计过费，只是结果没取回来，lib/dub.mjs；不再调、不再计费，怎么手动取回在 error.details.retrieve；
+//                      再做一次包会把它重新合成、再计一次费），都在 trial.failed 里（服务商拒了 3 句、还没有一句成功的例外，dub 停下，见下面「抛出的错误」）；'skipped' 的是文字比字数下限短的：
 //                      reason 是 'too_short'，chars 是它的字数，min 是下限，没有合成，不进比值，不算费用（和暂时出错、作废分开报）。
 //                      这一条的 pick 照常有（挑它的参考的理由，report 里还用它）。check 是合成出来的那一句的检查（checkSynthesized）：
 //                      checked（量了，正常）、voided（作废，codes 写明为什么，带量到的静音占比和时长）、unchecked（没查到，reason 写明为什么，照旧量）
@@ -23,7 +24,7 @@
 //          fidelity    还原度报告（lib/fidelity.mjs 的 measureFidelity），或 { status: 'skipped', reason }（一条都没合成出来：no_generated；合成出来的都作废了：generated_voided）
 //          evaluation  量还原度用的那批数据（参考、留出录音、合成出来的录音），补做「没听成」的盲听时要用；没量就是 null
 //          redo        有「没听成」时，补做要调几次（lib/fidelity.mjs 的 planRedo）；没有是 null
-//        合成暂时出错的，每条留出录音最多试 3 次（lib/call-attempts.mjs，envForTrial）；试满了还是出错的记在 trial.failed 里，不进评测。
+//        合成暂时出错的，每条留出录音最多试 3 次（lib/call-attempts.mjs，envForPackDub）；试满了还是出错的记在 trial.failed 里，不进评测。
 //        作废的（check.status 是 voided）也不进评测；没查到的照旧量。
 //   verificationOf(fidelity, { environment, models, now })
 //        写进清单的那一条验证记录（协议的写法，protocol/FORMAT.md「角色部分的清单」）：在哪个环境、用哪个模型、哪天测的、还原度比值、量还原度的两种办法各用的哪个模型。
@@ -32,7 +33,7 @@
 // 抛出的错误：
 //   make_pack_trial_mismatch  试合成规划出的段数和留出录音的条数不一样（配音把某条留出录音的文本切成了几段，或者合并了），没法把合成的音频和留出录音一条对一条地比：
 //                             做包停下来，不拿对不上的东西去量还原度。details: { holdouts, units }
-//   配音、还原度的错误（lib/dub.mjs、lib/fidelity.mjs 的文件头）原样往上抛；暂时出错、文字被拒的那一条记在 trial.failed 里，不抛。
+//   配音、还原度的错误（lib/dub.mjs、lib/fidelity.mjs 的文件头）原样往上抛；暂时出错、文字被拒、没取回的那一条记在 trial.failed 里，不抛。
 //   还没有一句成功、已经有 3 句被服务商拒了（dub_text_rejected，lib/dub.mjs「一段失败了怎么办」）也原样往上抛，做包停下来（可能是参考或别的输入被拦了，那一句的文字不一定有问题）
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -50,10 +51,10 @@ const clipOf = (item) => ({ bytes: item.audio.bytes, mimeType: MIME_OF_FORMAT[it
 const skipped = (reason, extra = {}) => ({ trial: { status: 'skipped', reason, ...extra }, fidelity: { status: 'skipped', reason: extra.capability === undefined && extra.runtime === undefined ? reason : 'no_trial' }, evaluation: null, redo: null });
 
 /**
- * 试合成读包的时候用的环境：外部资源的字节这里已经有了（作者可能还没把音频传到清单里那个网址），读外部资源就直接给这些字节，不联网。
+ * 做包里读刚做好的包（试合成、配卡片试听那一句，lib/make-pack-card-line.mjs）时用的环境：外部资源的字节这里已经有了（作者可能还没把音频传到清单里那个网址），读外部资源就直接给这些字节，不联网。
  * 做法同 protocol/lib/pack.mjs 做包时的自检（那里的 stubFetch）：对得上网址的给字节，别的 404。
  */
-function envWithExternals(env, externals) {
+export function envWithExternals(env, externals) {
   if (externals.length === 0) return env;
   const byUrl = new Map(externals.map((entry) => [entry.url, entry.data]));
   const fetch = async (url) => {
@@ -115,15 +116,13 @@ async function checkSynthesized(env, clip, holdoutSec) {
 }
 
 /**
- * 试合成配音时用的环境：去掉 text-generation。挑参考的那个函数（lib/reference-pick.mjs）遇到没有「怎么说」标签、参考集又各不相同的台词，环境有 text-generation 就会拿去让模型判断，
- * 那是一次收费的调用，plan.calls 里没有它，用户确认费用时看不到；app 挑参考时本来就不给，试合成量的是 app 里会得到的，所以也不给：
- * 没标签的留出录音落到默认参考。
- *
- * 合成的调用包一层：暂时出错的就按 lib/call-attempts.mjs 的规则再来，每条留出录音最多 3 次。dub 每条只调一次合成，
- * 所以 tries 里每一项是一条留出录音用了几次；试满了还是暂时出错的那一条，错误带上次数原样交回去（spent），dub 把它记成 failed。
+ * 做包里用刚做好的包配音（试合成、配卡片试听那一句，lib/make-pack-card-line.mjs）时用的环境：把合成的调用包一层，暂时出错的就按 lib/call-attempts.mjs 的规则再来，
+ * 每一段最多 3 次。dub 每段只调一次合成，所以 tries 里每一项是一段用了几次；试满了还是暂时出错的那一段，错误带上次数原样交回去（spent），dub 把它记成 failed。
  */
-function envForTrial(env, { wait, tries }) {
-  const { 'text-generation': _judge, ...capabilities } = env.capabilities;
+export function envForPackDub(env, { wait, tries }) {
+  const capabilities = { ...env.capabilities };
+  // 不让配音自己量说话人相似度（lib/dub.mjs 第 9 步）：还原度另外量（measureFidelity 用的是原来的 env），配音再量一遍是多出来的调用，费用估算里也没有
+  delete capabilities['speaker-verification'];
   const clone = requireCapability(env, 'voice-cloning');
   capabilities['voice-cloning'] = async (call) => {
     const outcome = await callWithRetries(() => clone(call), { wait });
@@ -134,10 +133,14 @@ function envForTrial(env, { wait, tries }) {
   return { ...env, capabilities };
 }
 
+/** 试合成给每条留出录音的标签：只有它的语言（拿它挑这种语言的默认段）。 */
+const languageOnly = (entry) => (typeof entry.language === 'string' ? { language: entry.language } : {});
+
 /**
- * 试合成加量还原度。用做出来的包，把每条留出录音的文本合成一遍（走配音的流程：按这条留出录音的标签挑参考，配音指引、读音词表照常用），
+ * 试合成加量还原度。用做出来的包，把每条留出录音的文本合成一遍（走配音的流程：在这条留出录音的语言里用默认段当参考，读音词表照常用；包里的设定不用，
+ * 设定的默认参考（referenceTag）也不用，还原度量的是默认段；请求开头不加提示、合成以后不变速），
  * 再用 lib/fidelity.mjs 量。缺 voice-cloning 就不能试合成，评测也跳过；评测里缺的那一项（说话人验证、盲听）由 measureFidelity 报「量不了」。
- * 合成暂时出错的，每条留出录音照 lib/call-attempts.mjs 的规则最多试 3 次（envForTrial）；试满了还是出错的记在 trial.failed 里，不进评测；别的错误原样抛出。
+ * 合成暂时出错的，每条留出录音照 lib/call-attempts.mjs 的规则最多试 3 次（envForPackDub）；试满了还是出错的记在 trial.failed 里，不进评测；别的错误原样抛出。
  * 合成出来的每一句，量还原度之前先检查（checkSynthesized）：几乎全是静音、时长和同一句的留出录音差得离谱的作废，不进评测，报告里逐条写明；
  * 解不开的没查到，照旧量。全部作废，还原度跳过，原因 generated_voided（量不出来是因为这些录音都作废了，不写验证记录）。
  * 评测的 evaluation.holdouts 只有没作废的那几条。
@@ -153,8 +156,11 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   const tries = [];
   let dubbed;
   try {
-    // joinShort: false，每条留出录音一段：短的不并进邻居（并了就对不上留出录音），不够下限的记成 text_too_short，不合成
-    dubbed = await dubScript(envForTrial(env, { wait, tries }), pack, holdouts.map((entry) => ({ text: entry.text, labels: entry.tags })), { concurrency, minChars, joinShort: false });
+    // joinShort: false，每条留出录音一段：短的不并进邻居（并了就对不上留出录音），不够下限的记成 text_too_short，不合成。
+    // 量的是声音本身：只给留出录音的语言（挑这种语言的默认段）；setup: false，不用包里的设定（连同它的默认参考 referenceTag）。不然情绪、风格、能量会合成进请求开头的提示，
+    // 语速会在合成以后变速（lib/dub.mjs 文件头「设定」），换了参考量的就不是默认段，量出来的就不只是声音。
+    // allowCrossLanguage: true：参考集里没有留出录音那种语言的（这种语言的段都留出去了），照旧用主语言的默认段跨语言克隆、照样量（配音默认会停下，lib/dub.mjs 第 3a 步；这里是做包自己量，不是给人听的配音）；languageMarks: false：留出录音的文字是逐字稿，没有名字对，语言提示也不加
+    dubbed = await dubScript(envForPackDub(env, { wait, tries }), pack, holdouts.map((entry) => ({ text: entry.text, labels: languageOnly(entry) })), { concurrency, minChars, joinShort: false, setup: false, allowCrossLanguage: true, languageMarks: false });
   } catch (error) {
     if (isVoicePackError(error, 'runtime_missing')) return skipped('runtime_missing', { runtime: error.details.runtime });
     throw error;
@@ -168,7 +174,7 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
     checks.push(unit.status === 'ok' ? await checkSynthesized(env, unit.audio, holdoutSecondsOf(byId, holdouts[index].id)) : undefined);
   }
   const items = dubbed.units.map((unit, index) => {
-    const pick = { segmentId: unit.pick.segmentId, rule: unit.pick.rule, matched: unit.pick.matched, missed: unit.pick.missed };
+    const pick = { segmentId: unit.pick.segmentId, by: unit.pick.by }; // 用的哪一段、为什么（by 同 dub 的 pick.by：试合成不给标签、不用设定，都是 default）
     // 文字不够字数下限：没合成，不是暂时出错（那是 failed），原因和字数写明
     if (unit.status === 'failed' && unit.error?.code === TEXT_TOO_SHORT) return { id: holdouts[index].id, status: 'skipped', reason: 'too_short', chars: unit.error.details.chars, min: unit.error.details.min, pick };
     return {
@@ -193,8 +199,9 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
   // 进比值的：合成出来、又没有作废的（没查到的照旧进）
   const measuredAt = (index) => dubbed.units[index].status === 'ok' && checks[index].status !== 'voided';
   const evaluation = {
-    references: manifest.reference.segments.map((entry) => ({ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, ...(entry.synthetic === true ? { synthetic: true } : {}) })),
-    holdouts: holdouts.flatMap((entry, index) => (measuredAt(index) ? [{ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: entry.tags, generated: dubbed.units[index].audio }] : [])),
+    // 评测集的标签（lib/fidelity.mjs 按它分组）：参考写 { language, tag }，留出录音写 { language }（留出录音没有音色基底标签）
+    references: manifest.reference.segments.map((entry) => ({ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: { language: entry.language, tag: entry.tag }, ...(entry.synthetic === true ? { synthetic: true } : {}) })),
+    holdouts: holdouts.flatMap((entry, index) => (measuredAt(index) ? [{ id: entry.id, audio: clipOf(byId.get(entry.id)), text: entry.text, labels: { language: entry.language }, generated: dubbed.units[index].audio }] : [])),
   };
   if (evaluation.holdouts.length === 0) {
     // 合成出来的都作废了（每一条都被拦下）和一条都没合成出来，原因不一样：前者写「合成出来的录音都作废了」
