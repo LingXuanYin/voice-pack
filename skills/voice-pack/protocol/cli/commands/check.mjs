@@ -18,6 +18,9 @@
 //
 // 文字输出末尾，清单里有脚本没写 feature 时多一行提示，点名是哪几个：它们不属于任何功能，不会被自动运行（lib/pack-script.mjs 的文件头：设计如此）。
 // 这不是问题：不影响通过与否和退出码，--json 的报告也不变（提示不是库的检查报告里的东西）。
+// 文字输出末尾，角色部分的目录名不是包 ID 时也多一行提示（放进环境时目录名就是包 ID；交出去之前改成它）。同样不影响通过与否。
+import fs from 'node:fs';
+import path from 'node:path';
 import { readManifest, MANIFEST_FILE } from '../../lib/manifest.mjs';
 import { inspectTarget, checkSettings, CHECK_OPTIONS, CHECK_USAGE } from '../checking.mjs';
 import { parseOptions } from '../signing.mjs';
@@ -44,6 +47,16 @@ function scriptNotice(entries) {
   return `  提示：清单里有 ${entries.length} 个脚本没登记功能（没写 feature），不会被自动运行：${named}。脚本登记在某个功能名下，才会随那个功能运行；要让它们自动生效，在清单里给每个脚本写上 feature\n`;
 }
 
+/** 角色部分的目录名不是包 ID 时的一行提示（以换行结尾）；分享文件、别的部分、对得上的，是空串。 */
+function directoryNotice(target, files, cwd) {
+  const directory = path.resolve(cwd, target);
+  const bytes = files?.get(MANIFEST_FILE);
+  if (bytes === undefined || !fs.statSync(directory).isDirectory()) return '';
+  const { manifest } = readManifest(bytes);
+  if (manifest === null || manifest.part !== 'role' || path.basename(directory) === manifest.id) return '';
+  return `  提示：目录名 ${path.basename(directory)} 和包 ID ${manifest.id} 不一样。放进环境时目录名就是包 ID，要交出去、传给别人的，把目录改成它。\n`;
+}
+
 export async function run(args, ctx) {
   const options = parseOptions(args, CHECK_OPTIONS);
   if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
@@ -52,6 +65,6 @@ export async function run(args, ctx) {
   if (extra.length > 0) { ctx.stderr(`用法错误：一次只检查一个，多出来的是 ${extra.join(' ')}\n用法：${usage}\n`); return 2; }
 
   const { report, files } = await inspectTarget(target, ctx, checkSettings(options));
-  ctx.stdout(ctx.json ? `${JSON.stringify(report)}\n` : formatReport(report, target) + scriptNotice(scriptsWithoutFeature(files)));
+  ctx.stdout(ctx.json ? `${JSON.stringify(report)}\n` : formatReport(report, target) + scriptNotice(scriptsWithoutFeature(files)) + directoryNotice(target, files, ctx.cwd));
   return report.ok ? 0 : 1;
 }

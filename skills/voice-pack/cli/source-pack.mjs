@@ -11,6 +11,7 @@
 //
 // describeDuplicateCheck(report) → string[]
 //   把 checkDuplicates 的返回（通过时的那一份）写成几行：比了什么、最接近阈值的一项、没查到的。不出现来源包的任何标识（返回里本来就没有）。
+//   录音有没比的（新包的解不开、来源包里的没法比），结论行写「文字通过；录音没比全」，不写「通过」；要 ffmpeg 才解得开的，写上装法。
 //
 // 抛出的错误（VoicePackError）：
 //   duplicate_check_source_invalid  来源包读不了。details.reason：
@@ -19,6 +20,7 @@
 //                                   同一个 code，lib/duplicate-check.mjs 里的 reason 是 manifest_missing、manifest_unreadable、not_role_part
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { inspectTarget } from '../protocol/cli/checking.mjs';
+import { FFMPEG_INSTALL } from '../protocol/lib/env.mjs';
 
 /** 读来源包的文件集。规则见文件头。 */
 export async function readSourcePack(ctx, argument) {
@@ -47,12 +49,19 @@ export function describeDuplicateCheck(report) {
   const highestText = text.highest === null
     ? ''
     : `，离阈值最近的是 ${text.highest.item}（${Object.entries(MEASURE).map(([key, name]) => `${name} ${text.highest[key]}`).join('，')}；阈值 ${thresholds.text.rougeLF1}、${thresholds.text.copiedShare}）`;
-  lines.push(`查重：通过。文字比了 ${text.compared} 项${highestText}`);
+  // 录音有没比的（新包的解不开，或者来源包里的没法比）：结论不写「通过」，只说文字过了（lib/duplicate-check.mjs：解不了的记在 unchecked 里，不假装查过了）
+  const audioPartial = audio.unchecked.length > 0 || Object.keys(audio.sourceUnchecked).length > 0;
+  lines.push(audioPartial
+    ? `查重：文字通过；录音没比全（哪几段、为什么，见下面），录音这一半不算查过。文字比了 ${text.compared} 项${highestText}`
+    : `查重：通过。文字比了 ${text.compared} 项${highestText}`);
   const tooShort = text.skipped.filter((item) => item.reason === 'too_short');
   if (tooShort.length > 0) lines.push(`  没比的文字：${tooShort.map((item) => item.item).join('、')}（不到 ${thresholds.text.minTokens} 个词，太短，各写各的也容易撞）`);
   const highestAudio = audio.highest === null ? '' : `，复用最多的是 ${audio.highest.item}（${audio.highest.reusedSeconds} 秒，一共 ${audio.highest.totalSeconds} 秒；阈值 ${thresholds.audio.reusedSeconds} 秒）`;
   lines.push(`  录音查了 ${audio.checked} 段（来源包里有 ${audio.sourceClips} 段能比）${highestAudio}`);
-  if (audio.unchecked.length > 0) lines.push(`  没查到的录音：${audio.unchecked.map((clip) => `${clip.item}（${clip.reason === 'decode_unavailable' ? '要 ffmpeg 才解得开，这里没有' : '解不开'}）`).join('、')}`);
+  if (audio.unchecked.length > 0) {
+    const needsFfmpeg = audio.unchecked.some((clip) => clip.reason === 'decode_unavailable');
+    lines.push(`  没查到的录音：${audio.unchecked.map((clip) => `${clip.item}（${clip.reason === 'decode_unavailable' ? '要 ffmpeg 才解得开，这里没有' : '解不开'}）`).join('、')}${needsFfmpeg ? `；装上 ffmpeg 再做一次才比得上（${FFMPEG_INSTALL}）` : ''}`);
+  }
   const missing = Object.entries(audio.sourceUnchecked).map(([reason, count]) => `${count} 段${{ external: '在包外面（外部资源）', decode_unavailable: '要 ffmpeg 才解得开，这里没有', decode_failed: '解不开' }[reason] ?? reason}`);
   if (missing.length > 0) lines.push(`  来源包里没法比的录音：${missing.join('；')}`);
   return lines;

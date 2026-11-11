@@ -25,7 +25,8 @@ import { MANIFEST_FILE, PROTOCOL_DIRECTORY, isManagedPath, parseManifest } from 
 import { CURRENT_NAMES, KNOWN_BASE_DIRECTORIES } from './names.mjs';
 
 const DEFAULT_SHORT_NAME = 'vp';
-const DEFAULT_FEATURES = Object.freeze({ dub: Object.freeze({ capabilities: Object.freeze(['text-to-speech', 'voice-cloning']) }) });
+// 默认的功能：配音（dub）。它必须有的只有 voice-cloning；一场戏一个请求另要的 text-to-dialogue、比音色的 speaker-verification 是有就用，不算所需（references/dub.md「各个功能要什么能力」）
+const DEFAULT_FEATURES = Object.freeze({ dub: Object.freeze({ capabilities: Object.freeze(['voice-cloning']) }) });
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const SUFFIX_LENGTH = 8;
 const MAX_ID_LENGTH = 64;
@@ -81,8 +82,9 @@ function stubFetch(externals) {
  * @param {string} [input.changelog='首个版本']
  * @param {string} input.baseVersion 做包时用的基础部分版本（相当于「Made with」后面的版本号）
  * @param {{ protocolMajor?: number, baseMin?: string }} [input.requires] 默认：这一版库的协议主版本，基础部分的最低版本取 baseVersion
- * @param {Record<string, { capabilities: string[] }>} [input.features] 默认只有 dub（text-to-speech、voice-cloning）
- * @param {{ defaultSegment?: string, segments: object[] }} input.reference 参考集，段的 audio 是 files 里的路径（或外部资源的路径）
+ * @param {Record<string, { capabilities: string[] }>} [input.features] 默认只有 dub（voice-cloning）
+ * @param {{ defaultSegment?: string, languageDefaults?: string[], segments: object[] }} input.reference 参考集，段的 audio 是 files 里的路径（或外部资源的路径）；
+ *   defaultSegment 是主语言的默认段（不给就是第一段），languageDefaults 是别的语言各自的默认段（FORMAT.md 4.4，不给或给空数组就不写）
  * @param {object[]} [input.holdout] 留出录音
  * @param {Map<string, Uint8Array>} input.files 包内文件：参考音频、脚本……不含清单，不含 protocol/ 和基础部分的目录（names.mjs 里基础部分的目录名，两个协议版本的都算）。带了 SKILL.md 就用它，不带就生成骨架
  * @param {{ path: string, url: string, data: Uint8Array }[]} [input.externals] 外部资源：不放进包，清单里记 URL、大小、哈希（由 data 算出）
@@ -90,7 +92,9 @@ function stubFetch(externals) {
  * @param {string} [input.guidance] 配音指引（Markdown），放进生成的 SKILL.md 正文
  * @param {'zh' | 'en'} [input.textLanguage='zh'] 生成 SKILL.md 骨架用的语言（调用方按作者的语言给，例如 app 给作者做包时用的界面语言；规则见 skill-md.mjs 的 buildRoleSkillMd）。files 里带了 SKILL.md 就用不上，值错了照样抛 TypeError
  * @param {string[]} [input.sampleLines] 示例台词，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
- * @param {object[]} [input.setups] 几套设定，原样写进清单的 setups（规则见 protocol/FORMAT.md 4.4 节和 4.5 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）。不替调用方改 requires.baseMin：带 setups 的包怎么写它，规则见 protocol/FORMAT.md 4.4，由调用方（lib/make-pack.mjs）定
+ * @param {object[]} [input.setups] 几套设定，原样写进清单的 setups（规则见 protocol/FORMAT.md 4.4 节和 4.5 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
+ * @param {number} [input.expressiveness] 这个声音的起伏（全局值，0 到 100 的整数），原样写进清单的 expressiveness（规则见 protocol/FORMAT.md 4.4 节）
+ * @param {{ audio: string, text: string, seed?: number, expressiveness?: number }} [input.cardLine] 卡片试听那一句：audio 是 files 里的路径（音频要放进包里），text 是它的台词，seed 是配它用的 seed（可选，环境收 seed 才有），原样写进清单的 cardLine（规则见 protocol/FORMAT.md 4.4 节；不写，清单里就没有这个字段）
  * @param {Map<string, Uint8Array>} input.protocolCore 协议核心的文件（含它的 manifest.json 和签名），放进 protocol/
  * @param {Map<string, Uint8Array>} [input.base] 基础部分的文件（含它的 manifest.json、签名和嵌着的 protocol/），放进 voice-pack/（这一版库写的协议版本里基础部分的目录名，names.mjs）；不给就是只有角色部分
  * @param {object} [input.limits] 解包上限
@@ -134,13 +138,18 @@ export async function packRolePart(input) {
     madeWith: { baseVersion },
     requires: { protocolMajor: input.requires?.protocolMajor ?? protocolMajor(PROTOCOL_VERSION), baseMin: input.requires?.baseMin ?? baseVersion },
     features: input.features ?? DEFAULT_FEATURES,
-    reference: { defaultSegment: reference.defaultSegment ?? segments[0]?.id, segments },
+    // 别的语言各自的默认段：同示例台词，不写、写空数组，清单里就没有这个字段（只有一种语言就不写这个键，FORMAT.md 4.4）；别的值原样交给清单检查去拒绝
+    reference: { defaultSegment: reference.defaultSegment ?? segments[0]?.id, ...(reference.languageDefaults === undefined || (Array.isArray(reference.languageDefaults) && reference.languageDefaults.length === 0) ? {} : { languageDefaults: reference.languageDefaults }), segments },
     ...(input.holdout?.length ? { holdout: input.holdout } : {}),
     ...(input.direction ? { direction: input.direction } : {}),
     // 示例台词：不写、写空数组，清单里就没有这个字段；别的值（字符串、null、有 length 的对象……）原样交给清单检查去拒绝，不悄悄丢掉
     ...(input.sampleLines === undefined || (Array.isArray(input.sampleLines) && input.sampleLines.length === 0) ? {} : { sampleLines: input.sampleLines }),
+    // 这个声音的起伏（全局值，FORMAT.md 4.4）：不写就没有这个字段；写得不合格，交给清单检查去拒绝
+    ...(input.expressiveness === undefined ? {} : { expressiveness: input.expressiveness }),
     // 几套设定：同示例台词，不写、写空数组，清单里就没有这个字段；别的值原样交给清单检查去拒绝
     ...(input.setups === undefined || (Array.isArray(input.setups) && input.setups.length === 0) ? {} : { setups: input.setups }),
+    // 卡片试听那一句 { audio, text }：audio 是 files 里的路径。不写就没有这个字段；写得不合格，交给清单检查去拒绝
+    ...(input.cardLine === undefined ? {} : { cardLine: input.cardLine }),
     ...(input.enhancers?.length ? { enhancers: input.enhancers } : {}),
     ...(input.scripts?.length ? { scripts: input.scripts } : {}),
     ...(input.verification?.length ? { verification: input.verification } : {}),

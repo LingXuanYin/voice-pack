@@ -13,11 +13,13 @@
 //     官方换过钥匙、包里的名单只有旧公钥时，版本索引（现在的钥匙签的）读不了：不挑版本，直接取包要求的最低版本本身，输出里写明（规则见 protocol/RELEASES.md「私钥丢了或泄露了」）
 //   4 在临时目录里写好，对整个包再检查一遍（含验签和互相校验，外部资源也核对），最后一步才挪成基础部分目录。任何一步失败都报错，不留下半个目录，不兜底
 // 每个包补进自己目录里的基础部分目录，不改环境共用的那一份：同一个环境里几个包要的版本不同，各用各的，互不干扰。
+// install 把包放进 .agents/skills/ 和 .claude/skills/ 两处：补全了其中一份（或者这一份早就带着基础部分），另一份还没有基础部分、别的文件逐字节一样的，
+// 同一份基础部分也放进去，不再下载（protocol/cli/completing.mjs 的 twinOf）；另一份对不上的不碰。
 //   --trust <文件>   换一份信任名单（默认是正在运行的这份协议核心自带的 protocol/trust.json；官方地址和官方公钥都取自它）。给测试和第三方用，官方的补全不传它。
 //                    没有「放过没签名的」这类选项：补全永远验签
 //
 // 退出码：0 补全了，或者不用补全（输出里写明是哪一种）；1 失败（报告写到标准错误，写明是哪一步）；2 用法错误。
-// --json：成功时输出一行 { outcome: 'completed' | 'environment' | 'in_pack', packDir, base: { source, version, protocol, keyId, location? | url, size, sha256, indexUntrusted? }, rejected: [...], installed?, files? }，
+// --json：成功时输出一行 { outcome: 'completed' | 'environment' | 'in_pack', packDir, base: { source, version, protocol, keyId, location? | url, size, sha256, indexUntrusted? }, rejected: [...], installed?, files?, twinInstalled? }（twinInstalled：另一份放进的基础部分目录），
 //         失败时标准错误是一行 {"error":{"code","message","details"}}。rejected 是环境里那些没用上的基础部分和原因。indexUntrusted: { keyId } 只在走了上面第 3 步的退路时有。
 import path from 'node:path';
 import { completeRolePart } from '../../lib/complete.mjs';
@@ -26,7 +28,7 @@ import { failedReport } from '../../lib/check.mjs';
 import { readManifest } from '../../lib/manifest.mjs';
 import { baseDirectoryOf, CURRENT_NAMES } from '../../lib/names.mjs';
 import { pathKind, readDirectory } from '../disk.mjs';
-import { environmentCandidates, installBasePart } from '../completing.mjs';
+import { environmentCandidates, installBasePart, twinOf } from '../completing.mjs';
 import { formatReport } from '../report.mjs';
 import { DEFAULT_TRUST_FILE, parseOptions, readTrustListFile } from '../signing.mjs';
 
@@ -57,9 +59,18 @@ export async function run(args, ctx) {
   const directory = protocol === undefined ? CURRENT_NAMES.baseDirectory : baseDirectoryOf(protocol);
   const result = await completeRolePart(files, { trustList, env: ctx.env, candidates: environmentCandidates(packDir, ctx.cwd, directory) });
   const installed = result.outcome === 'completed' ? await installBasePart(packDir, result.files, { directory: result.directory }) : undefined;
+  // install 放的另一份（.agents/skills 和 .claude/skills 各一份）：补全了这一份、或者这一份早就带着基础部分，另一份还没有的，放进同一份基础部分（completing.mjs 的 twinOf）
+  let twinInstalled;
+  if (result.outcome !== 'environment') {
+    const twin = twinOf(packDir, files, directory);
+    const baseFiles = result.outcome === 'completed'
+      ? result.files
+      : new Map([...files].filter(([file]) => file.startsWith(`${directory}/`)).map(([file, bytes]) => [file.slice(directory.length + 1), bytes]));
+    if (twin !== null && baseFiles.size > 0) twinInstalled = await installBasePart(twin, baseFiles, { directory });
+  }
 
   if (ctx.json) {
-    ctx.stdout(`${JSON.stringify({ outcome: result.outcome, packDir, base: result.base, rejected: result.rejected, ...(installed === undefined ? {} : { installed, files: result.files.size }) })}\n`);
+    ctx.stdout(`${JSON.stringify({ outcome: result.outcome, packDir, base: result.base, rejected: result.rejected, ...(installed === undefined ? {} : { installed, files: result.files.size }), ...(twinInstalled === undefined ? {} : { twinInstalled }) })}\n`);
     return 0;
   }
   const lines = [];
@@ -84,6 +95,7 @@ export async function run(args, ctx) {
   } else {
     lines.push(`不用补全：包里已经有可用的基础部分（${result.directory}/，${where(result.base)}）。要核对整个包有没有被改过，用 check`);
   }
+  if (twinInstalled !== undefined) lines.push(`install 放的另一份也放进了同一份基础部分：${twinInstalled}（另一份除了基础部分，每个文件都和这一份一样；没有再下载）`);
   ctx.stdout(`${lines.join('\n')}\n`);
   return 0;
 }

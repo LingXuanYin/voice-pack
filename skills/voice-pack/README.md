@@ -11,7 +11,7 @@
 
 装好以后，agent 读 `SKILL.md`，命令行入口是 skill 目录里的 `cli.mjs`（`node cli.mjs --help`）。运行环境的要求写在 `SKILL.md` 的 `compatibility` 里。
 
-两种装法取的都是仓库里的文件。基础部分每个版本带签名的 zip 和版本索引在 `https://lingxuanyin.github.io/voice-pack/releases/`（`protocol/trust.json` 的 `official_url`），做包时程序按规则从那里取需要的版本，用官方公钥验签。
+两种装法取的都是仓库里的文件。基础部分每个版本带签名的 zip 和版本索引在 `https://lingxuanyin.github.io/voice-pack/releases/`（`protocol/trust.json` 的 `official_url`）。补全（`complete`）和导出完整包的程序按规则从那里取需要的版本（`protocol/FORMAT.md` 第 11 节），用官方公钥验签；做包不从那里取基础部分，清单里记的是正在运行的这份基础部分的版本（或 `--base-version` 给的）。
 
 ## 目录
 
@@ -19,6 +19,8 @@
 voice-pack/
 ├── SKILL.md                入口：流程按所需能力写，不点名模型
 ├── README.md               本文件
+├── models/                 模型说明：一个模型一份，文件名是模型名，只写模型本身怎么用，不绑平台；流程和参考文档要用其中一条，写路径和节名
+├── scenes/                 场景子 skill，一个场景一份：对话里的一句（one-line.md）、几个人的一场戏（a-scene.md）、旁白和长文（narration.md）；每份写这个场景里怎么配（台本、提示、参考、交回去时说什么）；什么情况读哪一份，见 SKILL.md 开头的路由表
 ├── references/             参考：角色的声音（character-voice.md）、配音（dub.md，细则在 dub-details.md）、做包（make-pack.md，细则在 make-pack-details.md 和 clean-room.md）、台本标记（markup.md）；SKILL.md 只写流程，指到这里
 ├── LICENSE                 Apache-2.0 全文
 ├── CHANGELOG.md            每个版本改了什么（中英文），新的在前；最上面一条是 manifest-fields.json 里的版本，发布说明取这一条
@@ -35,6 +37,8 @@ voice-pack/
 │   ├── audio-files.mjs     读音频文件：后缀和 MIME 类型互相换，读成字节加 MIME 类型
 │   ├── evaluation-set.mjs  评测集（量还原度用的真录音和合成出来的录音）存成文件的样子：make-pack 写、fidelity 读，格式只在它的文件头写一处
 │   ├── fidelity-report.mjs 把还原度报告写成给人看的文字：fidelity 和 make-pack 共用
+│   ├── pick-text.mjs       用的哪一段参考、为什么，写成给人看的文字：dub 和 convert 共用
+│   ├── dub-failures.mjs    dub 的报告里没做成的一句是哪一种（字太少、没取回、文字被拒、一场戏装不下）：dub 的文字输出和 mix 的提示照它分开说怎么办
 │   └── input.mjs           读输入（文件、标准输入）、解析选项的小函数
 ├── protocol/               协议核心：每个部分都带一份，细节见 protocol/README.md
 │   ├── README.md           模块约定、运行环境、错误、命令行
@@ -48,11 +52,10 @@ voice-pack/
 │   ├── capabilities.json   能力词表，带版本号
 │   ├── capability-signatures.md  所需能力的调用签名：参数、返回值、音频怎么传
 │   ├── design.json         设计词表
-│   ├── scenes.json         场景词表
 │   ├── markup.json         台本标记
-│   ├── design-sample-lines.json  设计出来的声音做音色包时克隆的示例台词（zh、en 各一组）
-│   └── cues.json           舞台提示和情绪、风格标签的近义词（按台词挑参考时认的写法）
-├── lib/                    流程层程序：用音色包配音和变声（按台词挑参考、读音词表、配音指引、增强件、包里的脚本）、做包（长录音的分离、切段、转写）、量还原度、查重、给净室里的做包 agent 准备输入；清单见 lib/README.md
+│   ├── design-sample-lines.json  设计出来的声音写示例台词时口气和长度的样子（zh、en 各一组，不原样抄进包）
+│   └── cues.json           舞台提示和情绪、风格标签的近义词（读舞台提示时认的写法）
+├── lib/                    流程层程序：用音色包配音和变声（每句用哪段参考、读音词表、配音指引、增强件、包里的脚本）、做包（长录音的分离、切段、转写）、量还原度、查重、给净室里的做包 agent 准备输入；清单见 lib/README.md
 ├── tools/                  官方小工具：台本标记解析、分句、音质检查、长录音按能量切段、音频指纹（查重找「同一段录音」）等，只做计算，不用模型
 └── adapters/               环境适配层：所有适配器所在的那一层。适配器是什么、怎么写、出错怎么报，约定只写在 adapters/README.md
     └── process/            进程适配器（唯一的官方适配器）：把能力调用转成对用户自己的程序（Python 等）的请求，经标准输入输出，一行一个 JSON；进程协议只写在 adapters/process/README.md
@@ -67,7 +70,7 @@ voice-pack/
 
 ## 规则
 
-- **模型名只出现在适配器自己的目录里**。基础部分里（`SKILL.md`、`protocol/`、`vocab/`、`lib/`、`tools/`）只用能力词表里的所需能力名。
+- **模型名只出现在模型说明（`models/`）和基础部分以外的平台适配器里**。基础部分的其余地方（`SKILL.md`、`scenes/`、`references/`、`protocol/`、`vocab/`、`lib/`、`tools/`、`cli/`、`adapters/`）只用能力词表里的所需能力名；要用模型说明里的某一条，写那份说明的路径和节名。
 - **通用层不点名任何一个适配器**：`protocol/`、`lib/`、`tools/`、`cli/` 里不 import `adapters/` 下的文件，文字里也不出现某个适配器专有的东西；用适配器只经过 `cli/adapters.mjs`。
 - 库的写法、运行环境的形状、统一的错误，见 `protocol/README.md`。
 - 要用模型才能做的处理（分离、水印、说话人相似度、转写）不放在这里，作为所需能力向运行环境要。模型代码和权重也不放在这里。

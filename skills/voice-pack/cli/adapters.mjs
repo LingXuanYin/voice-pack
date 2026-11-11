@@ -8,9 +8,12 @@
 // 加一个官方适配器只加目录 adapters/<名字>/（adapter.mjs，可选 adapter.json），不改别的文件。
 //
 // 合并（applyAdapters）：这是合并规则唯一的正本。适配器按给的先后一个一个接进命令已有的环境：后给的盖过先给的，命令行上明说的盖过命令自己的默认。每个适配器的工厂拿到的 env 是「命令已有的加上前面的适配器」，
-// 它返回的 capabilities、runtimes 并进去，同名的盖过已有的；它给了 fetch 就换成它的。billing、limits 和 previewCard 不进环境，留在返回的 adapters 里给命令用
-// （费用说明、一次合成的字数上限、合成能力的字数下限、text-generation 一次请求的输入上限、分享文件的预览卡片上的产品名和入口）。
+// 它返回的 capabilities、runtimes 并进去，同名的盖过已有的；它给了 fetch 就换成它的。billing、limits、previewCard 和 models 不进环境，留在返回的 adapters 里给命令用
+// （费用说明、一次合成的字数上限、合成能力的字数下限、分享文件的预览卡片上的产品名和入口、各项能力用哪个模型）。
+// 模型名（models）跟着能力走：一个适配器提供的每项能力，记下它声明的模型名，没声明是 null（adapters 里的 models）；同一项能力后给的适配器盖过先给的，
+// 盖过的适配器没声明，这项能力就是没说用哪个模型，不沿用先给的那个声明的（modelOf）。
 // limits 的每一个键各自合并：最后一个给了这个键的适配器的算数，后给的盖过先给的，没有适配器给就没有（undefined）。
+// prices 按能力合并：每项能力的单价取最后一个给了这项能力单价的适配器的（moneySentence）。
 //
 // 信任：适配器在本进程里直接运行，不隔离，不让用户确认——和包里的脚本一样。用不用、用哪个适配器，是命令行上这个人的决定。
 //
@@ -19,15 +22,19 @@
 //   officialAdapterNames()                官方适配器的名字，按名字排
 //   takeAdapterArguments(args)            从命令的参数里取走适配器的参数 → { rest, requests: [{ spec, options }], problem? }；problem 是用法错误的说明
 //   loadAdapter(ctx, env, request)        加载一个适配器 → { adapter, label, spec, file }
-//   applyAdapters(ctx, env, requests)     按先后接进环境 → { env, adapters: [{ label, spec, file, billing?, limits?, previewCard? }] }
+//   applyAdapters(ctx, env, requests)     按先后接进环境 → { env, adapters: [{ label, spec, file, billing?, limits?, previewCard?, models? }] }（models：这个适配器提供的每项能力 → 它声明的模型名，没声明是 null；一项能力都没提供就没有）
 //   billingSentence(adapters)             费用说明的开头一句（给了 billing 的适配器各一句，「要……，也要……」，不带句末的标点），没有就是 null
+//   moneySentence(adapters, calls, extraCalls?)  费用说明里估金额的一句：calls 是 { 能力: 几次 }，extraCalls 是暂时出错最多再多调几次，单价是适配器的 prices（每项能力取最后一个给了它的适配器的）；一次都不调是 null
+//   ffmpegNote(env, { makePack? })        环境没有 ffmpeg 时，预演和费用说明里写的一句；有就是 null。makePack：做包用的那一句，说清不是 WAV 的录音哪几项检查不做
 //   maxCharsOf(adapters)                  一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的，没有就是 undefined
 //   minCharsOf(adapters)                  合成能力一次至少要多少个字：最后一个给了 limits.minChars 的适配器的，没有就是 undefined（dub、make-pack 的 minChars 选项）
-//   maxPromptTokensOf(adapters)           text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的，没有就是 undefined（dub 的 maxPromptTokens 选项：判情绪按它分批发，没有就一次发完）
-//   maxPauseInTextMsOf(adapters)          声明了 pause-in-text 的环境，一个请求里写进文字的停顿加起来最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的，没有就是 undefined（dub 的 maxPauseInTextMs 选项，没有就是不限）
+//   maxSpeakersOf(adapters)               声明了 scene-in-request 的环境，一场戏最多几个说话人：最后一个给了 limits.maxSpeakers 的适配器的，没有就是 undefined（dub 的 maxSpeakers 选项，没有就是不限）
+//   maxPauseInRequestMsOf(adapters)       一个请求里一处停顿最多多少毫秒：最后一个给了 limits.maxPauseInRequestMs 的适配器的，没有就是 undefined（dub 的 maxPauseInRequestMs 选项，没有就用基础部分的默认值）
 //   previewCardOf(adapters)              分享文件的预览卡片要写的产品名和入口：最后一个给了 previewCard 的适配器的，没有就是 undefined
+//   modelOf(adapters, capability)         这项能力用的模型名：最后一个提供它的适配器声明的；那个适配器没声明是 null；没有适配器提供它（命令自己的环境，或者没有）是 undefined
 //   environmentName(adapters)             验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来，没有就是 null
 //   describeRequests(requests)            把适配器的参数写回命令行的样子（补做提示用）
+//   describeCheckTarget(request)          一个适配器写回 `adapter check` 的样子：适配器（名字或路径）放在第一个位置，后面是它的参数（结构检查建议 --live 的那条命令用）
 //   quoteArgument(text)                   把一个参数写回命令行的样子：里面有空白或引号就加双引号（给人看的提示用）
 //   skeletonKinds()                       `adapter new` 能生成的骨架种类：'module'，加上提供了骨架生成器（adapters/<名字>/skeleton.mjs）的官方适配器，按名字排
 //   buildSkeleton(kind, context)          生成一个骨架 → { files: [{ path, content }], fillIn }；context 的形状在 lib/adapter-skeleton.mjs 的文件头。
@@ -52,6 +59,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { ADAPTER_KEYS, checkAdapterShape } from '../lib/adapter-check.mjs';
+import { FFMPEG_INSTALL } from '../protocol/lib/env.mjs';
 import { generateModuleSkeleton } from '../lib/adapter-skeleton.mjs';
 import { isPlainObject } from './input.mjs';
 
@@ -208,17 +216,27 @@ export function takeAdapterArguments(args) {
 export const quoteArgument = (text) => (/[\s"']/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text);
 const quoted = quoteArgument;
 
+/** 一个适配器的参数写回命令行的样子（不含接它的那一项）：官方适配器声明了的参数用它的写法，剩下的用 --adapter-option。adapter 是官方适配器（不是就是 undefined）。 */
+function optionArguments(adapter, options) {
+  const flagOf = new Map(Object.entries(adapter?.manifest.flags ?? {}).map(([flag, key]) => [key, flag]));
+  return Object.entries(options).map(([key, value]) => (flagOf.has(key) ? `${flagOf.get(key)} ${quoted(value)}` : `--adapter-option ${quoted(`${key}=${value}`)}`));
+}
+const officialByName = () => new Map(officialAdapters().map((adapter) => [adapter.name, adapter]));
+
 /** 把适配器的参数写回命令行的样子（给人看，补做的提示里用）：有简写和声明的参数就用它们，剩下的用 --adapter 和 --adapter-option。 */
 export function describeRequests(requests) {
-  const official = new Map(officialAdapters().map((adapter) => [adapter.name, adapter]));
+  const official = officialByName();
   const parts = [];
   for (const { spec, options } of requests) {
     const adapter = official.get(spec);
-    const flagOf = new Map(Object.entries(adapter?.manifest.flags ?? {}).map(([flag, key]) => [key, flag]));
-    parts.push(adapter?.manifest.shorthand === true ? `--${spec}` : `--adapter ${quoted(spec)}`);
-    for (const [key, value] of Object.entries(options)) parts.push(flagOf.has(key) ? `${flagOf.get(key)} ${quoted(value)}` : `--adapter-option ${quoted(`${key}=${value}`)}`);
+    parts.push(adapter?.manifest.shorthand === true ? `--${spec}` : `--adapter ${quoted(spec)}`, ...optionArguments(adapter, options));
   }
   return parts.join(' ');
+}
+
+/** 一个适配器写回 `adapter check` 的样子（给人看）：那个子命令要适配器在第一个位置（名字或路径，不带 --adapter），后面是它的参数，写法同 describeRequests。 */
+export function describeCheckTarget({ spec, options }) {
+  return [quoted(spec), ...optionArguments(officialByName().get(spec), options)].join(' ');
 }
 
 // ---------------------------------------------------------------- 加载
@@ -303,7 +321,7 @@ export async function loadAdapter(ctx, env, request) {
 
 /**
  * 按给的先后把适配器接进环境：后给的盖过先给的，也盖过命令已有的同名项。
- * @returns {Promise<{ env: object, adapters: { label: string, spec: string, file: string, billing?: string, limits?: object, previewCard?: object }[] }>}
+ * @returns {Promise<{ env: object, adapters: { label: string, spec: string, file: string, billing?: string, limits?: object, previewCard?: object, models?: object }[] }>}
  */
 export async function applyAdapters(ctx, env, requests) {
   let current = env;
@@ -321,9 +339,17 @@ export async function applyAdapters(ctx, env, requests) {
       ...(adapter.billing === undefined ? {} : { billing: adapter.billing }),
       ...(adapter.limits === undefined ? {} : { limits: adapter.limits }),
       ...(adapter.previewCard === undefined ? {} : { previewCard: adapter.previewCard }),
+      ...(adapter.prices === undefined ? {} : { prices: adapter.prices }),
+      ...modelsOfProvided(adapter),
     });
   }
   return { env: current, adapters };
+}
+
+/** 这个适配器提供的每项能力 → 它声明的模型名（models），没声明是 null；一项能力都没提供就是 {}（文件头「合并」）。 */
+function modelsOfProvided(adapter) {
+  const names = Object.keys(adapter.capabilities ?? {});
+  return names.length === 0 ? {} : { models: Object.fromEntries(names.map((name) => [name, adapter.models?.[name] ?? null])) };
 }
 
 // ---------------------------------------------------------------- 命令用的几个小函数
@@ -333,6 +359,28 @@ export function billingSentence(adapters) {
   const sentences = adapters.filter((adapter) => typeof adapter.billing === 'string').map((adapter) => `要${adapter.billing}`);
   return sentences.length === 0 ? null : sentences.join('，也');
 }
+
+/** 费用说明里估金额的一句（文件头）。基础部分不知道价格，单价只从适配器来；一项都没有单价的说估不出。 */
+export function moneySentence(adapters, calls, extraCalls = {}) {
+  const priceOf = (capability) => adapters.findLast((adapter) => adapter.prices !== undefined && Object.hasOwn(adapter.prices, capability))?.prices[capability];
+  const called = (counts) => Object.entries(counts).filter(([, count]) => count > 0);
+  const sum = (entries) => entries.reduce((total, [capability, count]) => total + (priceOf(capability) ?? 0) * count, 0);
+  const entries = [...called(calls), ...called(extraCalls)];
+  if (entries.length === 0) return null;
+  const unpriced = [...new Set(entries.map(([capability]) => capability).filter((capability) => priceOf(capability) === undefined))];
+  const capabilities = new Set(entries.map(([capability]) => capability));
+  if (unpriced.length === capabilities.size) return '金额：适配器没给单价，估不出；实际花费看平台账单';
+  const usual = sum(called(calls));
+  const most = usual + sum(called(extraCalls));
+  return `金额：按适配器给的单价约 ${usual.toFixed(3)} 美元${most > usual ? `，暂时出错全都重试时最多 ${most.toFixed(3)} 美元` : ''}${unpriced.length === 0 ? '' : `（不含 ${unpriced.join('、')}：没给单价）`}；实际花费看平台账单`;
+}
+
+/** 环境没有 ffmpeg 时，预演和费用说明里写的一句（文件头）；有就是 null。 */
+export const ffmpegNote = (env, { makePack = false } = {}) => (typeof env.runtimes?.ffmpeg === 'function'
+  ? null
+  : makePack
+    ? `这个环境没有 ffmpeg：不是 WAV 的录音（设计和配音的模型回来的多半是 MP3）不调响度、不查音质和时长，查重也不比这些录音；包照样做出来，文字输出写明哪几段没做。${FFMPEG_INSTALL}`
+    : `这个环境没有 ffmpeg：单句的音频照常出；把句子接成一个文件（mix）、解 WAV 以外的音频、变速要它。${FFMPEG_INSTALL}`);
 
 /** 一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
 export function maxCharsOf(adapters) {
@@ -344,14 +392,14 @@ export function minCharsOf(adapters) {
   return adapters.findLast((adapter) => adapter.limits?.minChars !== undefined)?.limits.minChars;
 }
 
-/** 声明了 pause-in-text 的环境，一处停顿写进文字最多多少毫秒：最后一个给了 limits.maxPauseInTextMs 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
-export function maxPauseInTextMsOf(adapters) {
-  return adapters.findLast((adapter) => adapter.limits?.maxPauseInTextMs !== undefined)?.limits.maxPauseInTextMs;
+/** 一个请求里一处停顿最多多少毫秒：最后一个给了 limits.maxPauseInRequestMs 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxPauseInRequestMsOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxPauseInRequestMs !== undefined)?.limits.maxPauseInRequestMs;
 }
 
-/** text-generation 一次请求最多收多少输入：最后一个给了 limits.maxPromptTokens 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
-export function maxPromptTokensOf(adapters) {
-  return adapters.findLast((adapter) => adapter.limits?.maxPromptTokens !== undefined)?.limits.maxPromptTokens;
+/** 声明了 scene-in-request 的环境，一场戏最多几个说话人：最后一个给了 limits.maxSpeakers 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
+export function maxSpeakersOf(adapters) {
+  return adapters.findLast((adapter) => adapter.limits?.maxSpeakers !== undefined)?.limits.maxSpeakers;
 }
 
 /** 验证记录里「在哪个环境测的」：适配器的名字，几个用 + 连起来；没有适配器是 null。 */
@@ -365,6 +413,15 @@ export function environmentName(adapters) {
  */
 export function previewCardOf(adapters) {
   return adapters.findLast((adapter) => adapter.previewCard !== undefined)?.previewCard;
+}
+
+/**
+ * 这项能力用的模型名（适配器在返回里声明的 models，adapters/README.md）：最后一个提供这项能力的适配器声明的（后给的盖过先给的）；那个适配器没声明是 null；
+ * 没有适配器提供它（命令自己的环境里的，或者根本没有）是 undefined。只是声明，不调能力：能力每次返回里报的 model 才是实际用的（换了模型另有 modelChange）。
+ */
+export function modelOf(adapters, capability) {
+  const provider = adapters.findLast((adapter) => adapter.models !== undefined && Object.hasOwn(adapter.models, capability));
+  return provider === undefined ? undefined : provider.models[capability];
 }
 
 // ---------------------------------------------------------------- 骨架（adapter new 用）

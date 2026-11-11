@@ -13,6 +13,11 @@
 //   这四个文件都不大（清单不超过 JSON 的上限 1 MiB，签名文件几百字节）；大得离谱的、不是普通文件的，当作没有。
 //   返回库要的样子：[{ location（绝对路径）, manifest, signature, coreManifest, coreSignature }]（字节，没有的是 null）。
 //
+// twinOf(packDir, packFiles, directory)
+//   install 把一个包放进两处：<项目>/.agents/skills/<名字> 和 <项目>/.claude/skills/<名字>（cli/commands/install.mjs）。包在其中一处时，另一处是它的「另一份」。
+//   另一份存在、是目录（不是同一个目录的符号链接）、还没有 <名字> 这个基础部分目录、除了基础部分目录以外每个文件都和这一份（packFiles）逐字节一样，
+//   返回它的绝对路径；有一条不符合就是 null（不认得的东西不碰）。complete 补全这一份时，同一份基础部分也放进另一份，用不着再补一次、再下载一次。
+//
 // installBasePart(packDir, files, { rename })
 //   把补全来的基础部分（文件集，路径相对基础部分的目录）放进 <包目录>/<名字>/（名字同上，由调用方给：补全的结果里有 directory）。先在临时目录里写好，最后一步才改名成 <名字>/：
 //   任何一步失败，都把这一趟自己创建的临时目录清掉再抛错，包目录和补全之前一样，不留下半个目录。
@@ -33,7 +38,7 @@ import { toHex } from '../lib/bytes.mjs';
 import { MANIFEST_FILE, SIGNATURE_FILE, PROTOCOL_DIRECTORY } from '../lib/manifest.mjs';
 import { CURRENT_NAMES } from '../lib/names.mjs';
 import { DEFAULT_LIMITS } from '../lib/limits.mjs';
-import { writeDirectory } from './disk.mjs';
+import { readDirectory, writeDirectory } from './disk.mjs';
 
 const SKILL_ROOTS = [['.agents', 'skills'], ['.claude', 'skills']];
 const MAX_SMALL_FILE = DEFAULT_LIMITS.maxJsonBytes;
@@ -87,6 +92,29 @@ export function environmentCandidates(packDir, cwd, directory = CURRENT_NAMES.ba
     });
   }
   return candidates;
+}
+
+/** install 放的另一份（文件头 twinOf）：符合条件的返回它的绝对路径，否则 null。 */
+export function twinOf(packDir, packFiles, directory = CURRENT_NAMES.baseDirectory) {
+  const pack = path.resolve(packDir);
+  const skillsDir = path.dirname(pack);
+  const holder = path.dirname(skillsDir);
+  const holderName = path.basename(holder);
+  if (path.basename(skillsDir) !== 'skills' || !['.agents', '.claude'].includes(holderName)) return null;
+  const twin = path.join(path.dirname(holder), holderName === '.agents' ? '.claude' : '.agents', 'skills', path.basename(pack));
+  try {
+    if (!fs.statSync(twin).isDirectory() || fs.realpathSync(twin) === fs.realpathSync(pack) || pathExists(path.join(twin, directory))) return null;
+  } catch {
+    return null; // 没有另一份
+  }
+  const { files, problems } = readDirectory(twin);
+  const own = [...packFiles].filter(([file]) => !file.startsWith(`${directory}/`));
+  if (problems.length > 0 || files.size !== own.length) return null;
+  for (const [file, bytes] of own) {
+    const other = files.get(file);
+    if (other === undefined || other.length !== bytes.length || other.some((byte, i) => byte !== bytes[i])) return null;
+  }
+  return twin;
 }
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });

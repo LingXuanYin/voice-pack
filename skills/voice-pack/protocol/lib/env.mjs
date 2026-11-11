@@ -17,7 +17,7 @@
 //   environment_invalid   环境本身不合格（不是对象，或没有 capabilities 容器）。details.field 是出问题的字段。
 //
 // 只有用到这项能力的功能才取它，所以缺一项只让用到它的功能报错，别的功能照常。
-// 一项能力有没有、没有也能做的功能（例如环境有 style-instruction 才传语气说明、有 text-generation 才让模型来判断）问 hasCapability，
+// 一项能力有没有、没有也能做的功能（例如环境有 phoneme-in-text 才把拼音音素写进文字）问 hasCapability，
 // 不抛错；缺了就不能做的功能用 requireCapability。两者对「有」的判断完全一致。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -28,7 +28,7 @@ import { VoicePackError } from './errors.mjs';
  * 用 hasCapability 问有没有，不用 requireCapability 去取（没有函数可取）。适配器的检查（lib/adapter-check.mjs）、骨架生成（lib/adapter-skeleton.mjs）
  * 和适配器本身（约定见 adapters/README.md「只是声明的能力」）都按这一份名单认，名单只在这里写。
  */
-export const DECLARED_CAPABILITIES = Object.freeze(['style-instruction', 'style-cues', 'pause-in-text', 'cue-in-text', 'phoneme-in-text']);
+export const DECLARED_CAPABILITIES = Object.freeze(['phoneme-in-text', 'phoneme-markers', 'scene-in-request', 'seed-in-request']);
 
 const hasOwn = (obj, name) => Object.prototype.hasOwnProperty.call(obj, name);
 const isContainer = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -67,9 +67,12 @@ export function requireCapability(env, name) {
   );
 }
 
+/** 怎么装 ffmpeg 的一句：报 runtime_missing 和花钱之前的提示共用。 */
+export const FFMPEG_INSTALL = '装法：https://ffmpeg.org/download.html，装好放进 PATH';
+
 /**
  * 环境有没有这项能力：不抛错，只回答有或没有。「有」的认法和 requireCapability 一样（undefined、null、false 都算没有）。
- * 给「有就多做一步、没有也不是错」的开关用，例如环境有 style-instruction 才把配音指引通过 instructions 传给模型；
+ * 给「有就多做一步、没有也不是错」的开关用，例如环境有 phoneme-in-text 才把拼音音素写进文字；
  * 用到了就必须有的能力，用 requireCapability，缺了才会点名报错。
  * @param {object} env 注入的运行环境
  * @param {string} name 能力词表里的名字
@@ -87,13 +90,14 @@ export function hasCapability(env, name) {
  * @throws {VoicePackError} runtime_missing、environment_invalid
  */
 export function requireRuntime(env, name) {
+  // ffmpeg 是用户最常缺的一个：报错时说去哪里装（FFMPEG_INSTALL）
   assertName(name, '运行时');
   assertEnvironment(env);
   const runtimes = env.runtimes;
   if (isContainer(runtimes) && hasOwn(runtimes, name) && isProvided(runtimes[name])) return runtimes[name];
   throw new VoicePackError(
     'runtime_missing',
-    `运行环境没有提供运行时 ${name}：用到它的功能不能运行，其他功能照常`,
+    `运行环境没有提供运行时 ${name}：用到它的功能不能运行，其他功能照常${name === 'ffmpeg' ? `。${FFMPEG_INSTALL}` : ''}`,
     { details: { runtime: name } },
   );
 }
