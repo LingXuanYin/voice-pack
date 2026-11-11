@@ -13,12 +13,12 @@
 <meta property="og:title" content="voice-pack：给 agent 用的音色包 skill">
 <meta property="og:description" content="一个声音的参考集和配音指引装成一个包，谁拿到都能用。流程按所需能力写，模型由你接。">
 <meta property="og:url" content="https://lingxuanyin.github.io/voice-pack/">
-<meta property="og:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-2.0.png">
+<meta property="og:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-home.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="voice-pack 2.0：音色包 skill 能单独装了">
+<meta property="og:image:alt" content="voice-pack：一个声音的参考集和配音指引，装成一个包。谁拿到，都能用。装上：npx skills add LingXuanYin/voice-pack">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-2.0.png">
+<meta name="twitter:image" content="https://lingxuanyin.github.io/voice-pack/assets/share-home.png">
 <link rel="stylesheet" href="assets/site.css">
 <script src="assets/boot.js"></script>
 <script src="assets/site.js" defer></script>
@@ -36,7 +36,6 @@
       <a href="#inside"><span data-l="zh">盒子里有什么</span><span data-l="en">What's inside</span></a>
       <a href="#models"><span data-l="zh">接模型</span><span data-l="en">Models</span></a>
       <a href="#start"><span data-l="zh">开始</span><span data-l="en">Get started</span></a>
-      <a href="2.0/"><span data-l="zh">2.0 发布了</span><span data-l="en">2.0 is out</span></a>
     </nav>
     <div class="tools">
       <a class="pill pill--short" href="#install"><span data-l="zh">装上</span><span data-l="en">Install</span></a>
@@ -57,7 +56,7 @@
       <p class="sub"><span data-l="zh">voice-pack 是给 agent 用的 skill：音色包的格式，和造声音、配音、做包、验包的一整套工具。流程按所需能力写，模型由你接。</span><span data-l="en">voice-pack is a skill for your agent: the voice pack format, plus the tools to make voices, dub scripts, and build and check packs. Every flow is written by the capability it needs; you plug in the model.</span></p>
       <div class="front-foot">
         <div>
-          <p class="print"><span data-l="zh">版本 2.7.0 · Apache-2.0 · 这一面的两段声音都是合成的</span><span data-l="en">Version 2.7.0 · Apache-2.0 · Both voices on this panel are synthetic</span></p>
+          <p class="print"><span data-l="zh">版本 3.0.0 · Apache-2.0 · 这一面的两段声音都是合成的</span><span data-l="en">Version 3.0.0 · Apache-2.0 · Both voices on this panel are synthetic</span></p>
           <p class="player-status" data-player-status aria-live="polite"></p>
         </div>
         <div class="sticker" data-sticker data-state="idle" data-side="a">
@@ -101,7 +100,7 @@
 
     <section class="face face--flapped" id="voices" aria-labelledby="voices-title">
       <h2 id="voices-title"><span data-l="zh">这两段声音是怎么来的</span><span data-l="en">Where these two voices came from</span></h2>
-      <p class="lede"><span data-l="zh">都是合成的，没有用到任何真人的录音。A 面照一段文字描述设计出来，B 面拿 A 面当参考克隆。</span><span data-l="en">Both are synthetic; no real person's recording went into them. Side A was designed from a written description, and side B was cloned from side A.</span></p>
+      <p class="lede"><span data-l="zh">都是合成的，没有用到任何真人的录音。A 面照一段文字描述设计出来，B 面拿 A 面当参考克隆：这里只演示克隆，做包要照<a href="#does">「设计」</a>那一条，先配一段带表演的话当参考。</span><span data-l="en">Both are synthetic; no real person's recording went into them. Side A was designed from a written description, and side B was cloned from side A. That only shows cloning: for a pack, follow <a href="#does">Design</a> and first dub an acted passage to use as the reference.</span></p>
       <div class="sides">
         <div class="side">
           <h3><span data-l="zh">A 面 · 设计</span><span data-l="en">Side A · Designed</span></h3>
@@ -139,7 +138,7 @@
         <div><dt>Node.js</dt><dd><span data-l="zh">命令行用；在 24.14 上测过</span><span data-l="en">for the command line; tested on 24.14</span></dd></div>
         <div><dt><span data-l="zh">或者浏览器</span><span data-l="en">Or a browser</span></dt><dd><span data-l="zh">库只用平台自带的 Web Crypto、Compression Streams 和 fetch，当前的浏览器都能跑</span><span data-l="en">the library uses only built-in Web Crypto, Compression Streams and fetch, so current browsers run it</span></dd></div>
         <div><dt><span data-l="zh">模型</span><span data-l="en">Models</span></dt><dd><span data-l="zh">要用模型的功能，运行环境经适配器提供对应的所需能力</span><span data-l="en">for the features that need one, a runtime that provides the capability through an adapter</span></dd></div>
-        <div><dt>ffmpeg</dt><dd><span data-l="zh">可选：解码 WAV 以外的音频</span><span data-l="en">optional: decodes audio other than WAV</span></dd></div>
+        <div><dt>ffmpeg</dt><dd><span data-l="zh">可选：解码 WAV 以外的音频，配好以后变速（对画面的一句靠它对上时长），从视频里取音轨</span><span data-l="en">optional: decodes audio other than WAV, changes speed after dubbing (fitting a line to picture needs it) and takes the audio track out of a video</span></dd></div>
       </dl>
       </div>
     </aside>
@@ -152,15 +151,15 @@
           <h3><span data-l="zh">造声音</span><span data-l="en">Make a voice</span></h3>
           <dl>
             <div><dt><span data-l="zh">克隆</span><span data-l="en">Clone</span><code>voice-cloning</code></dt><dd><span data-l="zh">一段 5–20 秒、不带伴奏的干净参考，加它的逐字文本。</span><span data-l="en">One clean 5–20 s reference with no music under it, plus its verbatim text.</span></dd></div>
-            <div><dt><span data-l="zh">设计</span><span data-l="en">Design</span><code>voice-design</code></dt><dd><span data-l="zh">从设计词表挑属性（性别、年龄、音高、风格、英语口音、中文方言，或者 8 个预设角色之一），写成一段描述，合成试听；满意的锁定成参考。</span><span data-l="en">Pick attributes from the design vocabulary (gender, age, pitch, style, English accent, Chinese dialect, or one of 8 preset characters), write them as a description and audition it; lock the take you like as a reference.</span></dd></div>
+            <div><dt><span data-l="zh">设计</span><span data-l="en">Design</span><code>voice-design</code></dt><dd><span data-l="zh">把听得出来的特点（性别、岁数、音高、节奏、音色的质感、口音）写成几句描述，合成试听；满意的锁定，只当原料：照它配一段带表演的话当参考，之后照这段参考克隆。</span><span data-l="en">Describe what can be heard in a few sentences (gender, age, pitch, rhythm, texture, accent) and audition it; the take you lock is only raw material: an acted passage dubbed from it becomes the reference, and you clone from that.</span></dd></div>
             <div><dt><span data-l="zh">融合</span><span data-l="en">Blend</span><code>voice-cloning</code></dt><dd><span data-l="zh">两段以上参考，各带权重；权重是加起来始终为 1 的份额。</span><span data-l="en">Two or more references, each with a weight; the weights are shares that always add up to 1.</span></dd></div>
           </dl>
         </div>
         <div class="group">
           <h3><span data-l="zh">让它说话</span><span data-l="en">Make it speak</span></h3>
           <dl>
-            <div><dt><span data-l="zh">配音</span><span data-l="en">Dub</span><code>dub</code></dt><dd><span data-l="zh">用音色包给台本配音：每句挑语言、情绪、风格最对得上的那段参考，读音词表（W3C PLS）换掉容易读错的词，配音指引一起交给模型。</span><span data-l="en">Dub a script with a voice pack: each line gets the reference that best matches its language, emotion and style, the pronunciation lexicon (W3C PLS) fixes words that get misread, and the dubbing guidance goes along.</span></dd></div>
-            <div><dt><span data-l="zh">有声书和长文</span><span data-l="en">Audiobooks, long text</span></dt><dd><span data-l="zh">台本标记：<code># 标题</code> 分章，<code>[pause 0.6s]</code> 停顿，<code>[slow]</code>、<code>[fast]</code>、<code>[emphasis]</code>、<code>[spell]</code>、<code>[voice:名字]</code>，舞台提示 <code>（耳语）</code>、<code>*笑*</code>；新闻、播客、有声书、本地化配音、短视频等 12 个场景，各有台本润色的规则。</span><span data-l="en">Script markup: <code># Title</code> for chapters, <code>[pause 0.6s]</code>, <code>[slow]</code>, <code>[fast]</code>, <code>[emphasis]</code>, <code>[spell]</code>, <code>[voice:name]</code>, and stage cues such as <code>(whispers)</code> and <code>*laughs*</code>; 12 scenes, from news and podcasts to audiobooks, localization and short video, each with its own script-polishing rules.</span></dd></div>
+            <div><dt><span data-l="zh">配音</span><span data-l="en">Dub</span><code>dub</code></dt><dd><span data-l="zh">用音色包给台本配音：一句怎么说，写成方括号里的提示，原样交给模型；用哪段参考，由你或设定按音色基底标签点名，没点名就用这句语言的默认段；用到的参考不是这句的语言（比如包里没有这种语言的参考），配音在花钱之前停下（试运行也停），说明是哪几句、参考和台词各是什么语言：要口音就加 <code>--allow-cross-language</code>，不要就给包补一段这种语言的参考，再发新版本；读音词表（W3C PLS）换掉容易读错的词。</span><span data-l="en">Dub a script with a voice pack: how a line is said is written as cues in square brackets, which go to the model as written; the reference is the one you or the setup names by its reference tag, or else the default segment of the line's language; if that reference is not in the line's language (say the pack has none in it), <code>dub</code> stops before anything is billed (dry runs too) and names the lines and both languages: add <code>--allow-cross-language</code> to keep the accent, or add a reference in that language and make a new version; the pronunciation lexicon (W3C PLS) fixes words that get misread.</span></dd></div>
+            <div><dt><span data-l="zh">台本和场景</span><span data-l="en">Scripts, scenes</span></dt><dd><span data-l="zh">台本标记只有三种：<code># 标题</code> 分章，<code>[pause 0.6s]</code> 停顿，<code>[voice:名字]</code> 换声音；别的方括号是提示（<code>[whispering]</code>、<code>[laughs]</code>，一律写英文），舞台说明 <code>（耳语）</code>、<code>*笑*</code> 换成同样字的提示，都留在原位交给模型。对话里的一句、几个角色轮流说的一场戏、旁白和有声书这类长文，各有一份子 skill：台本怎么改，提示怎么写，用哪段参考，配完交回什么。</span><span data-l="en">Script markup comes in three kinds: <code># Title</code> for chapters, <code>[pause 0.6s]</code>, and <code>[voice:name]</code> to switch voices. Any other square brackets are cues (<code>[whispering]</code>, <code>[laughs]</code>, always in English), and stage directions such as <code>(whispers)</code> and <code>*laughs*</code> become cues of the same words; all of them reach the model where they are written. A line said to someone, several characters taking turns, and narration or long text such as audiobooks each have a sub-skill: how to edit the script, which cues to write, which reference to use, what to hand back.</span></dd></div>
             <div><dt><span data-l="zh">批量</span><span data-l="en">Batches</span></dt><dd><span data-l="zh">长文本按单次的字数上限切开、并发生成；失败的句子单独重做（<code>--only</code>），做好的原样沿用，不重复付费。</span><span data-l="en">Long text is split at the per-call limit and generated in parallel; failed lines are redone on their own (<code>--only</code>) while finished ones are kept, so nothing is paid for twice.</span></dd></div>
             <div><dt><span data-l="zh">变声和唱歌</span><span data-l="en">Convert, sing</span><code>convert</code></dt><dd><span data-l="zh">把一段音频换成音色包的声音；<code>--singing</code> 是唱歌，输入是人声分轨。</span><span data-l="en">Turn a recording into the pack's voice; <code>--singing</code> for singing, from a vocal stem.</span></dd></div>
           </dl>
@@ -174,12 +173,12 @@
         <div class="group">
           <h3><span data-l="zh">音色包</span><span data-l="en">Voice packs</span></h3>
           <dl>
-            <div><dt><span data-l="zh">做包</span><span data-l="en">Make</span><code>make-pack</code></dt><dd><span data-l="zh">读切好的片段或整段长录音：打标签，挑参考集和留出录音，响度统一到 −20 LUFS（峰值不超过 −1 dBFS），试合成，量还原度，告诉你还缺什么素材；<code>--previous</code> 发新版本。</span><span data-l="en">From cut clips or whole long recordings: tags them, picks the reference set and the holdout, evens loudness to −20 LUFS (peaks at most −1 dBFS), runs a trial synthesis, measures fidelity and tells you what material is still missing; <code>--previous</code> makes a new version.</span></dd></div>
+            <div><dt><span data-l="zh">做包</span><span data-l="en">Make</span><code>make-pack</code></dt><dd><span data-l="zh">读切好的片段或整段长录音：挑参考集和留出录音，每段参考记下语言和音色基底标签，听着在逐字稿里标上提示，每种语言挑一段默认段；响度统一到 −20 LUFS（峰值不超过 −1 dBFS），试合成，量还原度，告诉你还缺什么素材；<code>--card-line</code> 配好卡片试听那一句，<code>--previous</code> 发新版本。</span><span data-l="en">From cut clips or whole long recordings: picks the reference set and the holdout, gives each reference its language and reference tag, listens to mark cues in its transcript, and picks a default segment for each language; evens loudness to −20 LUFS (peaks at most −1 dBFS), runs a trial synthesis, measures fidelity and tells you what material is still missing; <code>--card-line</code> voices the line the preview card plays, and <code>--previous</code> makes a new version.</span></dd></div>
             <div><dt><span data-l="zh">检查</span><span data-l="en">Check</span><code>check</code></dt><dd><span data-l="zh">清单对得上文件，签名，基础部分和角色部分互相校验，SKILL.md、音频、外部资源。</span><span data-l="en">Manifest against files, signatures, the base and role parts checked against each other, SKILL.md, audio, external resources.</span></dd></div>
             <div><dt><span data-l="zh">补全</span><span data-l="en">Complete</span><code>complete</code></dt><dd><span data-l="zh">只有角色部分的包，取回官方的基础部分，验过签再放进包里。</span><span data-l="en">A pack that has only its role part fetches the official base part, verifies the signature and puts it in.</span></dd></div>
             <div><dt><span data-l="zh">放进环境</span><span data-l="en">Install a pack</span><code>install</code></dt><dd><span data-l="zh">检查通过才放进项目的 <code>.agents/skills/</code> 和 <code>.claude/skills/</code>；已有同名目录就拒绝，不覆盖。</span><span data-l="en">Only after the check passes, into the project's <code>.agents/skills/</code> and <code>.claude/skills/</code>; a directory that already has the name is refused, never overwritten.</span></dd></div>
             <div><dt><span data-l="zh">分享</span><span data-l="en">Share</span></dt><dd><span data-l="zh">打成一个 <code>.voicepack.zip</code> 分享文件，里面带一张自己就能打开、能试听的预览卡片。</span><span data-l="en">Packs it as one <code>.voicepack.zip</code> share file, with a preview card inside that opens and plays on its own.</span></dd></div>
-            <div><dt><span data-l="zh">净室和查重</span><span data-l="en">Clean room</span><code>clean-room</code></dt><dd><span data-l="zh">照一个已有的包做你自己的：新包的文字交给看不到来源包的新会话写；<code>--source-pack</code> 在花钱之前比对文字和录音，重合太多就停下。</span><span data-l="en">Make your own pack after an existing one: a fresh session that cannot see the source pack writes the new text, and <code>--source-pack</code> compares text and recordings before anything is billed, stopping if too much is reused.</span></dd></div>
+            <div><dt><span data-l="zh">净室和查重</span><span data-l="en">Clean room</span><code>clean-room</code></dt><dd><span data-l="zh">照一个已有的包做你自己的：<code>clean-room</code> 给一个看不到来源包的新会话准备输入，新包的文字由它写；做包时给 <code>make-pack --source-pack</code>，在花钱之前比对文字和录音，重合太多就停下。</span><span data-l="en">Make your own pack after an existing one: <code>clean-room</code> prepares the input for a fresh session that cannot see the source pack, and that session writes the new text; <code>make-pack --source-pack</code> then compares text and recordings before anything is billed, stopping if too much is reused.</span></dd></div>
           </dl>
         </div>
         <div class="group">
@@ -195,7 +194,7 @@
       <div class="flap__body">
       <h2 id="spend-title"><span data-l="zh">花钱之前</span><span data-l="en">Before anything is billed</span></h2>
       <dl class="facts">
-        <div><dt><span data-l="zh">先说清楚</span><span data-l="en">It tells you first</span></dt><dd><span data-l="zh">要调模型的命令，开始之前说明要调哪几项能力、各几次；费用记在哪里，由你接的适配器说明。</span><span data-l="en">Before a command calls a model, it says which capabilities it will call and how many times; the adapter you plug in says where the cost goes.</span></dd></div>
+        <div><dt><span data-l="zh">先说清楚</span><span data-l="en">It tells you first</span></dt><dd><span data-l="zh">适配器写了费用说明（<code>billing</code>）的，要调模型的命令开始之前说明要调哪几项能力、各几次，费用记在哪里。通用的 <code>process</code> 适配器不知道你的程序花不花钱，不说这一句：要的话，在自己的适配器里加上 <code>billing</code>。</span><span data-l="en">When the adapter states its billing (<code>billing</code>), a command that calls a model first says which capabilities it will call, how many times, and where the cost goes. The generic <code>process</code> adapter cannot know whether your program costs money and says nothing: to get the notice, add <code>billing</code> in your own adapter.</span></dd></div>
         <div><dt><code>--dry-run</code></dt><dd><span data-l="zh">只做不花钱的几步：不接模型，也能先看配音和做包的规划。</span><span data-l="en">does only the free steps, so you can see a dub or a pack plan before any model is connected.</span></dd></div>
         <div><dt><span data-l="zh">缺能力</span><span data-l="en">Missing pieces</span></dt><dd><span data-l="zh">运行环境缺某项能力，只有用到它的功能报错，并点名缺的是哪一项。</span><span data-l="en">If the runtime lacks a capability, only the features that need it fail, and they name what is missing.</span></dd></div>
       </dl>
@@ -206,9 +205,11 @@
       <h2 id="inside-title"><span data-l="zh">盒子里有什么</span><span data-l="en">What's in the box</span></h2>
       <p class="lede"><span data-l="zh">一个标准的 Agent Skill 目录，入口是 SKILL.md。</span><span data-l="en">A standard Agent Skill directory, with SKILL.md as the entry point.</span></p>
       <ul class="contents">
-        <li><span class="entry">SKILL.md</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">入口：流程按所需能力写，不点名模型</span><span data-l="en">the entry point: flows written by capability, with no model names</span></span></li>
+        <li><span class="entry">SKILL.md</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">入口：流程按所需能力写，不点名模型；配音先按场景指到 scenes/ 里的一份</span><span data-l="en">the entry point: flows written by capability, with no model names; each dubbing job is sent to its scene in scenes/</span></span></li>
+        <li><span class="entry">scenes/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">配音的 3 份子 skill，一个场景一份：对话里的一句、几个角色的一场戏、旁白和长文</span><span data-l="en">3 dubbing sub-skills, one per scene: a line said to someone, several characters taking turns, narration and long text</span></span></li>
+        <li><span class="entry">models/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">模型说明，一个模型一份（现在 2 份）：模型本身收什么、提示和描述怎么写、上限在哪，不绑平台；流程和子 skill 只指到它的节</span><span data-l="en">model notes, one per model (2 so far): what the model itself takes, how to write its cues and descriptions, its limits; tied to no platform, and flows and sub-skills point to their sections</span></span></li>
         <li><span class="entry">protocol/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">协议核心：格式说明（第三方照着就能读写音色包）、官方签名、读写和检查包的程序</span><span data-l="en">the protocol core: the format spec (enough for anyone to read and write packs), the official signature, and the library that reads, writes and checks packs</span></span></li>
-        <li><span class="entry">vocab/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">词表：17 项所需能力，设计词表（6 类属性、8 个预设角色），12 个场景，6 种台本标记，舞台提示</span><span data-l="en">vocabularies: 17 capabilities, the design vocabulary (6 attribute groups, 8 preset characters), 12 scenes, 6 script markers, stage cues</span></span></li>
+        <li><span class="entry">vocab/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">词表：21 项所需能力（其中 4 项是声明），设计词表（给 app 和服务端读的 6 类属性、8 个预设角色），2 种方括号标记（pause、voice），舞台提示</span><span data-l="en">vocabularies: 21 capabilities (4 of them declarations), the design vocabulary that apps and servers read (6 attribute groups, 8 preset characters), 2 bracket markers (pause, voice), stage cues</span></span></li>
         <li><span class="entry">lib/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">流程层：配音、变声、做包、量还原度、查重</span><span data-l="en">the flow layer: dubbing, conversion, pack making, fidelity, duplicate checks</span></span></li>
         <li><span class="entry">tools/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">官方小工具：台本标记解析、分句、音质检查、按能量切段、音频指纹，只做计算</span><span data-l="en">official tools: markup parser, sentence splitter, audio quality check, energy-based cutting, audio fingerprints; computation only</span></span></li>
         <li><span class="entry">adapters/</span><span class="leader" aria-hidden="true"></span><span class="what"><span data-l="zh">适配器框架，和通用的 process 适配器</span><span data-l="en">the adapter framework and the generic process adapter</span></span></li>
@@ -259,7 +260,7 @@
             <li><span data-l="zh">看看这个音色包里有什么，检查一下签名。</span><span data-l="en">Check this voice pack and tell me what's in it.</span></li>
             <li><span data-l="zh">用这个音色包给 script.txt 配音，先给我看规划，别花钱。</span><span data-l="en">Dub script.txt with this pack. Show me the plan first, and don't spend anything.</span></li>
             <li><span data-l="zh">帮我把本机的 python my_tts.py 接成适配器，跑一遍检查。</span><span data-l="en">Wire up my local python my_tts.py as an adapter and run the check.</span></li>
-            <li><span data-l="zh">照设计词表写一段声音描述：中年男声，低沉，纪录片旁白。</span><span data-l="en">Use the design vocabulary to write a voice description: middle-aged man, low pitch, documentary narrator.</span></li>
+            <li><span data-l="zh">写几句声音描述：五十多岁的男人，音高偏低，胸腔共鸣厚，语速慢，句子短。</span><span data-l="en">Write a few sentences describing a voice: a man in his fifties, low-pitched, a full chest resonance, slow, short sentences.</span></li>
           </ul>
         </div>
         <div>
@@ -277,12 +278,13 @@
       <span class="die-label die-label--foot" aria-hidden="true">插舌 TUCK</span>
       <h2 id="facts-title"><span data-l="zh">版本和许可</span><span data-l="en">Version and license</span></h2>
       <dl class="facts">
-        <div><dt><span data-l="zh">版本</span><span data-l="en">Version</span></dt><dd>2.7.0 · <a href="https://github.com/LingXuanYin/voice-pack/blob/main/skills/voice-pack/CHANGELOG.md"><span data-l="zh">发布说明</span><span data-l="en">release notes</span></a></dd></div>
+        <div><dt><span data-l="zh">版本</span><span data-l="en">Version</span></dt><dd>3.0.0 · <a href="https://github.com/LingXuanYin/voice-pack/blob/main/skills/voice-pack/CHANGELOG.md"><span data-l="zh">发布说明</span><span data-l="en">release notes</span></a></dd></div>
+        <div><dt><span data-l="zh">2.x 的包</span><span data-l="en">2.x packs</span></dt><dd><span data-l="zh">3.0 和 2.x 不兼容：这一版配音、变声、发新版本都不收 2.x 的包，也不迁移。2.x 的包用 2.x 的基础部分照旧能用；要带到 3.0，用它的素材做一个新包。</span><span data-l="en">3.0 does not work with 2.x packs: this version's dubbing, conversion and new versions refuse them, and nothing migrates them. A 2.x pack keeps working with a 2.x base part; to bring a voice to 3.0, make a new pack from its material.</span></dd></div>
         <div><dt><span data-l="zh">许可</span><span data-l="en">License</span></dt><dd>Apache-2.0</dd></div>
         <div><dt><span data-l="zh">签名</span><span data-l="en">Signatures</span></dt><dd><span data-l="zh">基础部分和协议核心带官方签名（Ed25519）；check、install、complete 默认只认协议核心里列出的公钥。</span><span data-l="en">The base part and the protocol core carry the official signature (Ed25519); by default check, install and complete trust only the keys listed in the protocol core.</span></dd></div>
         <div><dt><span data-l="zh">源码</span><span data-l="en">Source</span></dt><dd><a href="https://github.com/LingXuanYin/voice-pack">LingXuanYin/voice-pack</a></dd></div>
       </dl>
-      <p class="after"><a href="2.0/"><span data-l="zh">2.0 发布了：这一版带来什么</span><span data-l="en">2.0 is out: what this release brings</span></a></p>
+      <p class="after"><a href="2.0/"><span data-l="zh">2.0 新闻稿：那一版带来了什么</span><span data-l="en">The 2.0 press release: what that release brought</span></a></p>
     </aside>
 
   </main>

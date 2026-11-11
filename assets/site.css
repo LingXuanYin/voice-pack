@@ -265,6 +265,8 @@ code, kbd { font-family: var(--font-mono); font-size: 0.88em; }
 .letterhead { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px var(--pad); background: var(--spot); color: var(--on-spot); }
 .letterhead .wordmark { font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem); }
 .letterhead__kind { font: 800 1rem/1.2 var(--font-display); text-align: right; }
+/* 信笺头下面一条：这是哪一版的稿子，现在装到的是什么 */
+.press__archived { padding: 12px var(--pad); background: var(--well); border-bottom: 1.5px solid var(--rule); font-size: 0.9375rem; }
 .press__body { padding: clamp(28px, 4.6vw, 54px) var(--pad) clamp(30px, 5vw, 56px); }
 .headline { font: 900 clamp(2.4rem, 1.4rem + 3.6vw, 4.25rem)/1.02 var(--font-display); letter-spacing: -0.02em; text-wrap: balance; max-width: 13em; }
 .press__lead { margin-top: clamp(18px, 2.4vw, 26px); max-width: 34em; font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem); }
