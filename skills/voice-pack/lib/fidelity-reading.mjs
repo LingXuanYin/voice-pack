@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 还原度报告的读法（流程层）：把 measureFidelity、redoNotHeard 出的报告变成「要显示什么」的结构。
-// 读法的正本是 lib/fidelity.mjs 文件头「怎么读这份报告」（读法本身是文字，写在那一处）；这里是它的程序：分档、哪几个数不是分数、
+// 读法的正本是 lib/fidelity.mjs 文件头「How to read this report」（读法本身是文字，写在那一处）；这里是它的程序：分档、哪几个数不是分数、
 // 作废、没听成和量不到各算几条，都在 readReport 里决定一次。命令行（cli/fidelity-report.mjs）和 app 都从它的返回值显示，
 // 不各写一份阈值和规则。显示的措辞（中文句子、英文翻译、排版）是各自的事，这里只给数、档和说明的键。
 // 导出的 whereOf(ask)：一问里的哪里像、哪里不像。旧报告（问法分开之前）的 differences 读成哪里不像，哪里像为 null。
@@ -24,24 +24,24 @@ export const READING = Object.freeze({ minTrials: 5, same: 0.7, notSame: 0.3 });
 export const QUESTION_CALIBRATION = Object.freeze({
   separable: false,
   date: '2026-11-01',
-  record: '2026-11-01 的 K 组：已知答案的真录音（同一人 12 对、同语言同性别的不同人 12 对），每对问两次，跑两遍',
+  record: 'Group K of 2026-11-01: real recordings with known answers (12 pairs of the same person, 12 pairs of different people of the same language and gender), each pair asked twice, run twice',
   failedCriteria: Object.freeze(['Q2', 'Q3']),
 });
 
 /** 判成同一人的比例落在哪一档，每一档的名字（中文，命令行直接用；app 按档的键翻译）。 */
 export const SAME_SPEAKER_TIERS = Object.freeze({
-  not_enough: '条数不够，不下结论',
-  same: '判成同一人',
-  not_same: '判成不是同一人',
-  unsure: '说不准',
-  not_applicable: '三档读法不适用',
-  not_separable: '问法没有分得开，只列次数和条数，不下结论',
+  not_enough: 'too few trials, no conclusion',
+  same: 'judged the same person',
+  not_same: 'judged not the same person',
+  unsure: 'uncertain',
+  not_applicable: 'the three-tier reading does not apply',
+  not_separable: 'the question does not separate the cases; only counts of asks and trials are listed, no conclusion',
 });
 
 /**
  * 读法每一点的显示用语（中文）。键是稳定的，app 按键配英文（有一条测试核对键和 {…} 都对得上）；正文里的 {minTrials}、{same}、{notSame}
  * 是 READING 里的数，显示前用 fillReading 填，所以数字在代码里只有 READING 一处。
- * point 是这条对应 lib/fidelity.mjs 文件头「怎么读这份报告」的第几点（0 是开头那句「不设门槛」）；文件头的每一点至少有一条，
+ * point 是这条对应 lib/fidelity.mjs 文件头「How to read this report」的第几点（0 是开头那句「不设门槛」）；文件头的每一点至少有一条，
  * 这一点要保持：文件头加了一点，这里也要加。
  * 哪几条适用于一份报告，见 readReport 返回值里的 notes。
  */
@@ -174,15 +174,15 @@ const REQUIRED_PARTS = ['counts', 'models', 'baseline', 'overall'];
 /** 核对要读的东西是 measureFidelity 出的报告的形状（只核对要用到的）。 */
 function assertReport(report) {
   const fail = (field, message) => new VoicePackError('fidelity_input_invalid', message, { details: { field } });
-  if (!isPlainObject(report)) throw fail('report', '要读的必须是 measureFidelity 出的报告对象');
+  if (!isPlainObject(report)) throw fail('report', 'the input to read must be a report object produced by measureFidelity');
   for (const key of REQUIRED_PARTS) {
-    if (!isPlainObject(report[key])) throw fail(`report.${key}`, `要读的报告缺 ${key}：它是 measureFidelity 出的报告吗`);
+    if (!isPlainObject(report[key])) throw fail(`report.${key}`, `the report to read lacks ${key}: is it a report produced by measureFidelity?`);
   }
   for (const key of ['speakerSimilarity', 'blindListening']) {
-    if (!isPlainObject(report.overall[key])) throw fail(`report.overall.${key}`, `要读的报告缺 overall.${key}`);
+    if (!isPlainObject(report.overall[key])) throw fail(`report.overall.${key}`, `the report to read lacks overall.${key}`);
   }
   for (const key of ['groups', 'items']) {
-    if (!Array.isArray(report[key])) throw fail(`report.${key}`, `要读的报告缺 ${key}：它是 measureFidelity 出的报告吗`);
+    if (!Array.isArray(report[key])) throw fail(`report.${key}`, `the report to read lacks ${key}: is it a report produced by measureFidelity?`);
   }
 }
 

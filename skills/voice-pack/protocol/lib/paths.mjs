@@ -2,12 +2,12 @@
 //
 // 包里的路径：怎么排序，哪些名字不能要。清单里的路径、zip 里的成员名、命令行读到的文件名，都过这一关。
 //
-// 路径的写法（格式说明见 protocol/FORMAT.md「路径」）：
+// 路径的写法（格式说明见 protocol/FORMAT.md「Path check」）：
 //   - 一律用 `/` 分隔，相对于它所在的目录，不以 `/` 开头，也不以 `/` 结尾；
 //   - 按 UTF-8 字节序排序（= 按码点排，和系统语言无关；不是 JavaScript 默认的按 UTF-16 码元排，
 //     那样基本平面高位的字符和 emoji 之间的顺序是反的）。
 //
-// 哪些名字不能要，以及每一条的理由，写在 protocol/FORMAT.md「路径」一节（那里是正本，不在这里重抄）。
+// 哪些名字不能要，以及每一条的理由，写在 protocol/FORMAT.md「Path check」一节（那里是正本，不在这里重抄）。
 // reason 是机器可读的原因，pathProblem 和 assertPackPath 都给出它，是下面的一种：
 //   not_string  empty  invalid_unicode  control_char  backslash  colon  absolute  empty_segment  dot_segment
 //   parent_segment  trailing_dot_or_space  reserved_name  segment_too_long  path_too_long
@@ -93,27 +93,27 @@ export function sortUtf8(paths) {
  * @returns {null | { reason: string, message: string }}
  */
 export function pathProblem(path) {
-  if (typeof path !== 'string') return problem('not_string', '路径必须是字符串');
-  if (path === '') return problem('empty', '路径是空的');
+  if (typeof path !== 'string') return problem('not_string', 'The path must be a string');
+  if (path === '') return problem('empty', 'The path is empty');
   for (const ch of path) {
     const cp = ch.codePointAt(0);
-    if (cp >= 0xd800 && cp <= 0xdfff) return problem('invalid_unicode', '路径里有孤立的代理码元，编码成 UTF-8 以后会变成别的字符');
-    if (isControlChar(cp)) return problem('control_char', `路径里有控制字符或书写方向控制符（U+${cp.toString(16).toUpperCase().padStart(4, '0')}）`);
-    if (ch === '\\') return problem('backslash', '路径里有反斜杠：Windows 把它当目录分隔符，Linux 不是，路径一律用 /');
-    if (ch === ':') return problem('colon', '路径里有冒号：Windows 的盘符和备用数据流都用它');
+    if (cp >= 0xd800 && cp <= 0xdfff) return problem('invalid_unicode', 'The path contains a lone surrogate code unit, which turns into a different character when encoded as UTF-8');
+    if (isControlChar(cp)) return problem('control_char', `The path contains a control character or a text-direction control character (U+${cp.toString(16).toUpperCase().padStart(4, '0')})`);
+    if (ch === '\\') return problem('backslash', 'The path contains a backslash: Windows treats it as a directory separator, Linux does not; always use / in paths');
+    if (ch === ':') return problem('colon', 'The path contains a colon: Windows uses it for drive letters and alternate data streams');
   }
-  if (path.startsWith('/')) return problem('absolute', '路径以 / 开头，是绝对路径');
+  if (path.startsWith('/')) return problem('absolute', 'The path starts with /, so it is an absolute path');
   const segments = path.split('/');
   for (const segment of segments) {
-    if (segment === '') return problem('empty_segment', '路径里有空的一段（连着两个 /，或者以 / 结尾）');
-    if (segment === '.') return problem('dot_segment', '路径里有 . 这一段');
-    if (segment === '..') return problem('parent_segment', '路径里有 .. 这一段，会跳出所在的目录');
-    if (segment.endsWith('.') || segment.endsWith(' ')) return problem('trailing_dot_or_space', `「${segment}」以点或空格结尾：Windows 会悄悄去掉它们，写下去的名字和读出来的不一样`);
+    if (segment === '') return problem('empty_segment', 'The path has an empty segment (two / in a row, or a trailing /)');
+    if (segment === '.') return problem('dot_segment', 'The path has a . segment');
+    if (segment === '..') return problem('parent_segment', 'The path has a .. segment, which would leave its directory');
+    if (segment.endsWith('.') || segment.endsWith(' ')) return problem('trailing_dot_or_space', `"${segment}" ends with a dot or a space: Windows silently strips them, so the name written differs from the name read back`);
     const stem = segment.split('.')[0].toUpperCase();
-    if (RESERVED_NAMES.has(stem)) return problem('reserved_name', `「${segment}」是 Windows 的保留设备名`);
-    if (utf8Length(segment) > MAX_SEGMENT_BYTES) return problem('segment_too_long', `有一段超过 ${MAX_SEGMENT_BYTES} 个 UTF-8 字节`);
+    if (RESERVED_NAMES.has(stem)) return problem('reserved_name', `"${segment}" is a reserved Windows device name`);
+    if (utf8Length(segment) > MAX_SEGMENT_BYTES) return problem('segment_too_long', `A segment is longer than ${MAX_SEGMENT_BYTES} UTF-8 bytes`);
   }
-  if (utf8Length(path) > MAX_PATH_BYTES) return problem('path_too_long', `整条路径超过 ${MAX_PATH_BYTES} 个 UTF-8 字节`);
+  if (utf8Length(path) > MAX_PATH_BYTES) return problem('path_too_long', `The whole path is longer than ${MAX_PATH_BYTES} UTF-8 bytes`);
   return null;
 }
 
@@ -125,7 +125,7 @@ export function pathProblem(path) {
 export function assertPackPath(path) {
   const found = pathProblem(path);
   if (found) {
-    throw new VoicePackError('path_unsafe', `路径 ${JSON.stringify(path)} 不能要：${found.message}`, {
+    throw new VoicePackError('path_unsafe', `Path ${JSON.stringify(path)} rejected: ${found.message}`, {
       details: { path: typeof path === 'string' ? path : String(path), reason: found.reason },
     });
   }

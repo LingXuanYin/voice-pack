@@ -31,24 +31,24 @@ import { ADAPTER_USAGE, applyAdapters, billingSentence, moneySentence, takeAdapt
 import { readAudioFile } from '../audio-files.mjs';
 import { pickText } from '../pick-text.mjs';
 
-export const summary = '把一段音频换成音色包的声音：变声，或者 --singing 唱歌';
-export const usage = `convert <包目录> <音频文件> --out <文件> [--singing] ${ADAPTER_USAGE} [--language <标签>] [--reference-tag <标签>] [--json]`;
+export const summary = 'Turn a piece of audio into the voice of a voice pack: voice conversion, or singing with --singing';
+export const usage = `convert <pack directory> <audio file> --out <file> [--singing] ${ADAPTER_USAGE} [--language <tag>] [--reference-tag <tag>] [--json]`;
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = { out: 'string', singing: 'boolean', language: 'string', 'reference-tag': 'strings' };
 /** 换声要调的能力，和费用说明里怎么叫它（lib/convert.mjs 里是同一张对应）。 */
-const CONVERSION = { speech: { capability: 'voice-conversion', name: '变声' }, singing: { capability: 'singing-voice-conversion', name: '唱歌变声' } };
+const CONVERSION = { speech: { capability: 'voice-conversion', name: 'voice conversion' }, singing: { capability: 'singing-voice-conversion', name: 'singing voice conversion' } };
 
 export async function run(args, ctx) {
   const taken = takeAdapterArguments(args);
   if (taken.problem) return usageProblem(ctx, usage, taken.problem);
   const parsed = parseArgs(taken.rest, FLAGS);
-  if (parsed.problem || parsed.positional.length !== 2) return usageProblem(ctx, usage, parsed.problem ?? '要给包目录和音频文件（两个位置参数）');
+  if (parsed.problem || parsed.positional.length !== 2) return usageProblem(ctx, usage, parsed.problem ?? 'Give a pack directory and an audio file (two positional arguments)');
   const { options } = parsed;
-  if (options.out === undefined) return usageProblem(ctx, usage, '要给 --out <文件>（换好的音频写在这里）');
+  if (options.out === undefined) return usageProblem(ctx, usage, 'Give --out <file> (the converted audio is written there)');
   const referenceTags = options['reference-tag'] ?? [];
-  if (referenceTags.length > 1) return usageProblem(ctx, usage, '--reference-tag 只能给一次：convert 一次只用一段参考');
-  if (referenceTags.some((tag) => tag === '')) return usageProblem(ctx, usage, '--reference-tag 要给一个标签（不能是空的）');
+  if (referenceTags.length > 1) return usageProblem(ctx, usage, '--reference-tag can be given only once: convert uses only one reference segment at a time');
+  if (referenceTags.some((tag) => tag === '')) return usageProblem(ctx, usage, '--reference-tag needs a tag (it may not be empty)');
   const [packArgument, audioArgument] = parsed.positional;
   const kind = options.singing === true ? 'singing' : 'speech';
 
@@ -65,7 +65,7 @@ export async function run(args, ctx) {
   const { name } = CONVERSION[kind];
   // 费用说明等到该核对的都核对过（能力、运行时、用哪一段参考）才说：标签包里没有、缺能力，都不会调用
   const onPlan = (_pick, { capability }) => {
-    if (billing !== null && !ctx.json) ctx.stderr(`${billing}：\n  ${name} 1 次（${capability}）\n  ${moneySentence(adapters, { [capability]: 1 })}\n`);
+    if (billing !== null && !ctx.json) ctx.stderr(`${billing}:\n  ${name}: 1 call (${capability})\n  ${moneySentence(adapters, { [capability]: 1 })}\n`);
   };
   const result = await convertAudio(env, pack, audio, {
     kind,
@@ -82,13 +82,13 @@ export async function run(args, ctx) {
     ctx.stdout(`${JSON.stringify(summaryReport, null, 2)}\n`);
     return 0;
   }
-  const lines = [`包：${result.pack.name}（${result.pack.id} ${result.pack.version}）`, `换好了（${result.capability}${result.model ? `，模型 ${result.model}` : ''}）→ ${out}`];
+  const lines = [`Pack: ${result.pack.name} (${result.pack.id} ${result.pack.version})`, `Converted (${result.capability}${result.model ? `, model ${result.model}` : ''}) → ${out}`];
   const { pick } = result;
-  lines.push(`参考：[${pickText(pick).join(' · ')}]`);
+  lines.push(`Reference: [${pickText(pick).join(' · ')}]`);
   if (result.enhancers.offered.length > 0) {
-    lines.push(result.enhancers.used.length > 0 ? `增强件：用上了 ${result.enhancers.used.join('、')}` : `增强件：这次没用增强件（环境没有对应的模型），照常换声。包里有 ${result.enhancers.notUsed.map((item) => `${item.id}（${item.model} ${item.modelVersion}）`).join('、')}`);
+    lines.push(result.enhancers.used.length > 0 ? `Enhancers: used ${result.enhancers.used.join(', ')}` : `Enhancers: none used this time (the environment has no matching model); converted as usual. The pack has ${result.enhancers.notUsed.map((item) => `${item.id} (${item.model} ${item.modelVersion})`).join(', ')}`);
   }
-  if (result.scripts.length > 0) lines.push(`脚本：${result.scripts.map((item) => `${item.entry}（${item.runtime}）`).join('、')}`);
+  if (result.scripts.length > 0) lines.push(`Scripts: ${result.scripts.map((item) => `${item.entry} (${item.runtime})`).join(', ')}`);
   ctx.stdout(`${lines.join('\n')}\n`);
   return 0;
 }

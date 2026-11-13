@@ -8,7 +8,7 @@
 //
 // 清单里除 files 以外的字段，按这个次序取，后面的盖掉前面的：
 //   1. 目录里已有的清单（同一种部分才算）：重新 seal 就是刷新文件列表和哈希，包 ID、版本这些原样沿用；
-//   2. --fields 指的 JSON 文件（字段见 protocol/FORMAT.md「清单」）；
+//   2. --fields 指的 JSON 文件（字段见 protocol/FORMAT.md「4. Manifest (manifest.json)」）；
 //   3. --part、--version。
 //   protocol  协议核心：--version 就够了（protocol 字段省略就用这一版库的协议版本）。
 //   base      基础部分：同上。里面嵌着的 protocol/ 要先 seal。
@@ -18,7 +18,7 @@
 //             没有基础部分时怎么补全、怎么做新包、配音指引），写进目录；有就原样留着。
 //             骨架的语言跟着调用方给的 --text-language（zh 或 en），不给就是中文：这个命令行只有一种语言的说明，
 //             所以语言是调用方说了算，不看环境变量或系统语言。只管生成的骨架；目录里已有 SKILL.md 时用不上，值写错了照样报用法错误。
-//             「## 配音指引」这一行两种语言都原样写，规则见 protocol/FORMAT.md「骨架的语言」。
+//             「## 配音指引」这一行两种语言都原样写，规则见 protocol/FORMAT.md「Language of the skeleton」。
 //             里面嵌着的 protocol/（和 voice-pack/）要先 seal。
 //
 // 先在内存里生成并检查（清单对文件、SKILL.md、音频、外部资源，和 check 命令的一样；不验签、不做互相校验：被封的部分此时还没有签名，
@@ -47,37 +47,37 @@ import { readDirectory, writeNewFile, pathKind } from '../disk.mjs';
 import { parseOptions, readFileBytes } from '../signing.mjs';
 import { formatReport, partTitle } from '../report.mjs';
 
-export const summary = '给一个部分的目录生成清单 manifest.json（先检查，通过了才写；角色部分没有 SKILL.md 时生成骨架）';
-export const usage = 'seal <部分目录> --part <role|base|protocol> [--version <x.y.z>] [--fields <描述.json>] [--short-name <英文短名>] [--text-language <zh|en>] [--json]';
+export const summary = 'Generate the manifest manifest.json for the directory of one part (check first, write only if the check passes; when a role part has no SKILL.md, generate a skeleton)';
+export const usage = 'seal <part-dir> --part <role|base|protocol> [--version <x.y.z>] [--fields <fields.json>] [--short-name <short English name>] [--text-language <zh|en>] [--json]';
 
 const SKILL_FILE = 'SKILL.md';
 
 /** 读 --fields 指的 JSON 文件：要是一个对象。 */
 function readFields(file) {
-  const bytes = readFileBytes(file, '描述文件');
+  const bytes = readFileBytes(file, 'fields file');
   let value;
   try {
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch (cause) {
-    throw new VoicePackError('fields_invalid', `描述文件不是合法的 UTF-8 JSON：${file}`, { details: { file: String(file) }, cause });
+    throw new VoicePackError('fields_invalid', `The fields file is not valid UTF-8 JSON: ${file}`, { details: { file: String(file) }, cause });
   }
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new VoicePackError('fields_invalid', `描述文件的内容要是一个 JSON 对象：${file}`, { details: { file: String(file) } });
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new VoicePackError('fields_invalid', `The content of the fields file must be a JSON object: ${file}`, { details: { file: String(file) } });
   return value;
 }
 
 export async function run(args, ctx) {
   const options = parseOptions(args, { values: ['part', 'version', 'fields', 'short-name', 'text-language'] });
-  if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
+  if (options.problem !== undefined) { ctx.stderr(`Usage error: ${options.problem}\nUsage: ${usage}\n`); return 2; }
   const [target, ...extra] = options.positional;
-  if (target === undefined) { ctx.stderr(`用法错误：要指定部分的目录\n用法：${usage}\n`); return 2; }
-  if (extra.length > 0) { ctx.stderr(`用法错误：一次只 seal 一个，多出来的是 ${extra.join(' ')}\n用法：${usage}\n`); return 2; }
+  if (target === undefined) { ctx.stderr(`Usage error: the part directory is required\nUsage: ${usage}\n`); return 2; }
+  if (extra.length > 0) { ctx.stderr(`Usage error: seal takes one directory at a time, extra: ${extra.join(' ')}\nUsage: ${usage}\n`); return 2; }
   const part = options.values.part;
-  if (part === undefined || !PART_KINDS.includes(part)) { ctx.stderr(`用法错误：--part 要给 ${PART_KINDS.join('、')} 之一${part === undefined ? '' : `，收到 ${JSON.stringify(part)}`}\n用法：${usage}\n`); return 2; }
+  if (part === undefined || !PART_KINDS.includes(part)) { ctx.stderr(`Usage error: --part must be one of ${PART_KINDS.join(', ')}${part === undefined ? '' : `, got ${JSON.stringify(part)}`}\nUsage: ${usage}\n`); return 2; }
   const textLanguage = options.values['text-language'];
-  if (textLanguage !== undefined && !TEXT_LANGUAGES.includes(textLanguage)) { ctx.stderr(`用法错误：--text-language 要给 ${TEXT_LANGUAGES.join('、')} 之一（生成的 SKILL.md 骨架用的语言），收到 ${JSON.stringify(textLanguage)}\n用法：${usage}\n`); return 2; }
+  if (textLanguage !== undefined && !TEXT_LANGUAGES.includes(textLanguage)) { ctx.stderr(`Usage error: --text-language must be one of ${TEXT_LANGUAGES.join(', ')} (the language of the generated SKILL.md skeleton), got ${JSON.stringify(textLanguage)}\nUsage: ${usage}\n`); return 2; }
 
   const full = path.resolve(ctx.cwd, target);
-  if (pathKind(full, '部分的目录') !== 'directory') { ctx.stderr(`用法错误：seal 要的是部分的目录，${target} 是文件\n用法：${usage}\n`); return 2; }
+  if (pathKind(full, 'part directory') !== 'directory') { ctx.stderr(`Usage error: seal takes a part directory, but ${target} is a file\nUsage: ${usage}\n`); return 2; }
   const given = options.values.fields === undefined ? {} : readFields(path.resolve(ctx.cwd, options.values.fields));
   const { shortName, ...givenFields } = given;
 
@@ -121,9 +121,9 @@ export async function run(args, ctx) {
   if (ctx.json) ctx.stdout(`${JSON.stringify(info)}\n`);
   else {
     ctx.stdout([
-      `已生成清单：${path.join(full, MANIFEST_FILE)}（${partTitle(part, fields.id, fields.version)}，列了 ${listed} 个文件）`,
-      ...(skillMd === 'generated' ? [`已生成 SKILL.md 骨架：${path.join(full, SKILL_FILE)}（${textLanguage === 'en' ? '最后一节「配音指引」下面是空的' : '最后一节「配音指引」是一段提示'}，要作者自己写）`] : []),
-      ...(hadSignature ? [`已删除作废的签名：${path.join(full, SIGNATURE_FILE)}（清单变了，旧签名对不上；要签名就再签一次）`] : []),
+      `Manifest generated: ${path.join(full, MANIFEST_FILE)} (${partTitle(part, fields.id, fields.version)}, ${listed} ${listed === 1 ? 'file' : 'files'} listed)`,
+      ...(skillMd === 'generated' ? [`SKILL.md skeleton generated: ${path.join(full, SKILL_FILE)} (${textLanguage === 'en' ? 'the last section "配音指引" (dubbing guidance) is empty' : 'the last section "配音指引" (dubbing guidance) holds a hint'}; the author has to write it)`] : []),
+      ...(hadSignature ? [`Voided signature deleted: ${path.join(full, SIGNATURE_FILE)} (the manifest changed, so the old signature no longer matches; sign again if you want a signature)`] : []),
       '',
     ].join('\n'));
   }

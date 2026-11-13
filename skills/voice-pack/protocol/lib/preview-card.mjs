@@ -5,17 +5,17 @@
 //   buildPreviewCard(manifest, options)   角色部分的清单（加上它的文件）→ 一页自包含的 HTML（文字）
 //
 // 卡片是什么：
-//   一页静态的 HTML，放在分享文件的根上（index.html，和 README.md 并列），打包时生成，不列进清单，不参与检查，读的人也从不执行它（FORMAT.md「分享文件」）。
+//   一页静态的 HTML，放在分享文件的根上（index.html，和 README.md 并列），打包时生成，不列进清单，不参与检查，读的人也从不执行它（FORMAT.md「8. Share file」）。
 //   双击就能在浏览器里打开：名字和配图，一段内嵌的试听，验证记录里的还原度（有的话），调用方给的两个入口。不依赖包里的任何别的文件，不联网。
 //   只给角色部分做（基础部分里没有声音）。同样的输入同样的字节：没有时间、随机数（和 share.mjs 里「同样的输入同样的字节」是同一个要求）。
 //
 // 页面上有什么：
 //   名字      标题；包 ID 和版本写在它下面。配图由包 ID 画（voice-orb.mjs：同一个 ID 同一张图，不放头像）。
-//   试听      一段音频，内嵌成 data: 地址放进 <audio controls>：清单里有卡片试听那一句（cardLine）就放它，旁边是它的台词去掉台本标记以后念出来的字（规则只在 spoken-words.mjs 的文件头写；
+//   试听      一段音频，内嵌成 data: 地址放进 <audio controls>：清单里有试听句（cardLine）就放它，旁边是它的台词去掉台本标记以后念出来的字（规则只在 spoken-words.mjs 的文件头写；
 //            清单里的原样不动，去掉以后什么都不剩就不写这一行）；没有就放默认参考段，旁边是这一段的逐字文本（原样，不去标记）。
 //            用哪一段的规则只在 preview-audio.mjs 的 choosePreviewAudio 写。放不下就截短，不重新编码，规则和上限也在那里；截短了写明放了前几秒。
 //            一段都没有，写明「没有内嵌的试听」和原因，不留空白。没有那一句的包，卡片和有这个字段以前一字不差。
-//   还原度    验证记录（manifest.verification）里的，每条一行：环境、模型、日期、比值。读法只在 lib/fidelity.mjs 的文件头写一份（「怎么读这份报告」第 7 条）：
+//   还原度    验证记录（manifest.verification）里的，每条一行：环境、模型、日期、比值。读法只在 lib/fidelity.mjs 的文件头写一份（「How to read this report」第 7 条）：
 //            比值本身就是分数，照数显示（两位小数，和 app 的显示一样），不设门槛，不封顶，不替人下「像不像」的结论，没写比值的显示「—」；
 //            旁边写明比值怎么来的、1 表示什么、这是作者附上的记录、没有重新量过。没有验证记录就写明没有，不留空白。
 //   入口      两个链接，只来自调用方（options.links）：「在 <产品名> 里打开」和「做一个你自己的」；没给哪个就没有哪个，都没给就没有入口。
@@ -55,7 +55,7 @@ const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (ch) => ESCAPES[ch
 /** 中文在前、英文在后。两段文字都是调用方已经转义好的。 */
 const both = (zh, en) => `<span lang="zh-CN">${zh}</span> <span lang="en">${en}</span>`;
 
-const badLink = (field, link, reason) => new VoicePackError('card_link_invalid', `预览卡片的链接 ${field} 必须是 http 或 https 的地址（原因：${reason}）`, { details: { field, link, reason } });
+const badLink = (field, link, reason) => new VoicePackError('card_link_invalid', `The preview card link ${field} must be an http or https address (reason: ${reason})`, { details: { field, link, reason } });
 
 /** 把链接模板里的 {id} 换成包 ID，核对换完是 http(s) 的地址。给 null 或 undefined 表示没有这个链接。 */
 function resolveLink(template, field, id) {
@@ -85,7 +85,7 @@ function auditionSection(manifest, audition) {
   const excerpt = audition.trimmed && audition.seconds !== null
     ? `<p class="note">${both(`只放了这段录音的前 ${secondsText(audition.seconds)} 秒。`, `Only the first ${secondsText(audition.seconds)} seconds of this recording are embedded.`)}</p>`
     : '';
-  // 卡片试听那一句：旁边写它念出来的字（去掉台本标记，spoken-words.mjs；什么都不剩就不写这一行；清单里没记它的语言，不写 lang）。参考段：写它的逐字文本，带它的语言
+  // 试听句：旁边写它念出来的字（去掉台本标记，spoken-words.mjs；什么都不剩就不写这一行；清单里没记它的语言，不写 lang）。参考段：写它的逐字文本，带它的语言
   if (audition.cardLine === true) {
     const words = spokenWords(String(manifest.cardLine.text ?? ''));
     const line = words === '' ? '' : `<p class="line">${escapeHtml(words)}</p>`;
@@ -164,12 +164,12 @@ footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);color:v
  * @throws {TypeError} 清单不是角色部分、files 不是 Map、productName 不是字符串、links 不是对象
  */
 export function buildPreviewCard(manifest, options = {}) {
-  if (manifest === null || typeof manifest !== 'object' || manifest.part !== 'role') throw new TypeError('预览卡片只给角色部分生成：清单的 part 必须是 role');
+  if (manifest === null || typeof manifest !== 'object' || manifest.part !== 'role') throw new TypeError('A preview card is generated for a role part only: the part in the manifest must be role');
   const files = options.files ?? new Map();
-  if (!(files instanceof Map)) throw new TypeError('files 必须是 Map<路径, Uint8Array>');
-  if (options.productName !== undefined && typeof options.productName !== 'string') throw new TypeError('productName 必须是字符串');
+  if (!(files instanceof Map)) throw new TypeError('files must be a Map<path, Uint8Array>');
+  if (options.productName !== undefined && typeof options.productName !== 'string') throw new TypeError('productName must be a string');
   const links = options.links ?? {};
-  if (links === null || typeof links !== 'object' || Array.isArray(links)) throw new TypeError('links 必须是 { open?, make? } 对象');
+  if (links === null || typeof links !== 'object' || Array.isArray(links)) throw new TypeError('links must be an { open?, make? } object');
   const productName = (options.productName ?? '').trim() === '' ? null : options.productName.trim();
 
   const id = String(manifest.id ?? '');

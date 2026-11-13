@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 从官方地址取回官方基础部分：读版本索引、验签，再读某个版本的 zip 和它的签名，核对、验签、检查，一步一步，
-// 哪一步没过就点名是哪一步，不兜底、不换别的版本。步骤照 protocol/RELEASES.md「怎么取一个版本」。
+// 哪一步没过就点名是哪一步，不兜底、不换别的版本。步骤照 protocol/RELEASES.md「How to fetch a version」。
 // 读索引、取 zip、核对验签这几步只在这里写一份，两个调用方各用各的入口：
 //   嵌入这个库的 app 导出完整包，要「它固定用的那一版」：按版本号取（fetchOfficialVersion）。
 //   补全自己读索引、按「不低于最低版本、同一个主版本」选好版本，再按条目取（readVersionIndex + fetchOfficialEntry），不再读第二遍索引。
@@ -14,7 +14,7 @@
 //   verifyOfficialZip(zip, signatureText, trustList, expected)   对已经在手里的 zip 做后半截的核对（签名、内容、清单），不联网：app 缓存里的 zip 再用时走这一步
 //
 // 读索引：索引会被覆盖，所以读它和它的签名每次带新的 cb 参数（readPublished 的 cacheBust）：它避开的是读的一方自己的 HTTP 缓存，穿不过官方地址的 CDN
-// （GitHub Pages 的 CDN 不把查询串算进缓存键，缓存十分钟；实测见 RELEASES.md「缓存」）。索引和它的签名是两个文件，各缓存各的：发布刚生效的那一阵，
+// （GitHub Pages 的 CDN 不把查询串算进缓存键，缓存十分钟；实测见 RELEASES.md「Caching」）。索引和它的签名是两个文件，各缓存各的：发布刚生效的那一阵，
 // 读到「新索引配旧签名」「旧索引配新签名」（第一次发布时是新索引还没有签名）都可能，验签没过。隔 retryDelayMs 毫秒换一个新的 cb 重读一次，再不过才报错；
 // 但在官方地址上换 cb 没有用，读到的多半还是缓存里的那一对，要等缓存过期（约十分钟）。签名是别的钥匙签的（signature_untrusted_key）
 // 这种不是缓存造成的，不重读。版本 zip 和它的签名不可变，缓存对它们没有坏处，用原地址读。
@@ -25,7 +25,7 @@
 // 它的签名、里面的内容照常核对，只少了「字节数、SHA-256 要和索引里写的一样」这一步（zip 的签名已经担保了它的每个字节）。
 // 要哪个版本由调用方定：app 要自己对应的那个；补全要包要求的最低版本本身（不挑索引里最高的：那一份多半是新钥匙签的，旧名单验不了）。
 // 只有 signature_untrusted_key 才退；索引的别的问题（signature_invalid、signature_missing、index_invalid、读不到）都照样报错。
-// 退回去以后 zip 的问题（签名不对、没有签名、取不到、内容不合格）也照样报错，不再往后退。规则和理由的正本是 RELEASES.md「私钥丢了或泄露了」，这里写程序怎么做。
+// 退回去以后 zip 的问题（签名不对、没有签名、取不到、内容不合格）也照样报错，不再往后退。规则和理由的正本是 RELEASES.md「A lost or leaked private key」，这里写程序怎么做。
 //
 // 错误（VoicePackError；下面是这个模块自己抛的，别的原样放过：signature_*、published_unreadable、fetch_missing、official_url_*、invalid_version、index_invalid、protocol_unsupported）：
 //   official_unpublished   官方地址上还没有版本索引（404）：还没有发布过任何版本。details: { url }
@@ -39,7 +39,7 @@
 //                            manifest     zip 里不是基础部分，或者版本、协议版本和索引里写的对不上（退路里只核对版本）。details: { version, expected, actual, field }
 //   signature_missing      版本 zip 没有签名文件，或者索引没有签名文件（重读一次以后还是没有）。details.path 是签名文件的名字
 //
-// 网络读取全走注入的 env.fetch（见 protocol/README.md「运行环境」）；超时、重试、读上限在 readPublished 里，readOptions 原样传给它。
+// 网络读取全走注入的 env.fetch（见 protocol/README.md「Runtime environment」）；超时、重试、读上限在 readPublished 里，readOptions 原样传给它。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from './errors.mjs';
@@ -67,7 +67,7 @@ async function readFile(env, baseUrl, name, options) {
 
 /** 签名文件的文字；没有就抛 signature_missing。 */
 function signatureText(bytes, name) {
-  if (bytes === null) throw fail('signature_missing', `官方地址上没有签名文件 ${name}`, { path: name });
+  if (bytes === null) throw fail('signature_missing', `The official address has no signature file ${name}`, { path: name });
   return decoder.decode(bytes);
 }
 
@@ -91,7 +91,7 @@ export async function readVersionIndex(env, trustList, options = {}) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     if (attempt > 1) await sleep(retryDelayMs);
     const indexBytes = await readFile(env, baseUrl, indexName, { ...read, maxBytes: limits.maxJsonBytes });
-    if (indexBytes === null) throw fail('official_unpublished', `官方地址上还没有发布任何版本（没有 ${indexName}）：${officialFileUrl(baseUrl, indexName)}`, { url: officialFileUrl(baseUrl, indexName) });
+    if (indexBytes === null) throw fail('official_unpublished', `No version has been published at the official address yet (there is no ${indexName}): ${officialFileUrl(baseUrl, indexName)}`, { url: officialFileUrl(baseUrl, indexName) });
     try {
       const sig = signatureText(await readFile(env, baseUrl, sigName, { ...read, maxBytes: MAX_SIGNATURE_BYTES }), sigName);
       const verified = await verifyMessage(indexBytes, sig, trustList);
@@ -120,11 +120,11 @@ export async function verifyOfficialZip(zip, signature, trustList, expected = {}
   const { opened, report } = await inspectShareFile(zip, { verifySignature: createSignatureVerifier(trustList), limits });
   if (!report.ok || opened === null) {
     const [first] = report.problems;
-    throw invalid('content', `这个版本的基础部分检查不过：${first.message}${report.problems.length > 1 ? `（共 ${report.problems.length} 处问题）` : ''}`, { version: expected.version ?? null, problems: report.problems });
+    throw invalid('content', `The base part of this version failed the check: ${first.message}${report.problems.length > 1 ? ` (${report.problems.length} problems in total)` : ''}`, { version: expected.version ?? null, problems: report.problems });
   }
   const part = report.parts.find((item) => item.part === '');
-  const mismatch = (field, want, got) => invalid('manifest', `zip 里的${field === 'kind' ? '不是基础部分' : `基础部分的${field === 'version' ? '版本号和要的不一样' : '协议版本和版本索引里写的不一样'}`}（要 ${want}，实际 ${got}）`, { version: expected.version ?? null, field, expected: want, actual: got });
-  if (part === undefined || part.kind !== 'base') throw mismatch('kind', 'base', part?.kind ?? '什么都没有');
+  const mismatch = (field, want, got) => invalid('manifest', `${field === 'kind' ? 'The zip does not hold a base part' : `The base part in the zip has ${field === 'version' ? 'a version number that differs from the one requested' : 'a protocol version that differs from the one written in the version index'}`} (wanted ${want}, got ${got})`, { version: expected.version ?? null, field, expected: want, actual: got });
+  if (part === undefined || part.kind !== 'base') throw mismatch('kind', 'base', part?.kind ?? 'nothing');
   if (expected.version !== undefined && part.version !== expected.version) throw mismatch('version', expected.version, part.version);
   if (expected.protocol !== undefined && part.protocol !== expected.protocol) throw mismatch('protocol', expected.protocol, part.protocol);
   return { files: opened.files, manifest: { part: 'base', version: part.version, protocol: part.protocol }, keyId: verified.keyId };
@@ -159,7 +159,7 @@ export async function fetchOfficialVersion(env, trustList, version, options = {}
   }
   const entry = index.versions.find((item) => item.version === version);
   if (entry === undefined) {
-    throw fail('version_unpublished', `官方地址上没有基础部分的 ${version} 版（已发布：${index.versions.map((item) => item.version).join('、') || '没有'}）：不换别的版本`, { version, available: index.versions.map((item) => item.version) });
+    throw fail('version_unpublished', `The official address has no version ${version} of the base part (published: ${index.versions.map((item) => item.version).join(', ') || 'none'}): no other version is substituted`, { version, available: index.versions.map((item) => item.version) });
   }
   return fetchOfficialEntry(env, trustList, entry, options);
 }
@@ -168,7 +168,7 @@ export async function fetchOfficialVersion(env, trustList, version, options = {}
 function assertEntry(entry) {
   const ok = entry !== null && typeof entry === 'object' && typeof entry.version === 'string' && typeof entry.protocol === 'string'
     && Number.isSafeInteger(entry.size) && entry.size >= 0 && typeof entry.sha256 === 'string' && /^[0-9a-f]{64}$/.test(entry.sha256);
-  if (!ok) throw new TypeError('条目必须是版本索引里的一项：{ version, protocol, size, sha256 }（来自 readVersionIndex 验过签的索引）');
+  if (!ok) throw new TypeError('The entry must be one item of the version index: { version, protocol, size, sha256 } (from an index that readVersionIndex has signature-verified)');
 }
 
 /**
@@ -189,16 +189,16 @@ async function downloadVersion(env, trustList, version, entry, options) {
   } catch (error) {
     if (isVoicePackError(error, 'published_unreadable') && error.details.reason === 'too_large') {
       throw entry === null
-        ? invalid('size', `${zipName} 比解包的总上限（${maxBytes} 字节）还大`, { version, expected: null, actual: null, limit: maxBytes })
-        : invalid('size', `${zipName} 比版本索引里写的（${entry.size} 字节）大`, { version, expected: entry.size, actual: null });
+        ? invalid('size', `${zipName} is larger than the total unpack limit (${maxBytes} bytes)`, { version, expected: null, actual: null, limit: maxBytes })
+        : invalid('size', `${zipName} is larger than the version index says (${entry.size} bytes)`, { version, expected: entry.size, actual: null });
     }
     throw error;
   }
-  if (zip === null) throw invalid('zip_missing', entry === null ? `官方地址上没有 ${zipName}（404）：${url}` : `版本索引列了 ${version}，${zipName} 却取不到（404）：${url}`, { version, url });
+  if (zip === null) throw invalid('zip_missing', entry === null ? `The official address has no ${zipName} (404): ${url}` : `The version index lists ${version}, but ${zipName} cannot be fetched (404): ${url}`, { version, url });
   if (entry !== null) {
-    if (zip.length !== entry.size) throw invalid('size', `${zipName} 是 ${zip.length} 字节，版本索引里写的是 ${entry.size} 字节`, { version, expected: entry.size, actual: zip.length });
+    if (zip.length !== entry.size) throw invalid('size', `${zipName} is ${zip.length} bytes, but the version index says ${entry.size} bytes`, { version, expected: entry.size, actual: zip.length });
     const digest = await sha256Hex(zip);
-    if (digest !== entry.sha256) throw invalid('sha256', `${zipName} 的 SHA-256 和版本索引里写的不一样`, { version, expected: entry.sha256, actual: digest });
+    if (digest !== entry.sha256) throw invalid('sha256', `The SHA-256 of ${zipName} differs from the one in the version index`, { version, expected: entry.sha256, actual: digest });
   }
 
   const signature = signatureText(await readFile(env, baseUrl, `${zipName}${SIGNATURE_SUFFIX}`, { ...readOptions, maxBytes: MAX_SIGNATURE_BYTES }), `${zipName}${SIGNATURE_SUFFIX}`);

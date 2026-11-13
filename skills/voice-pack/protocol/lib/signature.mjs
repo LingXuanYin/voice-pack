@@ -61,7 +61,7 @@ const ED25519 = { name: 'Ed25519' };
 
 function assertBytes(value, what) {
   // 只收字节：字符串会悄悄换一次编码，签的就不是文件的原始字节了
-  if (!(value instanceof Uint8Array)) throw new TypeError(`${what}必须是 Uint8Array（原始字节），收到 ${typeof value}`);
+  if (!(value instanceof Uint8Array)) throw new TypeError(`${what} must be a Uint8Array (raw bytes), got ${typeof value}`);
   return value;
 }
 
@@ -71,7 +71,7 @@ function requireSubtle() {
   if (subtle === undefined || subtle === null) {
     throw new VoicePackError(
       'ed25519_unavailable',
-      '运行环境没有 WebCrypto（crypto.subtle）：Ed25519 签名和验签都做不了。浏览器里需要安全上下文（https 或 localhost），Node 需要 16.17 以上',
+      'The runtime environment has no WebCrypto (crypto.subtle): neither Ed25519 signing nor verification can be done. A browser needs a secure context (https or localhost), and Node must be 16.17 or later',
     );
   }
   return subtle;
@@ -81,7 +81,7 @@ function requireSubtle() {
 function unavailable(cause) {
   return new VoicePackError(
     'ed25519_unavailable',
-    '运行环境的 crypto.subtle 认不出 Ed25519：浏览器要 Chrome/Edge 137、Firefox 129、Safari 17 以上，Node 要 16.17 以上',
+    'crypto.subtle in the runtime environment does not recognize Ed25519: a browser needs Chrome/Edge 137, Firefox 129 or Safari 17 or later, and Node needs 16.17 or later',
     { cause },
   );
 }
@@ -93,7 +93,7 @@ const formatKeyId = (bytes) => toHex(bytes.slice().reverse()).toUpperCase();
 
 function parseKeyIdText(text) {
   if (typeof text !== 'string' || !KEY_ID_RE.test(text)) {
-    throw new VoicePackError('key_id_invalid', `key id 必须是 16 位十六进制，收到 ${JSON.stringify(text)}`);
+    throw new VoicePackError('key_id_invalid', `key id must be 16 hexadecimal digits, got ${JSON.stringify(text)}`);
   }
   return fromHex(text.toLowerCase()).reverse();
 }
@@ -121,21 +121,21 @@ function publicKeyText(keyIdBytes, publicKey) {
  */
 export function parsePublicKey(text) {
   const bad = (message, details, cause) => new VoicePackError('public_key_invalid', message, { details, cause });
-  if (typeof text !== 'string') throw bad('公钥必须是字符串（minisign 的 .pub 里第二行那串 base64）', { field: 'public_key' });
+  if (typeof text !== 'string') throw bad('The public key must be a string (the base64 on the second line of a minisign .pub file)', { field: 'public_key' });
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
   const value = lines.length >= 2 ? lines[1] : (lines[0] ?? '');
   let block;
   try {
     block = fromBase64(value);
   } catch (cause) {
-    throw bad('公钥不是合法的 base64（应该是 minisign 的 .pub 里第二行那串）', { field: 'public_key' }, cause);
+    throw bad('The public key is not valid base64 (it should be the string on the second line of a minisign .pub file)', { field: 'public_key' }, cause);
   }
   if (block.length !== PUBLIC_KEY_BLOCK_BYTES) {
-    throw bad(`公钥应该是 ${PUBLIC_KEY_BLOCK_BYTES} 字节（算法标识 + key id + 公钥），收到 ${block.length} 字节`, { field: 'public_key', bytes: block.length });
+    throw bad(`The public key should be ${PUBLIC_KEY_BLOCK_BYTES} bytes (algorithm ID + key id + public key), got ${block.length} bytes`, { field: 'public_key', bytes: block.length });
   }
   const algorithm = String.fromCharCode(block[0], block[1]);
   if (algorithm !== ALG) {
-    throw bad(`只认算法标识 ${ALG} 的公钥（Ed25519，直接对原文签名），收到 ${JSON.stringify(algorithm)}`, { field: 'public_key', algorithm });
+    throw bad(`Only public keys with algorithm ID ${ALG} are accepted (Ed25519, signing the original text directly), got ${JSON.stringify(algorithm)}`, { field: 'public_key', algorithm });
   }
   return { keyId: formatKeyId(block.slice(2, 2 + KEY_ID_BYTES)), publicKey: block.slice(2 + KEY_ID_BYTES) };
 }
@@ -153,25 +153,25 @@ export function parsePublicKey(text) {
 export function parseTrustList(trustList) {
   const bad = (message, details) => new VoicePackError('trust_list_invalid', message, { details });
   if (trustList === null || typeof trustList !== 'object' || Array.isArray(trustList)) {
-    throw bad('信任名单必须是一个对象：{ version, keys: [...] }', { field: 'trust_list' });
+    throw bad('The trust list must be an object: { version, keys: [...] }', { field: 'trust_list' });
   }
   if (typeof trustList.version !== 'string' || !/^\d+\.\d+$/.test(trustList.version)) {
-    throw bad('信任名单要有版本号，写法是「主.次」', { field: 'version' });
+    throw bad('The trust list needs a version, written as "major.minor"', { field: 'version' });
   }
-  if (!Array.isArray(trustList.keys)) throw bad('信任名单要有 keys 数组（可以是空的）', { field: 'keys' });
+  if (!Array.isArray(trustList.keys)) throw bad('The trust list needs a keys array (it may be empty)', { field: 'keys' });
   const seen = new Set();
   const keys = trustList.keys.map((entry, index) => {
     const field = `keys[${index}].public_key`;
     if (entry === null || typeof entry !== 'object' || typeof entry.public_key !== 'string') {
-      throw bad(`信任名单第 ${index + 1} 项要有 public_key（minisign 的 .pub 里那串 base64）`, { field });
+      throw bad(`Entry ${index + 1} of the trust list needs public_key (the base64 string in a minisign .pub file)`, { field });
     }
     let parsed;
     try {
       parsed = parsePublicKey(entry.public_key);
     } catch (cause) {
-      throw bad(`信任名单第 ${index + 1} 项的 public_key 读不出来：${cause.message}`, { field });
+      throw bad(`The public_key of entry ${index + 1} of the trust list cannot be read: ${cause.message}`, { field });
     }
-    if (seen.has(parsed.keyId)) throw bad(`信任名单里有两把 key id 相同的公钥（${parsed.keyId}），分不清该用哪把`, { field, keyId: parsed.keyId });
+    if (seen.has(parsed.keyId)) throw bad(`The trust list has two public keys with the same key id (${parsed.keyId}), so it cannot tell which one to use`, { field, keyId: parsed.keyId });
     seen.add(parsed.keyId);
     const key = { keyId: parsed.keyId, publicKey: publicKeyText(parseKeyIdText(parsed.keyId), parsed.publicKey) };
     if (typeof entry.comment === 'string') key.comment = entry.comment;
@@ -185,9 +185,9 @@ export function parseTrustList(trustList) {
  * @returns {Promise<{ key: CryptoKey, publicKey: Uint8Array }>}
  */
 async function loadPrivateKey(privateKey) {
-  assertBytes(privateKey, '私钥');
+  assertBytes(privateKey, 'The private key');
   const subtle = requireSubtle();
-  const invalid = () => new VoicePackError('private_key_invalid', '私钥不是 Ed25519 的 PKCS8 私钥（DER 字节；PEM 文本由命令行层先转成 DER）');
+  const invalid = () => new VoicePackError('private_key_invalid', 'The private key is not an Ed25519 PKCS8 private key (DER bytes; PEM text is converted to DER by the command-line layer first)');
   let key;
   try {
     // extractable 要为 true：只有导出 JWK 才取得到公钥（PKCS8 里的公钥是可选的，OpenSSL 生成的多半没有）
@@ -254,22 +254,22 @@ export async function publicKeyOf(privateKey) {
  * @throws {VoicePackError} public_key_invalid、ed25519_unavailable
  */
 export async function publicKeyFromRaw(rawPublicKey) {
-  assertBytes(rawPublicKey, '公钥');
+  assertBytes(rawPublicKey, 'The public key');
   if (rawPublicKey.length !== PUBLIC_KEY_BYTES) {
-    throw new VoicePackError('public_key_invalid', `Ed25519 的 raw 公钥是 ${PUBLIC_KEY_BYTES} 字节，收到 ${rawPublicKey.length} 字节`, { details: { field: 'public_key', bytes: rawPublicKey.length } });
+    throw new VoicePackError('public_key_invalid', `A raw Ed25519 public key is ${PUBLIC_KEY_BYTES} bytes, got ${rawPublicKey.length} bytes`, { details: { field: 'public_key', bytes: rawPublicKey.length } });
   }
   const keyIdBytes = await deriveKeyId(rawPublicKey);
   return { publicKey: publicKeyText(keyIdBytes, rawPublicKey), keyId: formatKeyId(keyIdBytes) };
 }
 
 function checkComment(text, what) {
-  if (typeof text !== 'string') throw new TypeError(`${what}必须是字符串`);
-  if (/[\r\n]/.test(text)) throw new VoicePackError('comment_invalid', `${what}不能有换行`, { details: { comment: what } });
+  if (typeof text !== 'string') throw new TypeError(`${what} must be a string`);
+  if (/[\r\n]/.test(text)) throw new VoicePackError('comment_invalid', `${what} cannot contain a line break`, { details: { comment: what } });
   const bytes = encoder.encode(text).length;
   if (bytes > COMMENT_MAX_BYTES) {
-    throw new VoicePackError('comment_invalid', `${what}太长了：最多 ${COMMENT_MAX_BYTES} 字节，收到 ${bytes} 字节`, { details: { comment: what, bytes } });
+    throw new VoicePackError('comment_invalid', `${what} is too long: at most ${COMMENT_MAX_BYTES} bytes, got ${bytes} bytes`, { details: { comment: what, bytes } });
   }
-  if (bytes === 0) throw new VoicePackError('comment_invalid', `${what}不能是空的`, { details: { comment: what } });
+  if (bytes === 0) throw new VoicePackError('comment_invalid', `${what} cannot be empty`, { details: { comment: what } });
   return text;
 }
 
@@ -297,9 +297,9 @@ function commentMessage(signature, trustedComment) {
  * @throws {VoicePackError} private_key_invalid、comment_invalid、ed25519_unavailable
  */
 export async function signMessage(message, privateKey, options = {}) {
-  assertBytes(message, '要签名的内容');
-  const untrusted = checkComment(options.untrustedComment ?? DEFAULT_UNTRUSTED_COMMENT, '不参与签名的说明（untrusted comment）');
-  const trusted = checkComment(options.trustedComment ?? DEFAULT_TRUSTED_COMMENT, 'trusted comment');
+  assertBytes(message, 'The content to sign');
+  const untrusted = checkComment(options.untrustedComment ?? DEFAULT_UNTRUSTED_COMMENT, 'The untrusted comment (not part of the signature)');
+  const trusted = checkComment(options.trustedComment ?? DEFAULT_TRUSTED_COMMENT, 'The trusted comment');
   const { key, publicKey } = await loadPrivateKey(privateKey);
   const keyIdBytes = await deriveKeyId(publicKey);
   const subtle = requireSubtle();
@@ -321,23 +321,23 @@ export async function signMessage(message, privateKey, options = {}) {
  */
 function parseSignature(text) {
   const malformed = (message, details, cause) => new VoicePackError('signature_malformed', message, { details, cause });
-  if (typeof text !== 'string') throw new TypeError(`签名文件的内容必须是字符串，收到 ${typeof text}`);
+  if (typeof text !== 'string') throw new TypeError(`The content of the signature file must be a string, got ${typeof text}`);
   const lines = text.split(/\r?\n/);
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop(); // 末尾的空行不算
   if (lines.length !== 4) {
-    throw malformed(`签名文件应该是四行（untrusted comment、签名、trusted comment、它的签名），收到 ${lines.length} 行`, { lines: lines.length });
+    throw malformed(`The signature file should have four lines (untrusted comment, signature, trusted comment, its signature), got ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`, { lines: lines.length });
   }
   const [first, second, third, fourth] = lines;
-  if (!first.startsWith(UNTRUSTED_PREFIX)) throw malformed(`签名文件第 1 行要以 ${JSON.stringify(UNTRUSTED_PREFIX)} 开头`, { line: 1 });
-  if (!third.startsWith(TRUSTED_PREFIX)) throw malformed(`签名文件第 3 行要以 ${JSON.stringify(TRUSTED_PREFIX)} 开头`, { line: 3 });
+  if (!first.startsWith(UNTRUSTED_PREFIX)) throw malformed(`Line 1 of the signature file must start with ${JSON.stringify(UNTRUSTED_PREFIX)}`, { line: 1 });
+  if (!third.startsWith(TRUSTED_PREFIX)) throw malformed(`Line 3 of the signature file must start with ${JSON.stringify(TRUSTED_PREFIX)}`, { line: 3 });
   const decode = (value, line, expected) => {
     let bytes;
     try {
       bytes = fromBase64(value.trim());
     } catch (cause) {
-      throw malformed(`签名文件第 ${line} 行不是合法的 base64`, { line }, cause);
+      throw malformed(`Line ${line} of the signature file is not valid base64`, { line }, cause);
     }
-    if (bytes.length !== expected) throw malformed(`签名文件第 ${line} 行应该是 ${expected} 字节，收到 ${bytes.length} 字节`, { line, bytes: bytes.length });
+    if (bytes.length !== expected) throw malformed(`Line ${line} of the signature file should be ${expected} bytes, got ${bytes.length} bytes`, { line, bytes: bytes.length });
     return bytes;
   };
   const block = decode(second, 2, SIGNATURE_BLOCK_BYTES);
@@ -346,12 +346,12 @@ function parseSignature(text) {
   if (algorithm === ALG_PREHASHED) {
     throw new VoicePackError(
       'signature_algorithm_unsupported',
-      `这份签名用的是预哈希模式（算法标识 ${ALG_PREHASHED}）：它要 BLAKE2b-512，WebCrypto 没有这个哈希，验不了。请用 minisign -S -l（旧模式，算法标识 ${ALG}）重新签`,
+      `This signature uses the pre-hashed mode (algorithm ID ${ALG_PREHASHED}): it needs BLAKE2b-512, which WebCrypto does not have, so it cannot be verified. Sign again with minisign -S -l (the legacy mode, algorithm ID ${ALG})`,
       { details: { algorithm } },
     );
   }
   if (algorithm !== ALG) {
-    throw new VoicePackError('signature_algorithm_unsupported', `认不出签名的算法标识 ${JSON.stringify(algorithm)}（只认 ${ALG}）`, { details: { algorithm } });
+    throw new VoicePackError('signature_algorithm_unsupported', `The algorithm ID of the signature is not recognized: ${JSON.stringify(algorithm)} (only ${ALG} is accepted)`, { details: { algorithm } });
   }
   return {
     keyId: formatKeyId(block.slice(2, 2 + KEY_ID_BYTES)),
@@ -376,17 +376,17 @@ function parseSignature(text) {
  *   signature_untrusted_key、signature_invalid、signature_comment_invalid、ed25519_unavailable
  */
 export async function verifyMessage(message, signatureText, trustList) {
-  assertBytes(message, '要验签的内容');
+  assertBytes(message, 'The content to verify');
   const parsed = parseSignature(signatureText);
   const { keys } = parseTrustList(trustList);
   if (keys.length === 0) {
-    throw new VoicePackError('trust_list_empty', '信任名单里一把公钥也没有，认不出官方签名，一律不放行', { details: { keyId: parsed.keyId } });
+    throw new VoicePackError('trust_list_empty', 'The trust list has no public key at all, so the official signature cannot be recognized and nothing is let through', { details: { keyId: parsed.keyId } });
   }
   const candidate = keys.find((key) => key.keyId === parsed.keyId);
   if (candidate === undefined) {
     throw new VoicePackError(
       'signature_untrusted_key',
-      `签名用的钥匙（key id ${parsed.keyId}）不在信任名单里：这不是官方签名`,
+      `The key the signature was made with (key id ${parsed.keyId}) is not in the trust list: this is not an official signature`,
       { details: { keyId: parsed.keyId, trusted: keys.map((key) => key.keyId) } },
     );
   }
@@ -396,13 +396,13 @@ export async function verifyMessage(message, signatureText, trustList) {
     publicKey = await subtle.importKey('raw', parsePublicKey(candidate.publicKey).publicKey, ED25519, false, ['verify']);
   } catch (error) {
     if (isUnsupported(error)) throw unavailable(error);
-    throw new VoicePackError('public_key_invalid', `信任名单里 key id ${candidate.keyId} 的公钥读不出来`, { details: { keyId: candidate.keyId }, cause: error });
+    throw new VoicePackError('public_key_invalid', `The public key with key id ${candidate.keyId} in the trust list cannot be read`, { details: { keyId: candidate.keyId }, cause: error });
   }
   if (!(await subtle.verify(ED25519, publicKey, parsed.signature, message))) {
-    throw new VoicePackError('signature_invalid', '签名和这份内容对不上：内容被改过，或者这份签名不是给它签的', { details: { keyId: parsed.keyId } });
+    throw new VoicePackError('signature_invalid', 'The signature does not match this content: the content was changed, or the signature was not made for it', { details: { keyId: parsed.keyId } });
   }
   if (!(await subtle.verify(ED25519, publicKey, parsed.globalSignature, commentMessage(parsed.signature, parsed.trustedComment)))) {
-    throw new VoicePackError('signature_comment_invalid', 'trusted comment 和它的签名对不上：签名文件被改过', { details: { keyId: parsed.keyId } });
+    throw new VoicePackError('signature_comment_invalid', 'The trusted comment does not match its signature: the signature file was changed', { details: { keyId: parsed.keyId } });
   }
   return { keyId: parsed.keyId, trustedComment: parsed.trustedComment, untrustedComment: parsed.untrustedComment };
 }

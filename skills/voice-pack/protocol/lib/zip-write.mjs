@@ -5,7 +5,7 @@
 //
 // 为什么不压缩：
 //   1. 压缩出来的字节依赖运行时的 zlib：同一份输入，Node 和 Bun 压出的字节数不一样，浏览器又是另一个实现
-//      （实测的数字和输入的做法写在 FORMAT.md 8.3「为什么不压缩」，这里不重抄）。存储条目不看运行时，字节只由输入决定。
+//      （实测的数字和输入的做法写在 FORMAT.md 8.3「Why not compress」，这里不重抄）。存储条目不看运行时，字节只由输入决定。
 //   2. 包里的大头是音频：MP3、OGG/Opus、FLAC、M4A 本来就是压缩过的，WAV 用 deflate 也只能省一两成；
 //      文本（SKILL.md、清单、程序）加起来是几百 KB 的量级，不压缩只多这么一点。
 //   读的一侧照样认 deflate 条目（别人用系统自带的工具重新打的包），见 zip-read.mjs。
@@ -35,16 +35,16 @@ const MAX_BYTES = 0xffffffff;
  */
 export function writeZip(entries, options = {}) {
   const limits = resolveLimits(options.limits);
-  if (!Array.isArray(entries)) throw new TypeError('entries 必须是数组');
+  if (!Array.isArray(entries)) throw new TypeError('entries must be an array');
   assertMemberCount(entries.length, limits);
-  if (entries.length > MAX_ENTRIES) throw new VoicePackError('zip_too_large', `条目太多：${entries.length} 个，不带 zip64 的 zip 最多 ${MAX_ENTRIES} 个`, { details: { count: entries.length, limit: MAX_ENTRIES } });
+  if (entries.length > MAX_ENTRIES) throw new VoicePackError('zip_too_large', `Too many entries: ${entries.length}; a zip without zip64 can hold at most ${MAX_ENTRIES}`, { details: { count: entries.length, limit: MAX_ENTRIES } });
 
   const prepared = [];
   let totalData = 0;
   for (const entry of entries) {
-    if (entry === null || typeof entry !== 'object') throw new TypeError('每个条目必须是 { name, data } 对象');
-    if (typeof entry.name !== 'string') throw new TypeError('条目的 name 必须是字符串');
-    if (!(entry.data instanceof Uint8Array)) throw new TypeError(`条目 ${JSON.stringify(entry.name)} 的 data 必须是 Uint8Array`);
+    if (entry === null || typeof entry !== 'object') throw new TypeError('every entry must be an object { name, data }');
+    if (typeof entry.name !== 'string') throw new TypeError('the name of an entry must be a string');
+    if (!(entry.data instanceof Uint8Array)) throw new TypeError(`the data of entry ${JSON.stringify(entry.name)} must be a Uint8Array`);
     assertPackPath(entry.name);
     assertMemberSize(entry.name, entry.data.length, limits);
     totalData += entry.data.length;
@@ -53,13 +53,13 @@ export function writeZip(entries, options = {}) {
   }
   const conflict = findPathConflict(prepared.map((p) => p.name));
   if (conflict) {
-    throw new VoicePackError('path_conflict', `路径 ${JSON.stringify(conflict.path)} 和 ${JSON.stringify(conflict.other)} 冲突（${conflict.kind}）：解到磁盘上会互相覆盖`, { details: conflict });
+    throw new VoicePackError('path_conflict', `Path ${JSON.stringify(conflict.path)} conflicts with ${JSON.stringify(conflict.other)} (${conflict.kind}): extracted to disk they would overwrite each other`, { details: conflict });
   }
 
   const localSize = prepared.reduce((sum, p) => sum + Z.LOCAL_HEADER_SIZE + p.nameBytes.length + p.data.length, 0);
   const centralSize = prepared.reduce((sum, p) => sum + Z.CENTRAL_HEADER_SIZE + p.nameBytes.length, 0);
   const total = localSize + centralSize + Z.EOCD_SIZE;
-  if (total > MAX_BYTES) throw new VoicePackError('zip_too_large', `zip 太大：${total} 字节，不带 zip64 的 zip 最多 ${MAX_BYTES} 字节`, { details: { size: total, limit: MAX_BYTES } });
+  if (total > MAX_BYTES) throw new VoicePackError('zip_too_large', `The zip is too large: ${total} bytes; a zip without zip64 can hold at most ${MAX_BYTES} bytes`, { details: { size: total, limit: MAX_BYTES } });
 
   const out = new Uint8Array(total);
   const dv = Z.viewOf(out);

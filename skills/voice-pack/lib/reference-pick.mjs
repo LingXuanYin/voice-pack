@@ -47,7 +47,7 @@
 // 另外导出 speaksLanguage(manifest, segmentId, language)：参考集里的这一段和一句的语言（picks[i].language）对不对得上，比法同上面（完全一致或主语言一致）；
 //   一句看不出语言（null）算对得上。合并的一场里，一个说话人整场用一段参考，这一段和他哪一轮的语言对不上，他那一场就是跨语言的（lib/dub.mjs 的 sceneUnit）。
 // 另外导出 defaultSegmentFor(manifest, language)：一句的语言（picks[i].language，看不出是 null）在这个包里用哪一段默认段，就是上面「没定标签」那一层的找法，返回段名；
-//   看不出语言、包里没有这种语言，是主语言的默认段。做包比卡片那一句「这句话的语言的默认段」换没换（lib/make-pack-card-line.mjs）用它，找法只写在这里。
+//   看不出语言、包里没有这种语言，是主语言的默认段。做包比试听句「这句话的语言的默认段」换没换（lib/make-pack-card-line.mjs）用它，找法只写在这里。
 // 另外导出 pickSetupOf(setup)：清单里的一套设定（setups 里的一项）取出挑参考读的那几个键（{ labels, referenceTag? }，就是下面选项 setup 收的写法），
 //   没有设定（null、undefined）是 undefined（选项 setup 给 undefined 就是没有这一层）。配音、变声都用它把设定交进来，设定多了挑参考要读的键，只改这里。
 // 另外导出 refTextOf(segment)：挑中的参考段交给模型的参考文字（能力调用的 ref_text）：有提示标注（annotatedText）就是它，没有就是逐字稿 text。
@@ -87,27 +87,27 @@ const segmentLanguage = (segment) => ({ key: languageKey(segment.language), prim
  * 主默认段之外，languageDefaults 列了的照列；参考集里有、却没列默认段的语言，取这种语言排在最前的那一段。
  */
 function readReferenceSet(manifest) {
-  if (!isPlainObject(manifest) || !isPlainObject(manifest.reference)) throw invalid('reference', '要给参考集：清单里的 reference（defaultSegment 和 segments）');
+  if (!isPlainObject(manifest) || !isPlainObject(manifest.reference)) throw invalid('reference', 'the reference set is missing: the manifest needs reference (defaultSegment and segments)');
   const { defaultSegment, languageDefaults = [], segments } = manifest.reference;
-  if (!Array.isArray(segments) || segments.length === 0) throw invalid('reference.segments', '参考集至少要有一段参考');
+  if (!Array.isArray(segments) || segments.length === 0) throw invalid('reference.segments', 'a reference set needs at least one reference segment');
   segments.forEach((segment, index) => {
     if (!isPlainObject(segment) || typeof segment.id !== 'string' || typeof segment.language !== 'string') {
-      throw invalid(`reference.segments[${index}]`, `参考段 ${index} 要有 id 和 language（协议 3.x 的写法；1.x、2.x 的包的语言写在 tags 里，这一版不读）`);
+      throw invalid(`reference.segments[${index}]`, `reference segment ${index} needs an id and a language (protocol 3.x layout; in 1.x and 2.x packs the language is written in tags, which this version does not read)`);
     }
   });
   if (!segments.some((segment) => segment.id === defaultSegment)) {
-    throw invalid('reference.defaultSegment', `默认参考段 ${JSON.stringify(defaultSegment)} 不是参考集里的一段`);
+    throw invalid('reference.defaultSegment', `default segment ${JSON.stringify(defaultSegment)} is not a segment of the reference set`);
   }
-  if (!Array.isArray(languageDefaults)) throw invalid('reference.languageDefaults', 'languageDefaults 必须是参考段 id 的数组');
+  if (!Array.isArray(languageDefaults)) throw invalid('reference.languageDefaults', 'languageDefaults must be an array of reference segment ids');
   for (const [index, id] of languageDefaults.entries()) {
-    if (!segments.some((segment) => segment.id === id)) throw invalid(`reference.languageDefaults[${index}]`, `languageDefaults 里的 ${JSON.stringify(id)} 不是参考集里的一段`);
+    if (!segments.some((segment) => segment.id === id)) throw invalid(`reference.languageDefaults[${index}]`, `${JSON.stringify(id)} in languageDefaults is not a segment of the reference set`);
   }
   const holdout = manifest.holdout ?? [];
-  if (!Array.isArray(holdout)) throw invalid('holdout', 'holdout 必须是数组');
+  if (!Array.isArray(holdout)) throw invalid('holdout', 'holdout must be an array');
   const taken = new Set(segments.flatMap((segment) => [`id:${segment.id}`, ...(typeof segment.audio === 'string' ? [`audio:${segment.audio}`] : [])]));
   for (const [index, recording] of holdout.entries()) {
     if (taken.has(`id:${recording?.id}`) || (typeof recording?.audio === 'string' && taken.has(`audio:${recording.audio}`))) {
-      throw invalid('holdout', `留出录音 holdout[${index}]（${recording?.id}）和参考集共用 id 或音频文件：留出录音从不当参考，清单自相矛盾`);
+      throw invalid('holdout', `held-out recording holdout[${index}] (${recording?.id}) shares an id or audio file with the reference set: a held-out recording is never used as a reference, so the manifest contradicts itself`);
     }
   }
   const all = segments.map((segment, order) => ({ id: segment.id, order, isMain: segment.id === defaultSegment, language: segmentLanguage(segment), tag: segment.tag }));
@@ -127,24 +127,24 @@ function readReferenceSet(manifest) {
 function readLabels(raw, at) {
   const labels = {};
   if (raw === undefined) return labels;
-  if (!isPlainObject(raw)) throw invalid(at, `${at} 必须是对象：{ language?, emotion?, style?, energy? }`);
+  if (!isPlainObject(raw)) throw invalid(at, `${at} must be an object: { language?, emotion?, style?, energy? }`);
   for (const key of LABEL_KEYS) {
     const value = raw[key];
     if (value === undefined || value === null || value === '') continue;
-    if (typeof value !== 'string') throw invalid(`${at}.${key}`, `${at}.${key} 必须是字符串`);
-    if (key === 'energy' && !ENERGIES.includes(value)) throw invalid(`${at}.energy`, `${at}.energy 必须是 ${ENERGIES.join('、')} 之一`);
+    if (typeof value !== 'string') throw invalid(`${at}.${key}`, `${at}.${key} must be a string`);
+    if (key === 'energy' && !ENERGIES.includes(value)) throw invalid(`${at}.energy`, `${at}.energy must be one of ${ENERGIES.join(', ')}`);
     labels[key] = value;
   }
   return labels;
 }
 
 function readLines(lines) {
-  if (!Array.isArray(lines)) throw invalid('lines', 'lines 必须是数组：每一句台词一个 { text, labels? }');
+  if (!Array.isArray(lines)) throw invalid('lines', 'lines must be an array: one { text, labels? } per line');
   return lines.map((line, index) => {
     const at = `lines[${index}]`;
-    if (!isPlainObject(line)) throw invalid(at, `${at} 必须是一个对象`);
-    if (line.text !== undefined && typeof line.text !== 'string') throw invalid(`${at}.text`, `${at}.text 必须是字符串`);
-    if (line.directions !== undefined && !Array.isArray(line.directions)) throw invalid(`${at}.directions`, `${at}.directions 必须是数组`);
+    if (!isPlainObject(line)) throw invalid(at, `${at} must be an object`);
+    if (line.text !== undefined && typeof line.text !== 'string') throw invalid(`${at}.text`, `${at}.text must be a string`);
+    if (line.directions !== undefined && !Array.isArray(line.directions)) throw invalid(`${at}.directions`, `${at}.directions must be an array`);
     return { text: line.text ?? '', labels: readLabels(line.labels, `${at}.labels`), directions: line.directions };
   });
 }
@@ -162,15 +162,15 @@ function readOptions(options) {
   let rest = options;
   if (isPlainObject(options)) {
     const unknown = Object.keys(options).find((key) => !OPTION_KEYS.includes(key));
-    if (unknown !== undefined) throw invalid('options', `options 不合约定：不认识的选项 ${JSON.stringify(unknown)}：只有 ${OPTION_KEYS.join('、')}`);
+    if (unknown !== undefined) throw invalid('options', `invalid options: unknown option ${JSON.stringify(unknown)}; the only options are ${OPTION_KEYS.join(', ')}`);
     ({ setup, referenceTag, ...rest } = options);
-    if (referenceTag !== undefined && !isTag(referenceTag)) throw invalid('options', 'options 不合约定：referenceTag 必须是不空的字符串（调用方指定的音色基底标签），或者不给');
+    if (referenceTag !== undefined && !isTag(referenceTag)) throw invalid('options', 'invalid options: referenceTag must be a non-empty string (the reference tag the caller specifies), or omitted');
   }
   try {
     return { setup, referenceTag, directions: readDirectionOptions(rest) };
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
-    throw invalid('options', `options 不合约定：${error.message}`);
+    throw invalid('options', `invalid options: ${error.message}`);
   }
 }
 
@@ -181,18 +181,18 @@ function readOptions(options) {
  */
 function readSetup(raw) {
   if (raw === undefined) return { labels: {}, referenceTag: undefined };
-  if (!isPlainObject(raw)) throw invalid('options', 'options 不合约定：setup 必须是对象：{ labels?: { language?, emotion?, style?, energy? }, referenceTag? }');
+  if (!isPlainObject(raw)) throw invalid('options', 'invalid options: setup must be an object: { labels?: { language?, emotion?, style?, energy? }, referenceTag? }');
   const unknown = Object.keys(raw).find((key) => key !== 'labels' && key !== 'referenceTag');
-  if (unknown !== undefined) throw invalid('options', `options 不合约定：setup 里不认识的键 ${JSON.stringify(unknown)}：只有 labels、referenceTag`);
-  if (raw.referenceTag !== undefined && !isTag(raw.referenceTag)) throw invalid('options', 'options 不合约定：setup.referenceTag 必须是不空的字符串（设定写的默认参考），或者不给');
+  if (unknown !== undefined) throw invalid('options', `invalid options: unknown key ${JSON.stringify(unknown)} in setup; the only keys are labels, referenceTag`);
+  if (raw.referenceTag !== undefined && !isTag(raw.referenceTag)) throw invalid('options', 'invalid options: setup.referenceTag must be a non-empty string (the default reference the setup specifies), or omitted');
   return { labels: readLabels(raw.labels, 'options.setup.labels'), referenceTag: raw.referenceTag };
 }
 
 /** 指定的标签参考集里一段都没有：reference_tag_unknown，列出每种语言有哪些标签（写法见文件头）。 */
 function tagUnknown(manifest, referenceTag) {
   const tags = referenceTagsByLanguage(manifest.reference.segments);
-  const listed = tags.map((group) => `${group.language}：${group.tags.join('、')}`).join('；');
-  return new VoicePackError('reference_tag_unknown', `包 ${manifest.name}（${manifest.id}）的参考集里没有音色基底标签 ${JSON.stringify(referenceTag)}：${listed === '' ? '这个包的参考段都没有标签' : `有 ${listed}`}（标签逐字比，大小写不同就是两个标签）`, {
+  const listed = tags.map((group) => `${group.language}: ${group.tags.join(', ')}`).join('; ');
+  return new VoicePackError('reference_tag_unknown', `the reference set of pack ${manifest.name} (${manifest.id}) has no reference tag ${JSON.stringify(referenceTag)}: ${listed === '' ? 'none of the reference segments in this pack has a tag' : `it has ${listed}`} (tags are compared character by character, so a different case is a different tag)`, {
     details: { referenceTag, pack: { id: manifest.id, name: manifest.name }, tags },
   });
 }
@@ -317,7 +317,7 @@ export function pickReferences(manifest, lines, options) {
 export function speaksLanguage(manifest, segmentId, language) {
   const { all } = readReferenceSet(manifest);
   const segment = all.find((candidate) => candidate.id === segmentId);
-  if (segment === undefined) throw invalid('segmentId', `${JSON.stringify(segmentId)} 不是参考集里的一段`);
+  if (segment === undefined) throw invalid('segmentId', `${JSON.stringify(segmentId)} is not a segment of the reference set`);
   if (language === null) return true;
   return languageScore(languageOfPick(language), segment) > 0;
 }

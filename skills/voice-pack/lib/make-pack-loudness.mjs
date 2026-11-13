@@ -7,7 +7,9 @@
 // 对所有输入都做（options.loudness 可以关）。怎么调（整体响度、采样峰值、增益怎么取）的正本在 tools/loudness-normalize.mjs：默认目标是 REFERENCE_LOUDNESS_LUFS（参考音频的目标响度，
 // 产品里只有这一个数），采样峰值不超过 PEAK_CEILING_DBFS；降增益不受限制；加增益会让峰值超过上限的（峰值比响度高 19 dB 以上的录音），默认用预读限幅器压住过高的峰再加（最多压 LIMITER_MAX_DB，
 // 参数和依据都在 tools/loudness-normalize.mjs 的文件头「限幅器」），压到最多还是到不了目标的，只加到能加的，没到目标，在 notes 里写明差多少、压了多少（loudness_target_not_reached）。
-//   先量后调：音质检查、挑默认段、标提示标注，都是照原始音频做的，调响度在这些之后、写进包之前，所以不影响它们；报告里每段的 quality 是原始的，
+//   先量后调：音质检查、挑默认段、听着标提示标注，都是照原始音频做的，调响度在这些之后、写进包之前，所以不影响它们；报告里每段的 quality 是原始的，
+//   例外是标提示标注里量停顿和快慢：它在内存里把同一段音频调到这一次的目标响度再切块（adjustedAudio，和写进包里的那份是同一个调法，lib/point-measure.mjs），
+//   因为静音门槛是一个固定的电平（−30 dBFS），在原电平上，小声的录音字和字之间都被当成停顿（林岚的默认段 22 个字写了 9 处 [short pause]）；关了调响度（--no-loudness）就照原电平量，
 //   loudness 记着调之前、调之后的响度、峰值、增益和限幅压了多少 dB（limitedDb；没限幅是 0）。steps.loudness 记着这次的目标、上限和限幅器（limiter：{ maxDb }，关了是 null），
 //   数一数各状态的段数（adjusted、peakLimited、unchanged、skipped、carried），limiterUsed 是其中限幅压过的段数。
 //   写进包里的、试合成用的参考和量还原度用的留出录音，都是调过的那份字节（试合成和包里的一致）。
@@ -21,6 +23,8 @@
 //                                          loudness（{ targetLufs, peakCeilingDbfs, limiter }，关掉是 null）；返回 { step, notes }：
 //                                          step 是 steps.loudness（关掉是 { status: 'skipped', reason: 'disabled' }），notes 是下面两种说明
 //   adjustedClip(env, bytes, settings)     一段音频调到目标响度以后的样子（解码、调、存成 16 位 PCM 的 WAV）；发新版本时筛片段（lib/make-pack-screen.mjs）查重也用它
+//   adjustedAudio(decoded, settings)       解码好的采样调到目标响度（含限幅）：{ sampleRate, samples } 进，normalizeLoudness 的结果出；量不出响度的、已经在目标上的，结果里的 audio 就是原样的采样；
+//                                          adjustedClip 用它，标提示标注量停顿（lib/point-measure.mjs）也用它
 //
 // 说明（notes：[{ code, message, details }]）。message 是给人看的中文；details 是它说的那些事实，读的人（app 用两种语言自己写句子）只读 code 和 details，
 // 不去 steps.loudness 和每段的 loudness 里凑；数都和那里的是同一些：
@@ -42,12 +46,17 @@ import { normalizeLoudness, ceilingForPcm16 } from '../tools/loudness-normalize.
 
 /** 调响度这一步跳过某一段的原因，写进报告说明里的话。 */
 const LOUDNESS_SKIP_WHY = {
-  external: '外部资源：文件在作者那里，包里只记网址、大小和哈希，调了就对不上了',
-  runtime_missing: '解码要 ffmpeg，这个环境没有',
-  audio_undecodable: '解不了',
-  unmeasurable: '太短或几乎无声，量不出响度',
+  external: 'external resource: the file is with the author, the pack only records the URL, size and hash, and adjusting it would make them no longer match',
+  runtime_missing: 'decoding needs ffmpeg, which this environment does not have',
+  audio_undecodable: 'cannot be decoded',
+  unmeasurable: 'too short or nearly silent, loudness cannot be measured',
 };
 const signed = (db) => `${db > 0 ? '+' : ''}${db}`;
+
+/** 解码好的采样调到目标响度（含限幅），规矩同 adjustedClip；返回 normalizeLoudness 的结果。 */
+export function adjustedAudio(decoded, { targetLufs, peakCeilingDbfs, limiter }) {
+  return normalizeLoudness({ sampleRate: decoded.sampleRate, samples: decoded.samples }, { targetLufs, peakCeilingDbfs: ceilingForPcm16(peakCeilingDbfs), limiter });
+}
 
 /**
  * 一段音频调到目标响度以后的样子：解码、调（含限幅）、存成 16 位 PCM 的 WAV。调响度（unifyLoudness）和发新版本时查重（screen）用同一份，同一段录音调出来的字节一样（目标、上限、限幅器同样）。
@@ -56,7 +65,7 @@ const signed = (db) => `${db > 0 ? '+' : ''}${db}`;
  *   skipped：没法调。runtime_missing 解码要 ffmpeg 而环境没有；audio_undecodable 解不了；unmeasurable 太短或几乎无声，量不出响度。
  *   audio 是 null：不用动（已经在目标上，峰值也没超上限）
  */
-export async function adjustedClip(env, bytes, { targetLufs, peakCeilingDbfs, limiter }) {
+export async function adjustedClip(env, bytes, settings) {
   let decoded;
   try {
     decoded = await decodeAudio(env, bytes);
@@ -66,7 +75,7 @@ export async function adjustedClip(env, bytes, { targetLufs, peakCeilingDbfs, li
     if (kind === 'undecodable') return { skipped: 'audio_undecodable', details: { code: error.code, message: error.message } };
     throw error;
   }
-  const result = normalizeLoudness({ sampleRate: decoded.sampleRate, samples: decoded.samples }, { targetLufs, peakCeilingDbfs: ceilingForPcm16(peakCeilingDbfs), limiter });
+  const result = adjustedAudio(decoded, settings);
   if (result.status === 'unmeasurable') return { skipped: 'unmeasurable' };
   return { result, audio: result.status === 'unchanged' ? null : { bytes: encodeWav(result.audio, { encoding: 'pcm16' }), mimeType: 'audio/wav' } };
 }
@@ -128,11 +137,11 @@ async function unifyLoudness(env, items, settings) {
   const limited = items.filter((item) => item.loudness?.status === 'peak_limited');
   if (limited.length > 0) {
     // 限幅器开着：限幅量最多 maxDb，调完还差得多（多半是压到了最多），说明里写出压了多少、上限是多少；关着：增益是加到峰值顶到上限为止
-    const reason = limiter === null ? '增益只用到这里' : `限幅最多压 ${limiter.maxDb} dB，调完还是差得多`;
-    const pressed = (item) => (limiter === null ? '' : `，限幅压了 ${item.loudness.limitedDb} dB`);
+    const reason = limiter === null ? 'the gain could only be raised this far' : `the limiter takes at most ${limiter.maxDb} dB and the result is still well short`;
+    const pressed = (item) => (limiter === null ? '' : `, limiter took ${item.loudness.limitedDb} dB`);
     notes.push({
       code: 'loudness_target_not_reached',
-      message: `${limited.length} 段没调到目标响度 ${targetLufs} LUFS：为了采样峰值不超过 ${peakCeilingDbfs} dBFS，${reason}（${limited.map((item) => `${item.id}：${item.loudness.beforeLufs} → ${item.loudness.afterLufs} LUFS，${signed(item.loudness.gainDb)} dB${pressed(item)}`).join('、')}）。这几段的响度和别的段不一样，用它们当参考，配出来的整段里音量会不齐`,
+      message: `${limited.length} ${limited.length === 1 ? 'segment' : 'segments'} did not reach the target loudness ${targetLufs} LUFS: to keep the sample peak under ${peakCeilingDbfs} dBFS, ${reason} (${limited.map((item) => `${item.id}: ${item.loudness.beforeLufs} → ${item.loudness.afterLufs} LUFS, ${signed(item.loudness.gainDb)} dB${pressed(item)}`).join(', ')}). Their loudness differs from the other segments; if they are used as references, the volume in the dubbed passage will be uneven`,
       details: {
         targetLufs,
         peakCeilingDbfs,
@@ -145,7 +154,7 @@ async function unifyLoudness(env, items, settings) {
   if (left.length > 0) {
     notes.push({
       code: 'loudness_skipped',
-      message: `${left.length} 段没调响度，包里是原来的音频：${left.map((item) => `${item.id}（${LOUDNESS_SKIP_WHY[item.loudness.reason]}）`).join('、')}`,
+      message: `${left.length} ${left.length === 1 ? 'segment' : 'segments'} not adjusted for loudness, the pack has the original audio: ${left.map((item) => `${item.id} (${LOUDNESS_SKIP_WHY[item.loudness.reason]})`).join(', ')}`,
       details: { segments: left.map((item) => ({ id: item.id, reason: item.loudness.reason })) },
     });
   }

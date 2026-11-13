@@ -46,7 +46,7 @@
 //     再保证每个有原名的标签组（素材给的标签）都有最好的一段，再是没有标签的组，再按优先级补满，多出来的不要（over_limit）。没给 maxReferences 就不限（DEFAULTS.maxReferences 是 Infinity）。明说的段不因为音质是 warn 或者优先级靠后被裁掉；上一版的参考已经占满上限、它进不了参考集的，
 //     在花钱之前就报（lib/make-pack-pick.mjs 的 assertDefaultsUsable）。
 //     参考在清单里的次序：新做的包按优先级（好的在前，配音时同样合适的几段里取在前面的）；发新版本时，已有的在前、次序不变，新的接在后面。
-//   5 默认段（调用方和设定都没指定参考时，配音用这句的语言的那段；卡片试听放主语言的那段的录音）：要的是这个角色自然说出来、带表演的一段。
+//   5 默认段（调用方和设定都没指定参考时，配音用这句的语言的那段；卡片放主语言的那段的录音）：要的是这个角色自然说出来、带表演的一段。
 //     参考集里有几种语言（语言按 protocol/lib/manifest.mjs 的 languageKey 比：zh-CN、zh-cn 是同一种，zh 和 zh-CN 不是），每种语言各挑一段，下面的规则对每种语言照做一遍。
 //     标了 synthetic 的段（重生成的）和真录音不分，一样能当默认段。
 //     主语言：options.mainLanguage 给了、参考集里也有这种语言的段（发新版本时是上一版的主语言），就是它；不然是参考集里段最多的语言（一样多取先出现的）。
@@ -115,37 +115,37 @@ export function materialOptionProblems(options) {
   const problems = [];
   const given = (key) => options[key] !== undefined;
   const add = (field, message) => problems.push({ field, message });
-  if (given('holdoutRatio') && !(typeof options.holdoutRatio === 'number' && options.holdoutRatio >= 0 && options.holdoutRatio <= 1)) add('holdoutRatio', '必须是 0 到 1 之间的数');
+  if (given('holdoutRatio') && !(typeof options.holdoutRatio === 'number' && options.holdoutRatio >= 0 && options.holdoutRatio <= 1)) add('holdoutRatio', 'must be a number from 0 to 1');
   for (const key of ['maxHoldout', 'maxReferences', 'minHoldoutTokens']) {
     // maxReferences 可以是 Infinity：不限，DEFAULTS 里就是它（做包时参考段数不设上限）
     const unlimited = key === 'maxReferences' && options[key] === Infinity;
-    if (given(key) && !unlimited && !(Number.isInteger(options[key]) && options[key] >= 0)) add(key, '必须是不小于 0 的整数');
+    if (given(key) && !unlimited && !(Number.isInteger(options[key]) && options[key] >= 0)) add(key, 'must be an integer, 0 or more');
   }
-  if (Number.isInteger(options.maxReferences) && options.maxReferences === 0) add('maxReferences', '必须不小于 1（参考集至少要有一段）');
-  if (given('maxSynthesisChars') && options.maxSynthesisChars !== null && !(Number.isInteger(options.maxSynthesisChars) && options.maxSynthesisChars >= 1)) add('maxSynthesisChars', '必须是正整数（或 null：不限）');
+  if (Number.isInteger(options.maxReferences) && options.maxReferences === 0) add('maxReferences', 'must be at least 1 (the reference set needs at least one segment)');
+  if (given('maxSynthesisChars') && options.maxSynthesisChars !== null && !(Number.isInteger(options.maxSynthesisChars) && options.maxSynthesisChars >= 1)) add('maxSynthesisChars', 'must be a positive integer (or null: no limit)');
   return problems;
 }
 
 function resolveOptions(options) {
-  if (options === null || typeof options !== 'object') throw new TypeError('options 必须是对象');
+  if (options === null || typeof options !== 'object') throw new TypeError('options must be an object');
   const [problem] = materialOptionProblems(options);
   if (problem !== undefined) throw new TypeError(`${problem.field} ${problem.message}`);
   return { ...DEFAULTS, ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) };
 }
 
 function readCandidates(candidates) {
-  if (!Array.isArray(candidates)) throw new TypeError('candidates 必须是数组');
+  if (!Array.isArray(candidates)) throw new TypeError('candidates must be an array');
   const ids = new Set();
   for (const [index, candidate] of candidates.entries()) {
     const at = `candidates[${index}]`;
-    if (candidate === null || typeof candidate !== 'object') throw new TypeError(`${at} 必须是对象`);
-    if (typeof candidate.id !== 'string' || candidate.id === '') throw new TypeError(`${at}.id 必须是非空字符串`);
-    if (ids.has(candidate.id)) throw new TypeError(`${at}.id「${candidate.id}」重复了`);
+    if (candidate === null || typeof candidate !== 'object') throw new TypeError(`${at} must be an object`);
+    if (typeof candidate.id !== 'string' || candidate.id === '') throw new TypeError(`${at}.id must be a non-empty string`);
+    if (ids.has(candidate.id)) throw new TypeError(`${at}.id "${candidate.id}" is a duplicate`);
     ids.add(candidate.id);
-    if (!(candidate.verdict in VERDICT_RANK)) throw new TypeError(`${at}.verdict 必须是 ok、warn、unchecked 之一`);
-    if (!Number.isInteger(candidate.order)) throw new TypeError(`${at}.order 必须是整数`);
-    if (typeof candidate.language !== 'string' || candidate.language === '') throw new TypeError(`${at}.language 必须是语言标签（非空字符串）`);
-    if (candidate.tag !== undefined && (typeof candidate.tag !== 'string' || candidate.tag === '')) throw new TypeError(`${at}.tag 必须是非空字符串，或者不给（没有标签）`);
+    if (!(candidate.verdict in VERDICT_RANK)) throw new TypeError(`${at}.verdict must be one of ok, warn, unchecked`);
+    if (!Number.isInteger(candidate.order)) throw new TypeError(`${at}.order must be an integer`);
+    if (typeof candidate.language !== 'string' || candidate.language === '') throw new TypeError(`${at}.language must be a language tag (a non-empty string)`);
+    if (candidate.tag !== undefined && (typeof candidate.tag !== 'string' || candidate.tag === '')) throw new TypeError(`${at}.tag must be a non-empty string, or left out (no tag)`);
   }
 }
 
@@ -320,9 +320,9 @@ function chooseDefaults(references, { pins, picked, similarities, mainLanguage }
 
 /** options.similarities 的写法：{ 段名: 有限的数的数组 }。不合约定抛 TypeError（调用方的代码写错了）。 */
 function readSimilarities(similarities) {
-  if (similarities === null || typeof similarities !== 'object' || Array.isArray(similarities)) throw new TypeError('similarities 必须是对象：段名 -> 和其余参考的相似度（数的数组）');
+  if (similarities === null || typeof similarities !== 'object' || Array.isArray(similarities)) throw new TypeError('similarities must be an object: segment name -> similarities to the other references (an array of numbers)');
   for (const [id, values] of Object.entries(similarities)) {
-    if (!Array.isArray(values) || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) throw new TypeError(`similarities.${id} 必须是有限的数的数组`);
+    if (!Array.isArray(values) || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) throw new TypeError(`similarities.${id} must be an array of finite numbers`);
   }
 }
 
@@ -347,13 +347,13 @@ export function chooseMaterial(candidates, options = {}) {
   readCandidates(candidates);
   if (settings.similarities !== undefined) readSimilarities(settings.similarities);
   const picked = settings.picked === undefined ? [] : [settings.picked].flat();
-  if (picked.some((id) => typeof id !== 'string')) throw new TypeError('picked 必须是段名（字符串），或者段名的数组');
-  if (settings.defaultSegment !== undefined && typeof settings.defaultSegment !== 'string') throw new TypeError('defaultSegment 必须是段名（字符串）');
+  if (picked.some((id) => typeof id !== 'string')) throw new TypeError('picked must be a segment name (a string), or an array of segment names');
+  if (settings.defaultSegment !== undefined && typeof settings.defaultSegment !== 'string') throw new TypeError('defaultSegment must be a segment name (a string)');
   const pins = [...(settings.defaultSegment === undefined ? [] : [settings.defaultSegment]), ...(settings.languageDefaults ?? [])];
-  if (pins.some((id) => typeof id !== 'string')) throw new TypeError('languageDefaults 必须是段名的数组');
-  if (settings.mainLanguage !== undefined && typeof settings.mainLanguage !== 'string') throw new TypeError('mainLanguage 必须是语言标签（字符串）');
+  if (pins.some((id) => typeof id !== 'string')) throw new TypeError('languageDefaults must be an array of segment names');
+  if (settings.mainLanguage !== undefined && typeof settings.mainLanguage !== 'string') throw new TypeError('mainLanguage must be a language tag (a string)');
   const referencedTags = settings.referencedTags ?? [];
-  if (!Array.isArray(referencedTags) || referencedTags.some((tag) => typeof tag !== 'string')) throw new TypeError('referencedTags 必须是标签（字符串）的数组');
+  if (!Array.isArray(referencedTags) || referencedTags.some((tag) => typeof tag !== 'string')) throw new TypeError('referencedTags must be an array of tags (strings)');
   const fixed = settings.fixed ?? {};
   const roleOf = (candidate) => fixed[candidate.id];
   const isNew = (candidate) => roleOf(candidate) === undefined;

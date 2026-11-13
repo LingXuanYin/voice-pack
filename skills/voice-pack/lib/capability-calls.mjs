@@ -5,14 +5,14 @@
 //
 //   isServiceError(error)                          能力抛的错是不是「服务暂时出错」（上游 5xx、网关超时、网络错误、超时……）：是 VoicePackError，
 //                                                  details.transient 为 true。谁来标是能力实现的事（适配器照自己的重试规则标），约定写在
-//                                                  adapters/README.md「出错的约定」，每项能力的签名在 vocab/capability-signatures.md「通用约定」。
+//                                                  adapters/README.md「Error conventions」，每项能力的签名在 vocab/capability-signatures.md「General conventions」。
 //                                                  没标的错（缺能力、参数错、401、返回的形状不对、普通的 Error……）都不是：照常往上抛，库不猜
 //   isTextRejected(error)                          能力抛的错是不是「只和这一次的文字有关」的拒绝：是 VoicePackError，details.textRejected 为 true
-//                                                  （谁来标是能力实现的事，约定同上，写在 vocab/capability-signatures.md「通用约定」）。配音据此把这一段记成失败、别的段照常做；没标的照常往上抛
+//                                                  （谁来标是能力实现的事，约定同上，写在 vocab/capability-signatures.md「General conventions」）。配音据此把这一段记成失败、别的段照常做；没标的照常往上抛
 //   keepsThrowing(error)                           能力抛的错是不是不能退回、不能当成「这一项没做成」记下的那种：调用方中止（AbortError，人不要了），
 //                                                  和凭据被拒（HTTP 401，或者适配器说它之后不再发请求的 details.halted：要让使用者处理，不替它再试一次，
-//                                                  约定见 adapters/README.md「出错的约定」第 3 条）。挑默认段（lib/make-pack-pick.mjs）碰到它照旧往上抛；
-//                                                  配卡片试听那一句（lib/make-pack-card-line.mjs）在包做好以后，401、halted 不抛，按它分出要使用者先处理的那一种（理由在那里）
+//                                                  约定见 adapters/README.md「Error conventions」第 3 条）。挑默认段（lib/make-pack-pick.mjs）碰到它照旧往上抛；
+//                                                  配试听句（lib/make-pack-card-line.mjs）在包做好以后，401、halted 不抛，按它分出要使用者先处理的那一种（理由在那里）
 //   isUnusableAnswer(error)                        能力抛的错是不是「回答没正常结束（截断、出错中断）或是空的」：是 VoicePackError，details.unusable 为 true
 //                                                  （谁来标是能力实现的事，约定同上）。标提示标注、挑默认段、盲听据此把那一条记成「作废」，不重试、不停下整次（标提示标注回答是空的除外，算暂时出错，lib/segment-annotation.mjs）；没标的照常往上抛
 //   isUnretrieved(error)                           能力抛的错是不是「服务那头已经做完（计过费）、只是结果没取回来」：是 VoicePackError，details.unretrieved 为 true
@@ -34,7 +34,7 @@
 //   pool(list, limit, work)                        一批事分给最多 limit 个并发的工人做：work(项, 序号)；结果的次序由调用方按序号自己放。
 //                                                  一件事抛了错就不再开始新的，等在做的做完，把第一个错往上抛
 //   reportedModel(capability, result)              能力的返回里报的模型：{}、{ model }，或者换过模型时 { model, modelChange: { from, reason } }。
-//                                                  约定（model 是实际用的模型；换过模型另给 modelChange，没换就不给）只写在 adapters/README.md「换了模型」。
+//                                                  约定（model 是实际用的模型；换过模型另给 modelChange，没换就不给）只写在 adapters/README.md「When the model changes」。
 //                                                  model 不是字符串就当没报（和以前一样）；modelChange 给了（不是 undefined、null）却写得不对，
 //                                                  抛 capability_result_invalid（problem 是 model_change_invalid）：换了模型是要告诉使用者的事，写错了不悄悄丢掉
 //
@@ -48,13 +48,13 @@ export const isServiceError = (error) => isVoicePackError(error) && error.detail
 /** 调用方中止（AbortError），或者凭据被拒（401、details.halted）：不能退回、不能当成「没做成」记下（见文件头）。 */
 export const keepsThrowing = (error) => error?.name === 'AbortError' || (isVoicePackError(error) && (error.details?.status === 401 || error.details?.halted === true));
 
-/** 只和这一次的文字有关的拒绝（details.textRejected 为 true，约定见 vocab/capability-signatures.md「通用约定」）。 */
+/** 只和这一次的文字有关的拒绝（details.textRejected 为 true，约定见 vocab/capability-signatures.md「General conventions」）。 */
 export const isTextRejected = (error) => isVoicePackError(error) && error.details?.textRejected === true;
 
-/** 回答没正常结束（截断、出错中断）或是空的（details.unusable 为 true，约定见 vocab/capability-signatures.md「通用约定」）。不是服务出错：不重试，每问一次都花钱，再问也可能还是这样。 */
+/** 回答没正常结束（截断、出错中断）或是空的（details.unusable 为 true，约定见 vocab/capability-signatures.md「General conventions」）。不是服务出错：不重试，每问一次都花钱，再问也可能还是这样。 */
 export const isUnusableAnswer = (error) => isVoicePackError(error) && error.details?.unusable === true;
 
-/** 服务那头做完了（计过费）、结果没取回来（details.unretrieved 为 true，约定见 vocab/capability-signatures.md「通用约定」）。不是暂时出错：重新调一次会再计一次费。 */
+/** 服务那头做完了（计过费）、结果没取回来（details.unretrieved 为 true，约定见 vocab/capability-signatures.md「General conventions」）。不是暂时出错：重新调一次会再计一次费。 */
 export const isUnretrieved = (error) => isVoicePackError(error) && error.details?.unretrieved === true;
 
 /** 被服务商拦下（内容过滤）：provider_blocked 这个码，或者照暂时出错报、details.problem 是 provider_blocked 的（转写的约定，见文件头和 vocab/capability-signatures.md 的转写一节）。 */
@@ -79,7 +79,7 @@ export function answerBody(reply) {
 export const summarizeError = (error) => ({ code: error.code, message: error.message, details: error.details ?? {} });
 
 export const badResult = (capability, problem, message = problem, extra = {}) =>
-  new VoicePackError('capability_result_invalid', `所需能力 ${capability} 的返回不符合约定：${message}`, { details: { capability, problem, ...extra } });
+  new VoicePackError('capability_result_invalid', `The result of the required capability ${capability} does not match the contract: ${message}`, { details: { capability, problem, ...extra } });
 
 export const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isFilled = (value) => typeof value === 'string' && value.trim() !== '';
@@ -90,7 +90,7 @@ export function reportedModel(capability, result) {
   const change = result.modelChange;
   if (change === undefined || change === null) return model;
   if (!isPlainObject(change) || !isFilled(change.from) || !isFilled(change.reason) || !isFilled(result.model)) {
-    throw badResult(capability, 'model_change_invalid', '换过模型时，modelChange 要是 { from, reason }（原来要用的模型、给人看的原因，都是非空字符串），model 写换上的那个模型（非空字符串）');
+    throw badResult(capability, 'model_change_invalid', 'when the model was changed, modelChange must be { from, reason } (the model that was meant to be used, and a reason for people to read, both non-empty strings), and model must be the model it was changed to (a non-empty string)');
   }
   return { ...model, modelChange: { from: change.from, reason: change.reason } };
 }

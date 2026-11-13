@@ -4,14 +4,19 @@
 // 从视频、动画、游戏里截来的录音常是带视频轨的文件，还常带配乐、别人插话：做包只取音轨；使用者说出她单独说话的是哪几秒，就只用那几秒。
 //
 //   await takeAudio(env, items)                就地改条目，返回 Promise<void>
+//   cutNotes(items)                            做完以后，条目里有超长的表演段在句末切开的（cutAtSentenceEnd），每段一条说明 reference_cut_at_sentence_end（见下面「切表演段」）
 //   trimRange(trim, { sampleRate, frames })    写了起止秒的段切哪几个采样：{ from, to }（含 from，不含 to）；切不出东西（起点在录音的结尾以后）是 null。
 //                                              查重（lib/duplicate-check.mjs）照它切，比的和包里放的是同几个采样
 //
-// 两件事，只对这一版新补的段做（上一版带来的段原样）：
+// 三件事，只对这一版新补的段做（上一版带来的段原样）：
 //   取音轨   音频不是包能放的格式（protocol/lib/audio.mjs 的 sniffAudio 认不出：带视频轨的 mp4、mov、mkv，webm、aac 这类别的格式）：用 ffmpeg 解出第一路音轨
 //            （tools/audio-decode.mjs，向环境要 ffmpeg），存成 WAV。包的格式不变：视频只是做包的输入，包里的参考照旧是音频。
 //   裁剪     写了起止秒（trim）的段，只留那几秒。startSec 不写是从头，endSec 不写是到结尾；endSec 超过录音的长度，切到结尾。按采样切（起点、终点各取最近的采样，trimRange），不淡入淡出。
 //            trim 的写法（{ startSec?, endSec? }，至少写一个，至少 0.1 秒）在 lib/make-pack-input.mjs 查，写错了在这之前就报。
+//   切表演段 写了 scriptText（台本原文）、没写起止秒的段，配出来比参考的上限（20 秒）长：不重配，在句末切开用，留够做默认段的长度（规则和数在 lib/cut-at-sentence-end.mjs）。
+//            切了的：条目的 trimmed 是实际切的 { startSec: 0, endSec }，另有 cutAtSentenceEnd: { fromSec, keptSec }（原来多长、留多长）；音频存成 16 位 WAV。
+//            不用切（不超过上限）、切不了（一个句末也没有停顿、只有一句），或者解不开的（不是 WAV、环境又没有 ffmpeg：解它只是为了量长度）：原样不动，
+//            音质检查的 duration_long 照旧提醒。写了起止秒的段不切（作者说了要哪几秒）。
 // 两件都做的（带视频轨的文件写了起止秒），先取音轨再切。做了的段存成 16 位 WAV，声道数和采样率照原来的。都不用做的段（包能放的格式、没写起止秒）一个字节都不动。
 // 外部资源（写了 externalUrl 的段）两件都不做：包里只记网址、大小和哈希（lib/make-pack-assemble.mjs 的 placeMaterial），取了音轨、切了就对不上网址上的文件
 //   （调响度也跳过它，同一个理由）。所以它不收 trim（lib/make-pack-input.mjs），不是包能放的格式的，筛片段记 audio_unrecognized。
@@ -25,7 +30,8 @@
 // 不一口气占住线程：解码、切、编 WAV 都是同步的活，段多了浏览器里页面会卡住。每段开始之前、编 WAV 之前看一眼，连续做了 YIELD_AFTER_MS（50）毫秒就让事件循环转一圈
 //   （lib/event-loop.mjs，同筛片段）。结果和次序不变。
 //
-// 读条目的：audio、trim、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）；
+// 读条目的：audio、trim、scriptText、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）、
+// cutAtSentenceEnd（表演段在句末切开了：{ fromSec, keptSec }）；
 // 做不成的写 unused: { reason, details }（筛片段就跳过它；原因的说法在 lib/material-hints.mjs）：
 //   audio_unrecognized  不是包能放的格式，也取不出音轨。details: { mimeType, runtime } 是环境没有 ffmpeg（runtime 是 'ffmpeg'）；
 //                       { mimeType, message } 是 ffmpeg 也解不开（message 是它说的话，打过码，见 tools/audio-decode.mjs）：文件里没有音轨、坏了，或者不是音频的字节
@@ -40,6 +46,7 @@ import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { sha256Hex } from '../protocol/lib/hash.mjs';
 import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
+import { sentenceEndCut, MAX_SECONDS } from './cut-at-sentence-end.mjs';
 import { YIELD_AFTER_MS, nowMs, turnEventLoop } from './event-loop.mjs';
 
 const toMs = (seconds) => Math.round(seconds * 1000) / 1000;
@@ -54,6 +61,18 @@ export function trimRange(trim, { sampleRate, frames }) {
   const from = Math.round((trim.startSec ?? 0) * sampleRate);
   const to = Math.min(frames, trim.endSec === undefined ? frames : Math.round(trim.endSec * sampleRate));
   return from >= frames || to <= from ? null : { from, to };
+}
+
+/** 超长的表演段在句末切开的，每段一条说明（make-pack 放进报告的 notes）。 */
+export function cutNotes(items) {
+  return items.filter((item) => item.cutAtSentenceEnd !== undefined).map((item) => {
+    const { fromSec, keptSec } = item.cutAtSentenceEnd;
+    return {
+      code: 'reference_cut_at_sentence_end',
+      message: `${item.id} was dubbed to ${fromSec} seconds, longer than the reference limit of ${MAX_SECONDS} seconds: it is cut at a line end at second ${keptSec} and used, keeping ${keptSec} seconds, not dubbed again; the lines after that are not in the pack, and the verbatim transcript in the pack is what is heard in the cut part`,
+      details: { id: item.id, fromSec, keptSec },
+    };
+  });
 }
 
 /** 解不开时这一段的去向：不是包能放的格式的，认不出（说清是缺 ffmpeg 还是 ffmpeg 也解不开）；能放的格式、要切的，解不开。 */
@@ -118,12 +137,17 @@ export async function takeAudio(env, items) {
       return;
     }
     const foreign = sniffAudio(bytes) === null; // 不是包能放的格式
-    if (!foreign && item.trim === undefined) {
+    const actedCandidate = item.trim === undefined && item.scriptText !== undefined; // 表演段：配出来的，可能比上限长，要量一下（文件头「切表演段」）
+    if (!foreign && item.trim === undefined && !actedCandidate) {
       await overlaps(item, bytes, 0, Infinity);
       return;
     }
     const decoded = await decode(bytes);
     if (decoded.error !== undefined) {
+      if (!foreign && item.trim === undefined) {
+        await overlaps(item, bytes, 0, Infinity); // 解它只是为了量长度：解不开就照原样用，不是这一段的问题
+        return;
+      }
       item.unused = failed(item, decoded.error, foreign);
       return;
     }
@@ -136,8 +160,23 @@ export async function takeAudio(env, items) {
         return;
       }
     }
+    let cut;
+    if (actedCandidate) {
+      const mono = new Float32Array(frames);
+      for (const channel of samples) for (let i = 0; i < frames; i += 1) mono[i] += channel[i] / samples.length;
+      const endSec = sentenceEndCut(mono, sampleRate, item.scriptText);
+      if (endSec !== null) {
+        range = { from: 0, to: Math.min(frames, Math.round(endSec * sampleRate)) };
+        cut = { fromSec: toMs(frames / sampleRate), keptSec: toMs(range.to / sampleRate) };
+      }
+    }
+    if (!foreign && item.trim === undefined && cut === undefined) {
+      await overlaps(item, bytes, 0, Infinity); // 不用切、切不了：原样不动（文件头）
+      return;
+    }
     if (await overlaps(item, bytes, range.from, item.trim === undefined ? Infinity : range.to)) return;
-    if (item.trim !== undefined) item.trimmed = { startSec: toMs(range.from / sampleRate), endSec: toMs(range.to / sampleRate) };
+    if (item.trim !== undefined || cut !== undefined) item.trimmed = { startSec: toMs(range.from / sampleRate), endSec: toMs(range.to / sampleRate) };
+    if (cut !== undefined) item.cutAtSentenceEnd = cut;
     if (foreign) item.convertedFrom = item.audio.mimeType;
     await breathe();
     item.audio = { bytes: encodeWav({ sampleRate, samples: samples.map((channel) => channel.subarray(range.from, range.to)) }, { encoding: 'pcm16' }), mimeType: 'audio/wav' };

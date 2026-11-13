@@ -9,11 +9,11 @@ import { partName } from '../lib/manifest.mjs';
 
 const MAX_LINES = 100;
 const MUTUAL_SKIPPED = {
-  no_base: '这个包里没有基础部分，进入环境、补全了基础部分以后再校验',
-  no_role: '单独的基础部分或协议核心，没有角色部分可对',
+  no_base: 'this pack has no base part; verify again after it is installed into an environment and its base part is completed',
+  no_role: 'a base part or protocol core on its own has no role part to check against',
 };
 
-const where = (part) => (part === '' ? '根' : part);
+const where = (part) => (part === '' ? 'root' : part);
 
 /**
  * 命令行里说一个部分的写法：「角色部分 mira-k3x9q2vd 1.0.0」「基础部分 1.0.0」「协议核心 1.0.0」。
@@ -24,11 +24,11 @@ export function partTitle(kind, id, version) {
 }
 
 function partLine(part) {
-  return `  ${partTitle(part.kind, part.id, part.version)}（${where(part.part)}，清单列了 ${part.files} 个文件，协议 ${part.protocol}）`;
+  return `  ${partTitle(part.kind, part.id, part.version)} (${where(part.part)}, the manifest lists ${part.files} ${part.files === 1 ? 'file' : 'files'}, protocol ${part.protocol})`;
 }
 
 function problemLine(problem) {
-  return `  [${problem.code}] ${problem.message}${problem.part ? `（在 ${problem.part}）` : ''}`;
+  return `  [${problem.code}] ${problem.message}${problem.part ? ` (in ${problem.part})` : ''}`;
 }
 
 /** 签名的概况：验过几份、哪几份没有签名文件所以没验（--allow-unsigned）、哪几份有签名文件但这次没验。 */
@@ -37,20 +37,20 @@ function signatureLines(report, { onlyUnchecked }) {
   const verified = report.signatures.filter((entry) => entry.verified === true);
   if (verified.length > 0 && !onlyUnchecked) {
     const keyIds = [...new Set(verified.map((entry) => entry.keyId).filter((keyId) => typeof keyId === 'string'))];
-    lines.push(`  签名：验过 ${verified.length} 份（${verified.map((entry) => where(entry.part)).join('、')}）${keyIds.length > 0 ? `，key id ${keyIds.join('、')}` : ''}`);
+    lines.push(`  Signatures: ${verified.length} verified (${verified.map((entry) => where(entry.part)).join(', ')})${keyIds.length > 0 ? `, key id ${keyIds.join(', ')}` : ''}`);
   }
   const unsigned = report.signatures.filter((entry) => entry.skipped === 'unsigned');
-  if (unsigned.length > 0 && !onlyUnchecked) lines.push(`  签名：${unsigned.length} 个部分没有签名文件，没有验（--allow-unsigned）：${unsigned.map((entry) => where(entry.part)).join('、')}`);
+  if (unsigned.length > 0 && !onlyUnchecked) lines.push(`  Signatures: ${unsigned.length} ${unsigned.length === 1 ? 'part has' : 'parts have'} no signature file, not verified (--allow-unsigned): ${unsigned.map((entry) => where(entry.part)).join(', ')}`);
   const unchecked = report.signatures.filter((entry) => entry.present && entry.verified === null && entry.skipped === undefined);
-  if (unchecked.length > 0) lines.push(`  签名：${unchecked.length} 份签名文件没有核对（这次检查没有验签）`);
+  if (unchecked.length > 0) lines.push(`  Signatures: ${unchecked.length} signature ${unchecked.length === 1 ? 'file was' : 'files were'} not checked (this check did not verify signatures)`);
   return lines;
 }
 
 function mutualLine(report) {
   const mutual = report.mutual;
   if (mutual === undefined || mutual.reason === 'not_requested') return [];
-  if (mutual.checked) return ['  互相校验：通过（协议主版本、基础部分的版本、所需能力）'];
-  return MUTUAL_SKIPPED[mutual.reason] === undefined ? [] : [`  互相校验：没做（${MUTUAL_SKIPPED[mutual.reason]}）`];
+  if (mutual.checked) return ['  Mutual verification: passed (protocol major version, base part version, required capabilities)'];
+  return MUTUAL_SKIPPED[mutual.reason] === undefined ? [] : [`  Mutual verification: not done (${MUTUAL_SKIPPED[mutual.reason]})`];
 }
 
 /**
@@ -61,13 +61,13 @@ function mutualLine(report) {
 export function formatReport(report, subject) {
   const lines = [];
   if (report.ok) {
-    lines.push(`通过：${subject}`);
+    lines.push(`Passed: ${subject}`);
     for (const part of report.parts) lines.push(partLine(part));
     lines.push(...signatureLines(report, { onlyUnchecked: false }), ...mutualLine(report));
   } else {
-    lines.push(`不通过：${subject}（${report.problems.length} 处问题）`);
+    lines.push(`Failed: ${subject} (${report.problems.length} ${report.problems.length === 1 ? 'problem' : 'problems'})`);
     for (const problem of report.problems.slice(0, MAX_LINES)) lines.push(problemLine(problem));
-    if (report.problems.length > MAX_LINES) lines.push(`  …还有 ${report.problems.length - MAX_LINES} 处，加 --json 看全部`);
+    if (report.problems.length > MAX_LINES) lines.push(`  …and ${report.problems.length - MAX_LINES} more, add --json to see all of them`);
     lines.push(...signatureLines(report, { onlyUnchecked: true }));
   }
   return `${lines.join('\n')}\n`;

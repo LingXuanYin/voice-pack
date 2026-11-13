@@ -26,8 +26,8 @@ import { writeDirectory } from '../../protocol/cli/disk.mjs';
 import { formatReport } from '../../protocol/cli/report.mjs';
 import { parseArgs, usageProblem } from '../input.mjs';
 
-export const summary = '把音色包放进环境：检查（含验签）通过后放进 .agents/skills/，再复制一份到 .claude/skills/';
-export const usage = `install <包目录|分享文件> [--project <目录>] ${CHECK_USAGE} [--json]`;
+export const summary = 'Install a voice pack into the environment: after the check (including signature verification) passes, put it into .agents/skills/ and copy it to .claude/skills/';
+export const usage = `install <pack-dir|share-file> [--project <dir>] ${CHECK_USAGE} [--json]`;
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走）。用法里要都写出来（--trust、--allow-unsigned 在 CHECK_USAGE 里），约定见 cli/input.mjs 文件头。 */
 export const FLAGS = { project: 'string', trust: 'string', 'allow-unsigned': 'boolean' };
@@ -36,7 +36,7 @@ const LOCATIONS = [['.agents', 'skills'], ['.claude', 'skills']];
 
 export async function run(args, ctx) {
   const parsed = parseArgs(args, FLAGS);
-  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, usage, parsed.problem ?? '要给一个包目录或分享文件');
+  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, usage, parsed.problem ?? 'give one pack directory or share file');
   const [target] = parsed.positional;
   const project = path.resolve(ctx.cwd, parsed.options.project ?? '.');
 
@@ -46,13 +46,13 @@ export async function run(args, ctx) {
     return 1;
   }
   const manifest = parseManifest(files.get('manifest.json'));
-  if (manifest.part === 'protocol') throw new VoicePackError('pack_not_installable', '协议核心不是一个 skill，不能单独放进环境；要放角色部分（完整包）或基础部分', { details: { part: manifest.part } });
+  if (manifest.part === 'protocol') throw new VoicePackError('pack_not_installable', 'The protocol core is not a skill and cannot be installed on its own; install a role part (a full pack) or a base part', { details: { part: manifest.part } });
   const baseDirectory = baseDirectoryOf(manifest.protocol); // 包自己的协议版本对应的基础部分目录名
   const name = manifest.part === 'role' ? manifest.id : baseDirectory;
 
   const destinations = LOCATIONS.map((location) => path.join(project, ...location, name));
   for (const destination of destinations) {
-    if (fs.existsSync(destination)) throw new VoicePackError('file_exists', `${destination} 已存在，不往已有的目录里写：先自己挪走旧的，或者换一个 --project`, { details: { file: destination } });
+    if (fs.existsSync(destination)) throw new VoicePackError('file_exists', `${destination} already exists, and nothing is written into an existing directory: move the old one away first, or use a different --project`, { details: { file: destination } });
   }
   writeDirectory(destinations[0], files);
   try {
@@ -70,21 +70,21 @@ export async function run(args, ctx) {
     return 0;
   }
   const lines = [
-    `已放进环境：${manifest.part === 'role' ? `${manifest.name}（${manifest.id} ${manifest.version}）` : `${partName(manifest.part)} ${manifest.version}`}，${files.size} 个文件`,
-    `  ${destinations[0]}（Codex、Gemini CLI、Cursor、OpenCode 读这里）`,
-    `  ${destinations[1]}（Claude Code 读这里）`,
+    `Installed into the environment: ${manifest.part === 'role' ? `${manifest.name} (${manifest.id} ${manifest.version})` : `${partName(manifest.part)} ${manifest.version}`}, ${files.size} ${files.size === 1 ? 'file' : 'files'}`,
+    `  ${destinations[0]} (read by Codex, Gemini CLI, Cursor, OpenCode)`,
+    `  ${destinations[1]} (read by Claude Code)`,
   ];
-  if (unsigned.length > 0) lines.push(`没有签名的部分，没验：${unsigned.join('、')}。这不是官方版本（--allow-unsigned，本地开发用）`);
+  if (unsigned.length > 0) lines.push(`Parts without a signature, not verified: ${unsigned.join(', ')}. This is not an official version (--allow-unsigned, for local development)`);
   if (manifest.part === 'role') {
     // 环境里（项目的 .agents/skills/）已有基础部分的命令行：配音用它，不用补全（补全是给没有可用基础部分的环境的，见 FORMAT.md §11）。
     // 这里只看它的 cli.mjs 在不在，签名和版本不核
     const environmentBase = path.join(project, ...LOCATIONS[0], baseDirectory);
     const environmentCli = path.join(environmentBase, 'cli.mjs');
     lines.push(hasBase
-      ? `下一步，给台本配音：node ${path.join(destinations[0], baseDirectory, 'cli.mjs')} dub ${destinations[0]} <台本文件> --out <输出目录> [--adapter <适配器>]（模型从适配器接进来，见基础部分 SKILL.md 的「接自己的模型」）`
+      ? `Next, dub a script: node ${path.join(destinations[0], baseDirectory, 'cli.mjs')} dub ${destinations[0]} <script-file> --out <output-dir> [--adapter <adapter>] (the model is connected through the adapter, see the base part's SKILL.md「8. Connecting your own model」)`
       : fs.existsSync(environmentCli)
-        ? `下一步，给台本配音：node ${environmentCli} dub ${destinations[0]} <台本文件> --out <输出目录> [--adapter <适配器>]（用的是环境里已有的基础部分 ${environmentBase}/，只看了它在不在，签名和版本没核）`
-        : `这个包没有基础部分（${baseDirectory}/），配音之前要先补全，见它的 SKILL.md 里讲补全的那一节`); // 不写节标题：骨架的标题跟着作者的语言走，英文的包里没有中文标题
+        ? `Next, dub a script: node ${environmentCli} dub ${destinations[0]} <script-file> --out <output-dir> [--adapter <adapter>] (this uses the base part already in the environment, ${environmentBase}/; only its presence was checked, not its signature or version)`
+        : `This pack has no base part (${baseDirectory}/); complete it before dubbing, see the section on completing in its SKILL.md`); // 不写节标题：骨架的标题跟着作者的语言走，英文的包里没有中文标题
   }
   ctx.stdout(`${lines.join('\n')}\n`);
   return 0;

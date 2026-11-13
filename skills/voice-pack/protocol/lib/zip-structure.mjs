@@ -31,20 +31,20 @@ const ENCRYPTION_FLAGS = 0x0001 | 0x0040 | 0x2000; // 第 0 位加密，第 6 �
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export const malformed = (reason, message, details = {}) =>
-  new VoicePackError('zip_malformed', `zip 结构不对：${message}`, { details: { reason, ...details } });
+  new VoicePackError('zip_malformed', `Malformed zip structure: ${message}`, { details: { reason, ...details } });
 export const unsupported = (reason, message, details = {}) =>
-  new VoicePackError('zip_unsupported', `不支持的 zip 写法：${message}`, { details: { reason, ...details } });
+  new VoicePackError('zip_unsupported', `Unsupported zip feature: ${message}`, { details: { reason, ...details } });
 
 /** 找结尾记录：从文件末尾往前找，它的注释必须正好结束在文件末尾。 */
 function findEndRecord(bytes, dv) {
-  if (bytes.length < Z.EOCD_SIZE) throw malformed('too_short', '文件太短，不是 zip');
+  if (bytes.length < Z.EOCD_SIZE) throw malformed('too_short', 'The file is too short to be a zip');
   const lowest = Math.max(0, bytes.length - Z.EOCD_SIZE - 0xffff);
   for (let pos = bytes.length - Z.EOCD_SIZE; pos >= lowest; pos--) {
     if (dv.getUint32(pos, true) !== Z.SIG_EOCD) continue;
     if (pos + Z.EOCD_SIZE + dv.getUint16(pos + 20, true) !== bytes.length) continue;
     return pos;
   }
-  throw malformed('no_end_record', '找不到结尾记录：这不是 zip，或者文件被截断，或者末尾多了别的字节');
+  throw malformed('no_end_record', 'No end record found: this is not a zip, or the file is truncated, or there are extra bytes at the end');
 }
 
 /**
@@ -60,23 +60,23 @@ export function readStructure(bytes, limits) {
   const count = dv.getUint16(eocd + 10, true);
   const centralSize = dv.getUint32(eocd + 12, true);
   const centralOffset = dv.getUint32(eocd + 16, true);
-  if (diskNo !== 0 || centralDisk !== 0) throw unsupported('multi_disk', '分卷的 zip');
-  if (onDisk !== count) throw malformed('entry_count_mismatch', '结尾记录里两处条目数不一样');
+  if (diskNo !== 0 || centralDisk !== 0) throw unsupported('multi_disk', 'multi-disk zip');
+  if (onDisk !== count) throw malformed('entry_count_mismatch', 'The two entry counts in the end record differ');
   if (count === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff || (eocd >= 20 && dv.getUint32(eocd - 20, true) === Z.SIG_EOCD64_LOCATOR)) {
-    throw unsupported('zip64', 'zip64（条目超过 65535 个或者文件超过 4 GiB）');
+    throw unsupported('zip64', 'zip64 (more than 65535 entries, or a file larger than 4 GiB)');
   }
   assertMemberCount(count, limits);
-  if (centralOffset + centralSize !== eocd) throw malformed('central_directory_position', '中央目录的位置和大小，对不上结尾记录的位置（前面多了字节，或者中央目录和结尾记录之间多了字节）');
+  if (centralOffset + centralSize !== eocd) throw malformed('central_directory_position', 'The position and size of the central directory do not match the position of the end record (extra bytes before it, or extra bytes between the central directory and the end record)');
 
   const records = [];
   let at = centralOffset;
   for (let index = 0; index < count; index++) {
-    if (at + Z.CENTRAL_HEADER_SIZE > eocd) throw malformed('central_header_truncated', `第 ${index + 1} 个条目的头被截断`, { index });
-    if (dv.getUint32(at, true) !== Z.SIG_CENTRAL) throw malformed('central_header_signature', `第 ${index + 1} 个条目的头没有 PK\\x01\\x02 标记`, { index });
+    if (at + Z.CENTRAL_HEADER_SIZE > eocd) throw malformed('central_header_truncated', `The header of entry ${index + 1} is truncated`, { index });
+    if (dv.getUint32(at, true) !== Z.SIG_CENTRAL) throw malformed('central_header_signature', `The header of entry ${index + 1} does not have the PK\\x01\\x02 marker`, { index });
     const nameLen = dv.getUint16(at + 28, true);
     const extraLen = dv.getUint16(at + 30, true);
     const end = at + Z.CENTRAL_HEADER_SIZE + nameLen + extraLen + dv.getUint16(at + 32, true);
-    if (end > eocd) throw malformed('central_header_truncated', `第 ${index + 1} 个条目的头被截断`, { index });
+    if (end > eocd) throw malformed('central_header_truncated', `The header of entry ${index + 1} is truncated`, { index });
     records.push({
       index,
       flags: dv.getUint16(at + 8, true),
@@ -92,7 +92,7 @@ export function readStructure(bytes, limits) {
     });
     at = end;
   }
-  if (at !== eocd) throw malformed('central_directory_size', '中央目录里，最后一个条目之后还有多余的字节');
+  if (at !== eocd) throw malformed('central_directory_size', 'The central directory has extra bytes after its last entry');
 
   const files = [];
   const directories = [];
@@ -113,15 +113,15 @@ export function readStructure(bytes, limits) {
 
 /** 解码名字，检查类型、压缩方法、声明的大小，把结果写回记录。 */
 function describe(rec) {
-  if (rec.diskStart !== 0) throw unsupported('multi_disk', '分卷的 zip');
-  if (rec.flags & ENCRYPTION_FLAGS) throw unsupported('encrypted', '加密的 zip');
-  if (rec.method !== Z.METHOD_STORE && rec.method !== Z.METHOD_DEFLATE) throw unsupported('method', `压缩方法 ${rec.method}（只认存储 0 和 deflate 8）`, { method: rec.method });
+  if (rec.diskStart !== 0) throw unsupported('multi_disk', 'multi-disk zip');
+  if (rec.flags & ENCRYPTION_FLAGS) throw unsupported('encrypted', 'encrypted zip');
+  if (rec.method !== Z.METHOD_STORE && rec.method !== Z.METHOD_DEFLATE) throw unsupported('method', `compression method ${rec.method} (only store 0 and deflate 8 are accepted)`, { method: rec.method });
   if (rec.compressedSize === 0xffffffff || rec.size === 0xffffffff || rec.offset === 0xffffffff) throw unsupported('zip64', 'zip64');
   let name;
   try {
     name = decoder.decode(rec.nameBytes);
   } catch (cause) {
-    throw new VoicePackError('zip_bad_name', `第 ${rec.index + 1} 个条目的名字不是合法的 UTF-8`, { details: { index: rec.index }, cause });
+    throw new VoicePackError('zip_bad_name', `The name of entry ${rec.index + 1} is not valid UTF-8`, { details: { index: rec.index }, cause });
   }
   rec.isDirectory = name.endsWith('/');
   rec.path = rec.isDirectory ? name.slice(0, -1) : name;
@@ -129,22 +129,22 @@ function describe(rec) {
   assertPackPath(rec.path);
   const mode = rec.attr >>> 16;
   const type = mode & Z.S_IFMT;
-  if (type === Z.S_IFLNK) throw new VoicePackError('symlink_not_allowed', `${JSON.stringify(rec.path)} 是符号链接：音色包里不允许有符号链接`, { details: { path: rec.path, mode } });
-  if (type !== 0 && type !== Z.S_IFREG && type !== Z.S_IFDIR) throw new VoicePackError('member_type_not_allowed', `${JSON.stringify(rec.path)} 不是普通文件或目录（设备文件、管道之类不允许）`, { details: { path: rec.path, mode } });
-  if (rec.isDirectory && (type === Z.S_IFREG || rec.size !== 0)) throw malformed('directory_entry_has_data', `${JSON.stringify(name)} 的名字是目录，属性或大小却说它是文件`, { path: rec.path });
-  if (!rec.isDirectory && (type === Z.S_IFDIR || (rec.attr & 0x10) !== 0)) throw malformed('file_entry_marked_directory', `${JSON.stringify(name)} 的名字是文件，属性却说它是目录`, { path: rec.path });
+  if (type === Z.S_IFLNK) throw new VoicePackError('symlink_not_allowed', `${JSON.stringify(rec.path)} is a symbolic link: a voice pack must not contain symbolic links`, { details: { path: rec.path, mode } });
+  if (type !== 0 && type !== Z.S_IFREG && type !== Z.S_IFDIR) throw new VoicePackError('member_type_not_allowed', `${JSON.stringify(rec.path)} is not a regular file or directory (device files, pipes and the like are not allowed)`, { details: { path: rec.path, mode } });
+  if (rec.isDirectory && (type === Z.S_IFREG || rec.size !== 0)) throw malformed('directory_entry_has_data', `${JSON.stringify(name)} is named like a directory, but its attributes or size say it is a file`, { path: rec.path });
+  if (!rec.isDirectory && (type === Z.S_IFDIR || (rec.attr & 0x10) !== 0)) throw malformed('file_entry_marked_directory', `${JSON.stringify(name)} is named like a file, but its attributes say it is a directory`, { path: rec.path });
 }
 
 /** 文件之间、目录之间、文件和目录之间不能撞车。目录可以嵌套，所以目录只比对精确重名和文件名。 */
 function checkNameConflicts(files, directories) {
   const conflict = findPathConflict(files.map((f) => f.path));
-  if (conflict) throw new VoicePackError('path_conflict', `成员 ${JSON.stringify(conflict.path)} 和 ${JSON.stringify(conflict.other)} 冲突（${conflict.kind}）：解到磁盘上会互相覆盖`, { details: conflict });
+  if (conflict) throw new VoicePackError('path_conflict', `Member ${JSON.stringify(conflict.path)} conflicts with ${JSON.stringify(conflict.other)} (${conflict.kind}): unpacked to disk they would overwrite each other`, { details: conflict });
   const fileKeys = new Map(files.map((f) => [collisionKey(f.path), f.path]));
   const seen = new Map();
   for (const dir of directories) {
     const key = collisionKey(dir);
-    if (fileKeys.has(key)) throw new VoicePackError('path_conflict', `目录 ${JSON.stringify(dir)} 和文件 ${JSON.stringify(fileKeys.get(key))} 同名`, { details: { kind: 'file_dir_conflict', path: dir, other: fileKeys.get(key) } });
-    if (seen.has(key)) throw new VoicePackError('path_conflict', `目录 ${JSON.stringify(dir)} 出现了两次`, { details: { kind: 'duplicate', path: dir, other: seen.get(key) } });
+    if (fileKeys.has(key)) throw new VoicePackError('path_conflict', `Directory ${JSON.stringify(dir)} has the same name as file ${JSON.stringify(fileKeys.get(key))}`, { details: { kind: 'file_dir_conflict', path: dir, other: fileKeys.get(key) } });
+    if (seen.has(key)) throw new VoicePackError('path_conflict', `Directory ${JSON.stringify(dir)} appears twice`, { details: { kind: 'duplicate', path: dir, other: seen.get(key) } });
     seen.set(key, dir);
   }
 }

@@ -7,10 +7,10 @@
 
 /** 不是合格的文件集就抛 TypeError。 */
 export function assertFileSet(files) {
-  if (!(files instanceof Map)) throw new TypeError('文件集必须是 Map<路径, Uint8Array>');
+  if (!(files instanceof Map)) throw new TypeError('A file set must be a Map<path, Uint8Array>');
   for (const [path, data] of files) {
-    if (typeof path !== 'string') throw new TypeError('文件集的键必须是字符串路径');
-    if (!(data instanceof Uint8Array)) throw new TypeError(`文件 ${JSON.stringify(path)} 的内容必须是 Uint8Array`);
+    if (typeof path !== 'string') throw new TypeError('The keys of a file set must be string paths');
+    if (!(data instanceof Uint8Array)) throw new TypeError(`The content of file ${JSON.stringify(path)} must be a Uint8Array`);
   }
 }
 

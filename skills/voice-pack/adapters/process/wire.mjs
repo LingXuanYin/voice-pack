@@ -41,7 +41,7 @@ export function encodeRequest({ id, capability, params }) {
   const replacer = (key, value) => {
     if (isClip(value)) return { ...value, bytes: toBase64(value.bytes) };
     if (value instanceof Uint8Array) {
-      throw new VoicePackError('process_request_invalid', `${capability} 的参数里${key === '' ? '' : ` ${key}`} 是裸的字节：音频要写成 { bytes, mimeType }`, { details: { capability, problem: 'bare_bytes', field: key } });
+      throw new VoicePackError('process_request_invalid', `${capability}: the argument${key === '' ? '' : ` ${key}`} is bare bytes; audio must be written as { bytes, mimeType }`, { details: { capability, problem: 'bare_bytes', field: key } });
     }
     return value;
   };
@@ -49,31 +49,31 @@ export function encodeRequest({ id, capability, params }) {
     return toAscii(JSON.stringify({ id, capability, params: rest }, replacer));
   } catch (cause) {
     if (cause instanceof VoicePackError) throw cause;
-    throw new VoicePackError('process_request_invalid', `${capability} 的参数编不成 JSON：${cause?.message ?? cause}`, { details: { capability, problem: 'not_json' }, cause });
+    throw new VoicePackError('process_request_invalid', `the arguments of ${capability} cannot be encoded as JSON: ${cause?.message ?? cause}`, { details: { capability, problem: 'not_json' }, cause });
   }
 }
 
 function readyOf(value) {
   if (value.protocol !== PROTOCOL_VERSION) {
-    return { kind: 'invalid', problem: `ready 里的 protocol 要是 ${PROTOCOL_VERSION}，收到 ${JSON.stringify(value.protocol)}` };
+    return { kind: 'invalid', problem: `protocol in ready must be ${PROTOCOL_VERSION}, got ${JSON.stringify(value.protocol)}` };
   }
   const { capabilities } = value;
   if (!Array.isArray(capabilities) || capabilities.some((name) => typeof name !== 'string' || name === '')) {
-    return { kind: 'invalid', problem: 'ready 里的 capabilities 要是能力名的数组（非空字符串）' };
+    return { kind: 'invalid', problem: 'capabilities in ready must be an array of capability names (non-empty strings)' };
   }
   return { kind: 'ready', capabilities: [...new Set(capabilities)], info: value.info };
 }
 
 function responseOf(value) {
   const { id } = value;
-  if (typeof value.ok !== 'boolean') return { kind: 'invalid', id, problem: '回应里要有 ok（true 或 false）' };
+  if (typeof value.ok !== 'boolean') return { kind: 'invalid', id, problem: 'the response must have ok (true or false)' };
   if (value.ok) {
-    if (!isPlainObject(value.result)) return { kind: 'invalid', id, problem: 'ok 为 true 时，result 要是对象' };
+    if (!isPlainObject(value.result)) return { kind: 'invalid', id, problem: 'when ok is true, result must be an object' };
     return { kind: 'response', id, ok: true, result: value.result };
   }
   const { error } = value;
   if (!isPlainObject(error) || typeof error.code !== 'string' || error.code === '') {
-    return { kind: 'invalid', id, problem: 'ok 为 false 时，error 要是对象，里面要有非空字符串的 code' };
+    return { kind: 'invalid', id, problem: 'when ok is false, error must be an object with a non-empty string code' };
   }
   return { kind: 'response', id, ok: false, error };
 }
@@ -105,7 +105,7 @@ export function decodeClips(value) {
 
 export function programError(error, capability) {
   const code = CODE_RE.test(error.code) ? error.code : 'process_program_error';
-  const message = reportable(typeof error.message === 'string' && error.message !== '' ? error.message : `程序报了错 ${error.code}`);
+  const message = reportable(typeof error.message === 'string' && error.message !== '' ? error.message : `the program reported error ${error.code}`);
   const { transient, ...given } = isPlainObject(error.details) ? error.details : {};
   void transient; // 只认 error 上的 transient，details 里夹带的不算
   const details = { ...maskedStrings(given), capability };

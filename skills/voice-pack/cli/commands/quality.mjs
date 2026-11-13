@@ -8,15 +8,15 @@
 import { checkAudioQuality } from '../../tools/audio-quality.mjs';
 import { parseArgs, readBytes, usageProblem } from '../input.mjs';
 
-export const summary = '量音频的时长、采样率、削波、静音、信噪比，给出提醒';
-export const usage = 'quality <音频文件|-> [--json]';
+export const summary = "Measure an audio file's duration, sample rate, clipping, silence and signal-to-noise ratio, and report warnings";
+export const usage = 'quality <audio file|-> [--json]';
 
 /** 命令认的选项：没有（--json 由 runner 取走）。约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {};
 
-const VERDICT = { ok: '没有提醒', warn: '有提醒' };
-const SEVERITY = { warn: '提醒' };
-const show = (value, unit, digits = 1) => (value === null ? '没有' : `${Number(value.toFixed(digits))}${unit}`);
+const VERDICT = { ok: 'no warnings', warn: 'has warnings' };
+const SEVERITY = { warn: 'warning' };
+const show = (value, unit, digits = 1) => (value === null ? 'n/a' :`${Number(value.toFixed(digits))}${unit}`);
 
 export async function run(args, ctx) {
   const parsed = parseArgs(args, FLAGS);
@@ -27,13 +27,13 @@ export async function run(args, ctx) {
     return 0;
   }
   const m = result.metrics;
-  ctx.stdout(`${parsed.positional[0]}（解码：${result.decoder}）\n`);
-  ctx.stdout(`时长 ${m.durationSec} 秒｜采样率 ${m.sampleRate} Hz｜声道 ${m.channels}\n`);
+  ctx.stdout(`${parsed.positional[0]} (decoder: ${result.decoder})\n`);
+  ctx.stdout(`Duration ${m.durationSec} s | Sample rate ${m.sampleRate} Hz | Channels ${m.channels}\n`);
   ctx.stdout(
-    `响度 ${show(m.loudnessLufs, ' LUFS')}｜峰值 ${show(m.peakDbfs, ' dBFS')}｜削波 ${show(m.clipping.ratio * 100, '%', 2)}｜` +
-      `静音 ${show(m.silenceRatio === null ? null : m.silenceRatio * 100, '%')}｜底噪 ${show(m.noiseFloorDbfs, ' dBFS')}｜信噪比 ${show(m.snrDb, ' dB')}\n`,
+    `Loudness ${show(m.loudnessLufs, ' LUFS')} | Peak ${show(m.peakDbfs, ' dBFS')} | Clipping ${show(m.clipping.ratio * 100, '%', 2)} | ` +
+      `Silence ${show(m.silenceRatio === null ? null : m.silenceRatio * 100, '%')} | Noise floor ${show(m.noiseFloorDbfs, ' dBFS')} | SNR ${show(m.snrDb, ' dB')}\n`,
   );
-  ctx.stdout(`结论：${VERDICT[result.verdict]}${result.reasons.length ? `（${result.reasons.length} 条原因）` : ''}\n`);
+  ctx.stdout(`Verdict: ${VERDICT[result.verdict]}${result.reasons.length ? ` (${result.reasons.length} ${result.reasons.length === 1 ? 'reason' : 'reasons'})` : ''}\n`);
   for (const reason of result.reasons) ctx.stdout(`  [${SEVERITY[reason.severity]}] ${reason.message}\n`);
   return 0;
 }

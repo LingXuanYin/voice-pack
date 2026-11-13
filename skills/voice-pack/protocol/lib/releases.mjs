@@ -25,7 +25,7 @@
 //   索引由官方签名，签名在 index.json.minisig。读索引的人要先验签再信它（verifyMessage，用信任名单）。
 //
 // 这个模块只管布局、索引的读写、已发布文件的读取；验签是 signature.mjs 的事，打包是 share.mjs 的事，
-// 挑哪个版本是补全的事。怎么发布，见 RELEASES.md「怎么发布」。
+// 挑哪个版本是补全的事。怎么发布，见 RELEASES.md「How to publish」。
 //
 // 本模块抛的 code（含义写在抛出处）：
 //   official_url_missing    信任名单里没有 official_url
@@ -45,7 +45,7 @@
 //   前两个默认值照 undici 的 headersTimeout、bodyTimeout（出处 https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md ）。浏览器的 fetch 没有这两个超时，这里自己守，Node 和浏览器一样。
 //   网络出错、超时、5xx、429 重试（默认共 3 次，间隔 1 秒起每次翻倍），
 //   404 不重试：那是「还没发布」。别的失败（401、403……）也不重试，直接报。读响应用有上限的方式，超了就停。
-//   缓存：公开文件前面有 CDN，缓存多久、读的一方换一个查询参数能不能穿过 CDN，看托管；官方地址（GitHub Pages）缓存十分钟，不把查询串算进缓存键（实测见 RELEASES.md「缓存」）。
+//   缓存：公开文件前面有 CDN，缓存多久、读的一方换一个查询参数能不能穿过 CDN，看托管；官方地址（GitHub Pages）缓存十分钟，不把查询串算进缓存键（实测见 RELEASES.md「Caching」）。
 //   版本索引会被覆盖，读它和它的签名要用 cacheBust，每次请求带一个新的 cb 查询参数，避开读的一方自己的 HTTP 缓存；不靠 Cache-Control 请求头（CDN 不理会，浏览器里还会多一次预检）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -78,15 +78,15 @@ const fail = (code, message, details, cause) => new VoicePackError(code, message
  * @throws {VoicePackError} official_url_invalid
  */
 function validateOfficialUrl(value) {
-  const invalid = (why) => fail('official_url_invalid', `官方地址不合格（${why}）：${JSON.stringify(value)}`, { field: OFFICIAL_URL_FIELD, reason: why });
-  if (typeof value !== 'string') throw invalid('不是字符串');
+  const invalid = (why) => fail('official_url_invalid', `the official URL is not valid (${why}): ${JSON.stringify(value)}`, { field: OFFICIAL_URL_FIELD, reason: why });
+  if (typeof value !== 'string') throw invalid('not a string');
   let url;
-  try { url = new URL(value); } catch { throw invalid('读不成地址'); }
-  if (url.protocol !== 'https:') throw invalid('不是 https');
-  if (url.username !== '' || url.password !== '') throw invalid('不能带用户名口令');
-  if (value.includes('?') || value.includes('#')) throw invalid('不能带查询串或片段');
-  if (!value.endsWith('/')) throw invalid('要以 / 结尾，它是一个目录');
-  if (url.href !== value) throw invalid('要写成规范的样子（小写的主机名、只用 ASCII）');
+  try { url = new URL(value); } catch { throw invalid('cannot be parsed as a URL'); }
+  if (url.protocol !== 'https:') throw invalid('not https');
+  if (url.username !== '' || url.password !== '') throw invalid('must not contain a username or password');
+  if (value.includes('?') || value.includes('#')) throw invalid('must not contain a query string or fragment');
+  if (!value.endsWith('/')) throw invalid('must end with /, since it is a directory');
+  if (url.href !== value) throw invalid('must be written in canonical form (lowercase host name, ASCII only)');
   return value;
 }
 
@@ -98,7 +98,7 @@ function validateOfficialUrl(value) {
  */
 export function officialUrlOf(trustList) {
   const value = trustList !== null && typeof trustList === 'object' ? trustList[OFFICIAL_URL_FIELD] : undefined;
-  if (value === undefined) throw fail('official_url_missing', `信任名单里没有 ${OFFICIAL_URL_FIELD}：不知道官方基础部分放在哪里`, { field: OFFICIAL_URL_FIELD });
+  if (value === undefined) throw fail('official_url_missing', `the trust list has no ${OFFICIAL_URL_FIELD}: cannot tell where the official base part is published`, { field: OFFICIAL_URL_FIELD });
   return validateOfficialUrl(value);
 }
 
@@ -113,7 +113,7 @@ export function officialUrlOf(trustList) {
  */
 export function baseZipName(version, protocol = PROTOCOL_VERSION) {
   const parsed = parseSemver(version);
-  if (parsed.build.length > 0) throw fail('invalid_version', `官方版本号不能带构建信息（+）：${JSON.stringify(version)}`, { version, reason: 'build_metadata' });
+  if (parsed.build.length > 0) throw fail('invalid_version', `an official version number must not have build metadata (+): ${JSON.stringify(version)}`, { version, reason: 'build_metadata' });
   return `${releaseFilePrefixOf(protocol)}-${version}${SHARE_SUFFIX}`;
 }
 
@@ -125,7 +125,7 @@ export function baseZipName(version, protocol = PROTOCOL_VERSION) {
  */
 export function officialFileUrl(officialUrl, fileName) {
   validateOfficialUrl(officialUrl);
-  if (typeof fileName !== 'string' || !FILE_NAME_RE.test(fileName)) throw fail('official_url_invalid', `文件名不合格：${JSON.stringify(fileName)}`, { field: 'file_name', reason: 'file_name' });
+  if (typeof fileName !== 'string' || !FILE_NAME_RE.test(fileName)) throw fail('official_url_invalid', `the file name is not valid: ${JSON.stringify(fileName)}`, { field: 'file_name', reason: 'file_name' });
   return `${officialUrl}${fileName}`;
 }
 
@@ -136,35 +136,35 @@ const MAX_VERSIONS = 10000; // 一份索引最多列这么多个版本：恶意�
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
 
-const indexProblem = (reason, message, extra = {}) => fail('index_invalid', `版本索引不合格：${message}`, { reason, ...extra });
+const indexProblem = (reason, message, extra = {}) => fail('index_invalid', `the version index is not valid: ${message}`, { reason, ...extra });
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** 索引里一项的检查；返回只含已知字段的新对象。 */
 function checkEntry(value, where) {
-  if (!isObject(value)) throw indexProblem('shape', `${where} 不是对象`);
+  if (!isObject(value)) throw indexProblem('shape', `${where} is not an object`);
   const { version, protocol, size, sha256 } = value;
   let parsed = null;
   try { parsed = parseSemver(version); } catch { /* 下面统一报 */ }
-  if (parsed === null || parsed.build.length > 0) throw indexProblem('version', `${where} 的版本号要是不带构建信息（+）的语义化版本号，这里是 ${JSON.stringify(version)}`, { version });
-  try { parseProtocolVersion(protocol); } catch { throw indexProblem('protocol', `${where} 的协议版本要写成「主.次」，这里是 ${JSON.stringify(protocol)}`, { version }); }
-  if (!Number.isSafeInteger(size) || size < 0) throw indexProblem('size', `${where} 的 size 要是非负整数，这里是 ${JSON.stringify(size)}`, { version });
-  if (typeof sha256 !== 'string' || !SHA256_RE.test(sha256)) throw indexProblem('sha256', `${where} 的 sha256 要写成 64 位小写十六进制`, { version });
+  if (parsed === null || parsed.build.length > 0) throw indexProblem('version', `the version of ${where} must be a semantic version number without build metadata (+), but is ${JSON.stringify(version)}`, { version });
+  try { parseProtocolVersion(protocol); } catch { throw indexProblem('protocol', `the protocol version of ${where} must be written as "major.minor", but is ${JSON.stringify(protocol)}`, { version }); }
+  if (!Number.isSafeInteger(size) || size < 0) throw indexProblem('size', `the size of ${where} must be a non-negative integer, but is ${JSON.stringify(size)}`, { version });
+  if (typeof sha256 !== 'string' || !SHA256_RE.test(sha256)) throw indexProblem('sha256', `the sha256 of ${where} must be 64 lowercase hexadecimal digits`, { version });
   return { version, protocol, size, sha256 };
 }
 
 /** 索引的检查：协议版本、每一项、不重复、从小到大排。返回只含已知字段的新对象。 */
 function checkIndex(value) {
-  if (!isObject(value)) throw indexProblem('shape', '根上要是一个对象');
+  if (!isObject(value)) throw indexProblem('shape', 'the root must be an object');
   let major;
-  try { major = parseProtocolVersion(value.protocol).major; } catch { throw indexProblem('protocol', `protocol 要写成「主.次」，这里是 ${JSON.stringify(value.protocol)}`); }
-  if (!READABLE_INDEX_MAJORS.includes(major)) throw fail('protocol_unsupported', `版本索引的写法主版本是 ${major}，这一版只读得懂 ${READABLE_INDEX_TEXT} 的索引写法`, { protocol: value.protocol, supported: READABLE_INDEX_TEXT });
-  if (!Array.isArray(value.versions)) throw indexProblem('shape', 'versions 要是数组');
-  if (value.versions.length > MAX_VERSIONS) throw indexProblem('too_large', `列了 ${value.versions.length} 个版本，上限 ${MAX_VERSIONS}`);
+  try { major = parseProtocolVersion(value.protocol).major; } catch { throw indexProblem('protocol', `protocol must be written as "major.minor", but is ${JSON.stringify(value.protocol)}`); }
+  if (!READABLE_INDEX_MAJORS.includes(major)) throw fail('protocol_unsupported', `the version index is written in major version ${major}; this version can only read the index format of ${READABLE_INDEX_TEXT}`, { protocol: value.protocol, supported: READABLE_INDEX_TEXT });
+  if (!Array.isArray(value.versions)) throw indexProblem('shape', 'versions must be an array');
+  if (value.versions.length > MAX_VERSIONS) throw indexProblem('too_large', `${value.versions.length} versions are listed, the limit is ${MAX_VERSIONS}`);
   const versions = value.versions.map((item, i) => checkEntry(item, `versions[${i}]`));
   for (let i = 1; i < versions.length; i++) {
     const order = compareSemver(versions[i - 1].version, versions[i].version);
-    if (order === 0) throw indexProblem('duplicate_version', `版本 ${versions[i].version} 列了不止一次`, { version: versions[i].version });
-    if (order > 0) throw indexProblem('versions_unsorted', `${versions[i - 1].version} 排在 ${versions[i].version} 前面：要按版本号从小到大排`, { version: versions[i].version });
+    if (order === 0) throw indexProblem('duplicate_version', `version ${versions[i].version} is listed more than once`, { version: versions[i].version });
+    if (order > 0) throw indexProblem('versions_unsorted', `${versions[i - 1].version} comes before ${versions[i].version}: versions must be sorted from lowest to highest`, { version: versions[i].version });
   }
   return { protocol: value.protocol, versions };
 }
@@ -177,15 +177,15 @@ function checkIndex(value) {
  * @throws {VoicePackError} index_invalid、protocol_unsupported
  */
 export function parseVersionIndex(bytes, options = {}) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   const { maxJsonBytes } = resolveLimits(options.limits);
-  if (bytes.length > maxJsonBytes) throw indexProblem('too_large', `${bytes.length} 字节，超过 JSON 的上限 ${maxJsonBytes} 字节`, { size: bytes.length, limit: maxJsonBytes });
-  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw indexProblem('not_json', '不能带字节序标记');
+  if (bytes.length > maxJsonBytes) throw indexProblem('too_large', `${bytes.length} bytes, over the JSON limit of ${maxJsonBytes} bytes`, { size: bytes.length, limit: maxJsonBytes });
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw indexProblem('not_json', 'must not start with a byte order mark');
   let value;
   try {
     value = JSON.parse(decoder.decode(bytes));
   } catch (cause) {
-    throw fail('index_invalid', '版本索引不合格：不是合法的 UTF-8 JSON', { reason: 'not_json' }, cause);
+    throw fail('index_invalid', 'the version index is not valid: not valid UTF-8 JSON', { reason: 'not_json' }, cause);
   }
   return checkIndex(value);
 }
@@ -208,11 +208,11 @@ export function serializeVersionIndex(index) {
  */
 export function addVersionToIndex(index, newEntry) {
   const current = checkIndex(index ?? { protocol: INDEX_PROTOCOL, versions: [] });
-  const added = checkEntry(newEntry, '新的版本');
+  const added = checkEntry(newEntry, 'the new entry');
   const existing = current.versions.find((item) => item.version === added.version);
   if (existing !== undefined) {
     if (existing.protocol === added.protocol && existing.size === added.size && existing.sha256 === added.sha256) return { index: current, added: false };
-    throw fail('release_conflict', `版本 ${added.version} 已经发布过了，内容却不一样：已发布的版本不可变，改了内容就要换版本号`, { version: added.version, reason: 'index_entry_differs', published: existing, new: added });
+    throw fail('release_conflict', `version ${added.version} has already been published, with different content: a published version is immutable, so changed content needs a new version number`, { version: added.version, reason: 'index_entry_differs', published: existing, new: added });
   }
   const versions = [...current.versions, added].sort((a, b) => compareSemver(a.version, b.version));
   return { index: { protocol: INDEX_PROTOCOL, versions }, added: true }; // 加了版本，索引就是这一版库重写的：写它自己的索引写法（INDEX_PROTOCOL），不照抄老索引的
@@ -224,9 +224,9 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // 等响应头、正文空闲的默认时限（毫秒）：照 undici 的 headersTimeout、bodyTimeout 默认。浏览器的 fetch 没有这两个超时，由这里守，Node 和浏览器一样。
 const DEFAULT_HEADERS_TIMEOUT_MS = 300_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
-const unreadable = (url, reason, message, extra = {}, cause) => fail('published_unreadable', `读不了 ${url}：${message}`, { url, reason, ...extra }, cause);
+const unreadable = (url, reason, message, extra = {}, cause) => fail('published_unreadable', `cannot read ${url}: ${message}`, { url, reason, ...extra }, cause);
 
-/** 避开缓存用的查询参数：每次请求带一个新的随机值，读的一方自己的 HTTP 缓存把它当成另一个条目，源站不看它。CDN 算不算它是另一个缓存条目，看托管（RELEASES.md「缓存」）。 */
+/** 避开缓存用的查询参数：每次请求带一个新的随机值，读的一方自己的 HTTP 缓存把它当成另一个条目，源站不看它。CDN 算不算它是另一个缓存条目，看托管（RELEASES.md「Caching」）。 */
 export const CACHE_BUST_PARAM = 'cb';
 
 function bustCache(url) {
@@ -252,13 +252,13 @@ async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeou
     controller.abort(); // 连接和没读完的正文都不要了
   };
   const expire = (reason, message, details) => stop({ kind: 'retry', error: unreadable(url, reason, message, details) });
-  const totalAlarm = timeoutMs === undefined ? undefined : setTimeout(() => expire('timeout', `${timeoutMs} 毫秒内没有读完`, { timeoutMs }), timeoutMs);
-  const headersAlarm = setTimeout(() => expire('headers', `${headersTimeoutMs} 毫秒内没有收到响应头`, { headersTimeoutMs }), headersTimeoutMs);
+  const totalAlarm = timeoutMs === undefined ? undefined : setTimeout(() => expire('timeout', `not finished within ${timeoutMs} ms`, { timeoutMs }), timeoutMs);
+  const headersAlarm = setTimeout(() => expire('headers', `no response headers within ${headersTimeoutMs} ms`, { headersTimeoutMs }), headersTimeoutMs);
   let idleAlarm;
   const rearmIdle = () => {
     if (settled) return;
     clearTimeout(idleAlarm);
-    idleAlarm = setTimeout(() => expire('idle', `${idleTimeoutMs} 毫秒内没有新的字节`, { idleTimeoutMs }), idleTimeoutMs);
+    idleAlarm = setTimeout(() => expire('idle', `no new bytes within ${idleTimeoutMs} ms`, { idleTimeoutMs }), idleTimeoutMs);
   };
   const work = (async () => {
     const response = await doFetch(requestUrl, { signal: controller.signal, ...(headers === undefined ? {} : { headers }) });
@@ -266,14 +266,14 @@ async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeou
     const status = response?.status ?? null;
     if (status === 404) return { kind: 'absent' };
     if (response?.ok !== true) {
-      const error = unreadable(url, 'status', `服务器返回 ${status ?? '（没有响应）'}`, { status });
+      const error = unreadable(url, 'status', `the server returned ${status ?? '(no response)'}`, { status });
       return { kind: status === null || status >= 500 || status === 429 ? 'retry' : 'fatal', error };
     }
     rearmIdle(); // 响应头到了：正文的空闲从这时候开始算
     const read = await readCapped(response, maxBytes, { onChunk: rearmIdle });
-    if (read.tooLarge) return { kind: 'fatal', error: unreadable(url, 'too_large', `比上限 ${maxBytes} 字节大`, { limit: maxBytes }) };
+    if (read.tooLarge) return { kind: 'fatal', error: unreadable(url, 'too_large', `larger than the limit of ${maxBytes} bytes`, { limit: maxBytes }) };
     return { kind: 'found', bytes: read.bytes };
-  })().catch((cause) => ({ kind: 'retry', error: unreadable(url, 'network', `网络出错（${cause?.message ?? cause}）`, {}, cause) }));
+  })().catch((cause) => ({ kind: 'retry', error: unreadable(url, 'network', `network error (${cause?.message ?? cause})`, {}, cause) }));
   try {
     return await Promise.race([work, decided]);
   } finally {
@@ -293,7 +293,7 @@ async function requestOnce(doFetch, url, requestUrl, { headers, maxBytes, timeou
  *   idleTimeoutMs 响应头到了以后，相邻两块正文之间最多空闲多久（毫秒；默认 300000，同 undici 的 bodyTimeout；每来一块重新计时）。三个时限任一到点，这次请求就停掉、按重试处理（文件头）；attempts 最多试几次（默认 3）；
  *   backoffMs 第一次重试前等多久，之后每次翻倍（默认 1000）；headers 额外的请求头（默认没有：浏览器跨域读公开文件时，自定义头会触发预检）；
  *   cacheBust 每次请求在地址后面加一个 cb 查询参数（值是新的随机数），避开读的一方自己的 HTTP 缓存；穿不穿得过 CDN 看托管（官方地址的 CDN 不把查询串算进缓存键，穿不过，
- *   RELEASES.md「缓存」）。读版本索引时要用：它会被覆盖。版本 zip 和它的签名不可变，不用（用了每次都回源站，缓存白设了）。报错里写的地址不带 cb
+ *   RELEASES.md「Caching」）。读版本索引时要用：它会被覆盖。版本 zip 和它的签名不可变，不用（用了每次都回源站，缓存白设了）。报错里写的地址不带 cb
  * @returns {Promise<{ found: false } | { found: true, bytes: Uint8Array }>} 404 是 { found: false }：还没发布
  * @throws {VoicePackError} fetch_missing；published_unreadable（读不出来：重试用完了，或者遇到不重试的失败，或者太大）
  */

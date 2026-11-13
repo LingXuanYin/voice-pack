@@ -5,7 +5,7 @@
 // 数值以上游 VoiceStudio 的安全解包为起点（64 个成员，单个 256 MiB，总共 512 MiB，JSON 1 MiB），
 // 只把成员数放宽：上游的 64 是单个音色文件的量；完整包里有基础部分（含协议核心）的全部文件，再加上角色部分的参考集、
 // 留出录音和脚本，一个重的完整包也只有几百个文件，所以定 1024（余量约 4 倍；每个成员的检查是 O(1)，上限不会拖慢拒绝）。
-// 数值的含义见 protocol/FORMAT.md「解包上限」。
+// 数值的含义见 protocol/FORMAT.md「Unpacking limit check」。
 //
 // 超限的说法（谁超了就点名谁，details 里有 limit 和实际值）只在这个文件里写一份：
 //   too_many_members   成员数超过 maxMembers
@@ -39,8 +39,8 @@ export const DEFAULT_LIMITS = Object.freeze({
 export function resolveLimits(partial = {}) {
   const limits = { ...DEFAULT_LIMITS };
   for (const [key, value] of Object.entries(partial ?? {})) {
-    if (!(key in DEFAULT_LIMITS)) throw new TypeError(`不认识的上限 ${key}（有：${Object.keys(DEFAULT_LIMITS).join('、')}）`);
-    if (!Number.isInteger(value) || value <= 0) throw new TypeError(`上限 ${key} 必须是正整数，收到 ${JSON.stringify(value)}`);
+    if (!(key in DEFAULT_LIMITS)) throw new TypeError(`unknown limit ${key} (known: ${Object.keys(DEFAULT_LIMITS).join(', ')})`);
+    if (!Number.isInteger(value) || value <= 0) throw new TypeError(`limit ${key} must be a positive integer, got ${JSON.stringify(value)}`);
     limits[key] = value;
   }
   return limits;
@@ -49,28 +49,28 @@ export function resolveLimits(partial = {}) {
 /** 成员数超过 maxMembers。 */
 export const memberCountProblem = (count, limits, { atLeast = false } = {}) => ({
   code: 'too_many_members',
-  message: `成员太多：${atLeast ? '至少 ' : ''}${count} 个，上限 ${limits.maxMembers} 个`,
+  message: `too many members: ${atLeast ? 'at least ' : ''}${count}, limit ${limits.maxMembers}`,
   details: { count, limit: limits.maxMembers },
 });
 
 /** 某个成员超过 maxMemberBytes。 */
 export const memberSizeProblem = (path, size, limits) => ({
   code: 'member_too_large',
-  message: `成员 ${path} 太大：${size} 字节，单个上限 ${limits.maxMemberBytes} 字节`,
+  message: `member ${path} is too large: ${size} bytes, limit per member ${limits.maxMemberBytes} bytes`,
   details: { path, size, limit: limits.maxMemberBytes },
 });
 
 /** 全部成员加起来超过 maxTotalBytes。 */
 export const totalSizeProblem = (total, limits, { atLeast = false } = {}) => ({
   code: 'total_too_large',
-  message: `全部成员加起来太大：${atLeast ? '至少 ' : ''}${total} 字节，总上限 ${limits.maxTotalBytes} 字节`,
+  message: `all members together are too large: ${atLeast ? 'at least ' : ''}${total} bytes, total limit ${limits.maxTotalBytes} bytes`,
   details: { total, limit: limits.maxTotalBytes },
 });
 
 /** 某个要当 JSON 解析的成员超过 maxJsonBytes。 */
 export const jsonSizeProblem = (path, size, limits) => ({
   code: 'json_too_large',
-  message: `JSON 成员 ${path} 太大：${size} 字节，上限 ${limits.maxJsonBytes} 字节`,
+  message: `JSON member ${path} is too large: ${size} bytes, limit ${limits.maxJsonBytes} bytes`,
   details: { path, size, limit: limits.maxJsonBytes },
 });
 

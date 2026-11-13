@@ -17,7 +17,7 @@ import { MANIFEST_SCHEMA } from '../protocol/lib/manifest.mjs';
 
 function limitOf(definition) {
   const max = MANIFEST_SCHEMA.$defs?.[definition]?.maxLength;
-  if (!Number.isInteger(max) || max < 1) throw new Error(`清单 schema（protocol/schema/manifest.schema.json）的 $defs.${definition}.maxLength 读不到正整数，收到 ${JSON.stringify(max)}`);
+  if (!Number.isInteger(max) || max < 1) throw new Error(`Cannot read a positive integer from $defs.${definition}.maxLength in the manifest schema (protocol/schema/manifest.schema.json), got ${JSON.stringify(max)}`);
   return max;
 }
 

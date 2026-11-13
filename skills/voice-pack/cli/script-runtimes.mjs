@@ -68,21 +68,21 @@ function run(executable, args, { input, cwd, timeoutMs, maxOutputBytes, label })
       child.kill(); // 只结束自己起的这一个
       setTimeout(() => finish(() => reject(error)), 5000).unref(); // 它迟迟不退出也不能一直等
     };
-    const timer = setTimeout(() => stop(new Error(`脚本 ${label} 超过 ${Math.round(timeoutMs / 1000)} 秒没有结束，已被结束`)), timeoutMs);
+    const timer = setTimeout(() => stop(new Error(`Script ${label} did not finish within ${Math.round(timeoutMs / 1000)} seconds and was stopped`)), timeoutMs);
     child.stdout.on('data', (chunk) => {
       outBytes += chunk.length;
-      if (outBytes > maxOutputBytes) return stop(new Error(`脚本 ${label} 的输出超过 ${Math.round(maxOutputBytes / 1024 / 1024)} MiB，已被结束`));
+      if (outBytes > maxOutputBytes) return stop(new Error(`Script ${label} produced more than ${Math.round(maxOutputBytes / 1024 / 1024)} MiB of output and was stopped`));
       out.push(chunk);
     });
     child.stderr.on('data', (chunk) => err.push(chunk)); // 标准错误的全文都留着，出错时才拼起来（见下面 close）
     child.stdin.on('error', () => {}); // 脚本不读标准输入就退出了：EPIPE 不是错误，结果看退出码
-    child.on('error', (cause) => finish(() => reject(new Error(reportable(`脚本 ${label} 起不来（${executable}）：${cause.message}`), { cause: scrubbedCause(cause) }))));
+    child.on('error', (cause) => finish(() => reject(new Error(reportable(`Script ${label} could not start (${executable}): ${cause.message}`), { cause: scrubbedCause(cause) }))));
     child.on('close', (code, signal) => {
       finish(() => {
         if (failure !== null) return reject(failure);
         if (code === 0) return resolve(Buffer.concat(out).toString('utf8'));
         const stderr = reportable(Buffer.concat(err).toString('utf8').trim());
-        reject(new Error(`脚本 ${label} 退出码 ${code ?? signal}${stderr === '' ? '' : `：${stderr}`}`));
+        reject(new Error(`Script ${label} failed with exit code ${code ?? signal}${stderr === '' ? '' : `: ${stderr}`}`));
       });
     });
     child.stdin.end(input);
@@ -109,8 +109,8 @@ export function createScriptRuntimes({ packDir, names, existing = {}, pathEnv, t
     if (executable === null) continue;
     runtimes[name] = async ({ entry, input }) => {
       const full = insideRoot(root, entry);
-      if (full === null) throw new Error(`脚本入口 ${JSON.stringify(entry)} 不在包目录里：只运行清单里登记的、包目录里的文件`);
-      if (!fs.existsSync(full)) throw new Error(`脚本入口 ${entry} 不存在`);
+      if (full === null) throw new Error(`Script entry ${JSON.stringify(entry)} is not inside the pack directory: only files in the pack directory that are listed in the manifest are run`);
+      if (!fs.existsSync(full)) throw new Error(`Script entry ${entry} does not exist`);
       return run(executable, [full], { input, cwd: root, timeoutMs, maxOutputBytes, label: entry });
     };
   }

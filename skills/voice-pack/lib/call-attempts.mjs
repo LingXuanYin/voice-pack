@@ -22,7 +22,7 @@
 //   挑默认段（audio-text-to-text）          lib/default-pick.mjs 的 pickByListening（options.attempts），lib/make-pack-pick.mjs 给它 MAX_ATTEMPTS
 //   标提示标注（audio-text-to-text）        lib/segment-annotation.mjs 的 annotateSegment（options.attempts，一段听一次），lib/make-pack-annotation.mjs 的 annotateReferences 给它 MAX_ATTEMPTS
 //   量停顿和快慢（automatic-speech-recognition） lib/point-measure.mjs 的 measurePoints：每块一次，规则同转写
-//   试合成、卡片试听那一句（voice-cloning） lib/make-pack-trial.mjs 的 envForPackDub：每条留出录音、那一句的合成调用包一层
+//   试合成、试听句（voice-cloning） lib/make-pack-trial.mjs 的 envForPackDub：每条留出录音、那一句的合成调用包一层
 //   不用它的：盲听（lib/fidelity.mjs，也调 audio-text-to-text）。盲听暂时出错记成「没听成」，事后由调用方补做（fidelity --redo），不在这条规则里
 //
 // 为什么是 3 次、5 秒和 15 秒：
@@ -32,7 +32,7 @@
 //     一分钟以上的中断救不了，试满 3 次以后照实说。
 //   - 听音频的调用也用它（以前是打标签，后来拿掉了；现在是挑默认段、标提示标注）：暂时出错的那一次原来记成「没听成」，不再问。
 //     规则对它们的意义和转写一样，次数和间隔就是上面那一套，不另起。
-//     这几种都是可能计费的调用：适配器约定不替会计费的调用重试（adapters/README.md「出错的约定」第 4 条），重试由库做，所以次数一定要进「确认费用」。
+//     这几种都是可能计费的调用：适配器约定不替会计费的调用重试（adapters/README.md「Error conventions」第 4 条），重试由库做，所以次数一定要进「确认费用」。
 //   - 失败的调用收不收费由运行环境定，库不知道：「确认费用」一律按最多的调用次数写，用户同意的是上限，多出来的次数不会超过它（每段最多 3 次，计划里的段数是上界）。
 //     某个环境上量出来的数（连不上的那一阵、失败的调用有没有计费记录），写在那个环境的适配器里。
 //
@@ -81,7 +81,7 @@ export function spent(error, attempts) {
 
 /** 调一次能力，暂时出错就按规则等一等再来。输入、返回、错误见文件头。 */
 export async function callWithRetries(ask, { attempts = MAX_ATTEMPTS, wait = sleep, delaysMs = RETRY_DELAYS_MS, onRetry } = {}) {
-  if (!Number.isInteger(attempts) || attempts < 1) throw new TypeError(`callWithRetries 的 attempts 必须是 1 以上的整数，收到 ${String(attempts)}`);
+  if (!Number.isInteger(attempts) || attempts < 1) throw new TypeError(`attempts of callWithRetries must be an integer of 1 or more, got ${String(attempts)}`);
   let used = 0;
   for (let failures = 0; ; ) {
     used += 1;

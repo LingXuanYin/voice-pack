@@ -1,39 +1,39 @@
-# 台本标记
+# Script markup
 
-这一份是基础部分的参考，`SKILL.md` 第 4 节指到这里。标记的名单在 `vocab/markup.json`；精确的语法和解析程序在 `tools/` 里的台本标记解析。
+This is a reference for the base part; section 4 of `SKILL.md` points here. The list of markers is in `vocab/markup.json`; the exact syntax and the parser are in the script markup parser in `tools/`.
 
-台本标记只有三种，都是基础部分自己要处理的（在哪里切开、用哪个包、拼接时插多长的静音）：
+There are only three kinds of script markup, and all three are handled by the base part itself (where to cut, which pack to use, how long a silence to insert when joining):
 
-| 写法 | 作用 |
+| Syntax | Effect |
 |---|---|
-| `# 标题` | 一章的开头 |
-| `[pause 0.6s]` | 停顿，单位是 `s` 或 `ms`；省略时长就用默认值 |
-| `[voice:<声音>]` | 从这里起换成这个声音（包名或包 ID，不分大小写），管到下一个声音标记或这一章结束（不跨章，下一章回到第一个包）；`[voice:]`（名字空着）回到第一个包，也就是台本开头的声音 |
+| `# 标题` | Start of a chapter (the heading text is the chapter title; `标题` means "title") |
+| `[pause 0.6s]` | A pause, in `s` or `ms`; if the duration is omitted, the default is used |
+| `[voice:<voice>]` | From here on, switch to this voice (a pack name or pack ID, case-insensitive); it applies until the next voice marker or the end of the chapter (it does not cross chapters; the next chapter goes back to the first pack); `[voice:]` (name left empty) goes back to the first pack, that is, the voice at the start of the script |
 
-别的方括号内容都是**提示**：写给模型的「怎么说」，原样留在它所在的位置，随文字交给模型，不念出来。
+Any other square-bracket content is a **cue**: a "how to say it" written for the model. It stays as it is in the position where it is written, goes to the model together with the text, and is not spoken.
 
-| 写法 | 作用 |
+| Syntax | Effect |
 |---|---|
-| `[sad and surprised]`、`[hushed voice]`、`[crying quietly]` | 说戏：写在说法变化的地方，从那里起生效；一句里可以有好几个，每个两三个词，说清这一处的情绪或说法，不写成句子（`models/scene3.md`「写什么」）；一律写英文，台词什么语言都一样。`dub` 不解读它，也不改它 |
-| `[sighs]`、`[small laugh]`、`[shaky breath]` | 一下子的声音：写在它发生的位置（`models/scene3.md`「一下子的声音和停顿」） |
-| `[slow]`、`[fast]`、`[emphasis]`、`[spell]` | 以前是标记，现在写了就是一条说戏，原样交给模型，不改 `unit.speed`。方括号的是说戏，从那里起往后管；只放慢几个字写 `<slow>…</slow>`，重读一个词写 `<emphasis>…</emphasis>`（下面「尖括号标签」） |
-| `（耳语）`、`*笑*`、`【叹气】`、`(angrily)` | 舞台说明：发出去之前换成同样意思的提示（`[耳语]`、`[笑]`），留在原来的位置，括号里的字不念。读成停顿的（`（停顿 2 秒）`、`（沉默）`）照旧是停顿，不写进文字；吸一口气、咳嗽这类一下子的声音（`（深吸一口气）`、`*coughs*`）不是停顿，照样换成提示。只有提示、没有字的一行（一行只写了`（生气）`），提示接到同一个声音的下一句开头。`dub` 把 30 个字以内的括号（全角、半角的圆括号，`【…】`，紧贴着字的 `*…*`）都当舞台说明，换成提示、不念；括号里一个词表里的词都没有的，规划的 `notes` 里有一条 `unrecognized_directions` 列出来（带词表里的词的不列，也照样不念，例如 `（笑话比赛）` 里有「笑」）。超过 30 个字的是正文，连括号照念。原文括号里要念的话，先改成不带括号的写法。规则见 `references/dub.md`「一句话是怎么变成合成的」第 2 步。星号要紧贴着字：`3 * 4 * 5`、行首的 `* 第一项 *`、两边空着的 `* 笑 *`，星号和字之间有空白，不是舞台说明，原样念 |
+| `[sad and surprised]`, `[hushed voice]`, `[crying quietly]` | Acting direction: written where the delivery changes, and effective from there on; one line can have several, each two or three words, saying the emotion or delivery at this point, not written as a sentence (`models/scene3.md`「What to write」); always written in English, whatever language the line is in. `dub` does not interpret it and does not change it |
+| `[sighs]`, `[small laugh]`, `[shaky breath]` | A momentary sound: written at the position where it happens (`models/scene3.md`「Sudden sounds and pauses」) |
+| `[slow]`, `[fast]`, `[emphasis]`, `[spell]` | They used to be markers; now, if written, each is an acting direction, handed to the model as it is, and `unit.speed` is not changed. A square-bracket one is an acting direction and applies from there on; to slow down only a few words write `<slow>…</slow>`, and to stress one word write `<emphasis>…</emphasis>` ("Angle-bracket tags" below) |
+| `（耳语）`, `*笑*`, `【叹气】`, `(angrily)` | Stage directions (the Chinese examples mean "whisper", "laugh", "sigh"): before sending, they are replaced with an English cue of the same meaning (`[whispering]`, `[laughs]`), kept in the original position, and the words inside the brackets are not spoken; one that only says fast or slow (`（慢慢地）`, "slowly") does not get a cue. One that reads as a pause (`（停顿 2 秒）`, "pause 2 seconds"; `（沉默）`, "silence") is still a pause and is not written into the text; a momentary sound such as drawing a breath or coughing (`（深吸一口气）`, "take a deep breath"; `*coughs*`) is not a pause and is replaced with a cue all the same (`[deep breath]`, `[coughs]`). If the lexicon does not recognise it, the words inside the brackets are put into square brackets as they are, and a Chinese one you change into English yourself. A line with only a cue and no words (a line that contains only `（生气）`, "angry") has its cue attached to the start of the next line of the same voice. `dub` treats every bracket of 30 characters or fewer (full-width and half-width round brackets, `【…】`, and `*…*` that touches the words) as a stage direction: it is replaced with a cue and not spoken; if there is not a single word from the lexicon inside the brackets, the planned `notes` has an `unrecognized_directions` entry that lists it (one that contains a word from the lexicon is likewise not spoken, and is listed only when it is not in English, because it goes out as Chinese: `（笑话比赛）`, "joke contest", contains 笑, "laugh", and is listed; `(he smiles at her)` is not). One longer than 30 characters is body text, and is spoken brackets included. If the words inside the original brackets are to be spoken, first change it to a form without brackets. The rules are in `references/dub.md`「How a line becomes synthesis」step 2. The asterisks must touch the words: `3 * 4 * 5`, `* 第一项 *` at the start of a line, and `* 笑 *` with spaces on both sides, where there is whitespace between the asterisk and the words, are not stage directions and are spoken as they are |
 
-## 尖括号标签
+## Angle-bracket tags
 
-尖括号写的是**文字**，不是标记，也不是提示：`dub` 原样、按位置交给模型。配音的模型认这几种（写法、用在哪里、读数见 `models/scene3.md`「提示」）：
+Angle brackets hold **text**, not markup and not a cue: `dub` hands it to the model as it is, by position. The dubbing model recognises these kinds (syntax, where to use them, and readings are in `models/scene3.md`「Cues」):
 
-- 成对的标签，只管包住的字：`<whisper>别出声</whisper>`（耳语）、`<emphasis>…</emphasis>`（重读）、`<slow>…</slow>`（放慢）……七个都见 `models/scene3.md`「成对的标签」。
-- 语言标签，包住的几个字换成这种语言：`<french>croissant aux amandes</french>`、`<japanese>ありがとう</japanese>`。
-- 音素标签，照写的音素念，原来的字不写：英文一个标签一个词，中文一个标签一个音节（`银行` 写成 `<|phoneme_start|>yin2<|phoneme_end|><|phoneme_start|>hang2<|phoneme_end|>`）。包里的读音词表写了音素的词，环境声明了 `phoneme-markers` 的，`dub` 替你写成这种标签（`references/dub-details.md`「读音词表」）；词表管不到的，自己写。
+- Paired tags, which affect only the words they enclose: `<whisper>别出声</whisper>` (whisper; the enclosed words mean "don't make a sound"), `<emphasis>…</emphasis>` (stress), `<slow>…</slow>` (slow down) ... all seven are in `models/scene3.md`「Paired tags」.
+- Language tags, which make the few enclosed words be in that language: `<french>croissant aux amandes</french>`, `<japanese>ありがとう</japanese>`.
+- Phoneme tags, which are spoken as the phonemes written, and the original words are not written: in English one tag per word, in Chinese one tag per syllable (`银行` ("bank") is written as `<|phoneme_start|>yin2<|phoneme_end|><|phoneme_start|>hang2<|phoneme_end|>`). For a word the pack's pronunciation lexicon gives phonemes for, when the environment declares `phoneme-markers`, `dub` writes it as this kind of tag for you (`references/dub-details.md`「Pronunciation lexicon」); for a word the lexicon does not cover, write it yourself.
 
-基础部分不改它们，也不从中间切开：
+The base part does not change them and does not cut through them:
 
-- 读音词表不碰标签名和音素标签里的音素；成对标签包住的字是要念的话，照样换。
-- 一行太长、要切成几个请求时，一对标签连同它包住的字、一个音素标签，整个留在一个请求里。一对标签连同包住的字比一个请求的上限还长的，在里面照常切开，每一段两头补上这一对标签（`<soft>甲。乙。</soft>` 切成 `<soft>甲。</soft>` 和 `<soft>乙。</soft>`）。
-- 认这一句是什么语言时，不算标签名和音素的字母（中文句子里的 `<whisper>`、`chong2` 不会让它被认成英文），也不算语言标签包住的另一种语言的字（中文句子里的 `<japanese>ありがとう</japanese>` 不会让它被认成日文）。
-- 分句、两段接起来、请求里写停顿时，隔着标签看里面的字：`<whisper>快走！</whisper>` 是以感叹号收尾的。
-- 一对标签写在一行里，中间不写停顿、`[voice:]`、章节标题：`dub` 可能在这几处切开请求，标签会被拆到两个请求里。拆开了的，`--dry-run` 规划的 `notes` 里有一条 `tag_pair_split`，列出哪几段缺了哪一头。
-- 例外：环境只声明了 `phoneme-in-text`（没有 `phoneme-markers`）、这一句又用上了读音词表的拼音音素时，整句转成 SSML，句子里的尖括号标签也被转义，到不了模型。要用标签的一句，读音词表管到的词自己写成音素标签。声明了 `phoneme-markers` 的环境没有这个例外：词表的音素写成音素标签，句子里别的标签照样到模型。
+- The pronunciation lexicon does not touch tag names or the phonemes inside phoneme tags; the words enclosed by a paired tag are words to be spoken, and are replaced as usual.
+- When a line is too long and must be cut into several requests, a pair of tags together with the words it encloses, and a phoneme tag, stay whole in one request. For a pair of tags together with its enclosed words that is longer than the limit of one request, it is cut inside as usual, and the pair of tags is added at both ends of each piece (`<soft>甲。乙。</soft>` is cut into `<soft>甲。</soft>` and `<soft>乙。</soft>`; the two characters 甲 and 乙 are placeholders for "A" and "B").
+- When recognising what language a sentence is in, the letters of tag names and phonemes are not counted (`<whisper>` or `chong2` in a Chinese sentence does not get it recognised as English), and the words in another language enclosed by a language tag are not counted either (`<japanese>ありがとう</japanese>` in a Chinese sentence does not get it recognised as Japanese).
+- When splitting sentences, joining two passages, and writing pauses into a request, look at the words inside through the tag: `<whisper>快走！</whisper>` ("Go, quick!") ends with an exclamation mark.
+- When a pair of tags is written on one line, do not write a pause, `[voice:]` or a chapter heading in the middle: `dub` may cut the request at these places, and the tag would be split across two requests. If it was split, the planned `notes` of `--dry-run` has a `tag_pair_split` entry that lists which pieces lack which end.
+- Exception: when the environment declares only `phoneme-in-text` (without `phoneme-markers`) and the sentence uses pinyin phonemes from the pronunciation lexicon, the whole sentence is converted to SSML, and the angle-bracket tags in the sentence are also escaped, so they do not reach the model. For a sentence that needs tags, write the words the lexicon covers as phoneme tags yourself. An environment that declares `phoneme-markers` has no such exception: the lexicon's phonemes are written as phoneme tags, and the other tags in the sentence still reach the model.
 
-读音词表只换提示、标记和尖括号标签以外的文字，方括号里面不动。
+The pronunciation lexicon replaces only text outside cues, markers and angle-bracket tags; what is inside square brackets is left alone.

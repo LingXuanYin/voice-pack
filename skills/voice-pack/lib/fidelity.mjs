@@ -9,7 +9,7 @@
 //                两边折过写法再比一次，片假名和平假名、有汉字时阿拉伯数字和汉字数字算一样，和不折的取小的，见 openingErrorRate）；
 //                再问两件事（是不是同一个人；哪里像、哪里不像）；
 //                换序再问一遍：同一对录音 X、Y 对调再问，模型偏向某个位置，也不会把「判成同一人的比例」推向一边。
-//                这个比例能不能当分数，见下面「怎么读这份报告」。
+//                这个比例能不能当分数，见下面「How to read this report」。
 //
 // 需要的所需能力（调用签名都写在 vocab/capability-signatures.md，这里只标注用到哪几项）：
 //   @capability speaker-verification  说话人相似度、真人基线
@@ -20,109 +20,108 @@
 //
 // 报告 measureFidelity 的形状：
 //   { counts, models, baseline, overall: { holdouts, speakerSimilarity, blindListening }, groups: [...], items: [...], voided: [...], notHeard: [...], noSpeech: [...] }
-//   speakerSimilarity 是 { status: 'measured', n, notHeard, noSpeech, meanSimilarity, ratio }、{ status: 'not_heard', label: '没听成', n: 0, notHeard, noSpeech }
-//   （这一组的说话人相似度一条也没量出来，有没听成的）、{ status: 'no_speech', label: '量不到', n: 0, notHeard: 0, noSpeech }
+//   speakerSimilarity 是 { status: 'measured', n, notHeard, noSpeech, meanSimilarity, ratio }、{ status: 'not_heard', label: 'not heard', n: 0, notHeard, noSpeech }
+//   （这一组的说话人相似度一条也没量出来，有没听成的）、{ status: 'no_speech', label: 'no speech', n: 0, notHeard: 0, noSpeech }
 //   （这一组的每一条都量不到）或「量不了」；baseline 是 { status: 'measured', value, pairs, excluded?, model? }，excluded 是没用上的真录音
 //   （嵌不出声纹的，见读法第 9 点）：[{ id, role: 'reference' | 'holdout', error }]，没有这样的就没有这一项；
 //   blindListening 是 { status: 'measured', trials, voided, blocked, notHeard, asks, sameSpeakerRate, consistentRate, differences, ... }、
 //   { status: 'voided', ... }（这一组的盲听全作废了）、{ status: 'not_heard', ... }（这一组的盲听一条有效的都没有，又有没听成的）或「量不了」。
 //   voided 是作废的总条数；blocked 是其中被模型的服务商拦下的条数（voided 的一部分，不是另外的；读法第 5 点）。有效、作废、没听成加起来是这一组的留出录音条数。
-//   「量不了」是 { status: 'unmeasurable', label: '量不了', reason, capability?, message }：缺能力时 reason 是 capability_missing，
+//   「量不了」是 { status: 'unmeasurable', label: 'unmeasurable', reason, capability?, message }：缺能力时 reason 是 capability_missing，
 //   capability 是缺的那一项；数据不够时 reason 写明原因（no_holdout_recordings、not_enough_real_recordings、baseline_not_positive）。
-//   items 里每一条留出录音的 speakerSimilarity、blindListening，各是 { status: 'measured', ... }、{ status: 'voided', label: '作废', error }（只有盲听；
+//   items 里每一条留出录音的 speakerSimilarity、blindListening，各是 { status: 'measured', ... }、{ status: 'voided', label: 'voided', error }（只有盲听；
 //   error.code 说明为什么作废：listening_check_failed、blind_answer_invalid、blind_answer_unusable、provider_blocked）
-//   或「没听成」{ status: 'not_heard', label: '没听成', item, error: { code, message, details }, attempts }；盲听的没听成还带 firstX
+//   或「没听成」{ status: 'not_heard', label: 'not heard', item, error: { code, message, details }, attempts }；盲听的没听成还带 firstX
 //   （第一次问的时候放在 X 的是 'a' 真人还是 'b' 生成的，补做沿用它，顺序就不会因为补做而变）；
-//   说话人相似度还可能是「量不到」{ status: 'no_speech', label: '量不到', item: 'speaker-similarity', which: 'generated' | 'holdout', error }
+//   说话人相似度还可能是「量不到」{ status: 'no_speech', label: 'no speech', item: 'speaker-similarity', which: 'generated' | 'holdout', error }
 //   （哪一段嵌不出声纹，error 是能力报错的原样；没有 attempts，不能补做）。
 //   voided、notHeard、noSpeech 是把各条里作废的、没听成的、量不到的摘出来的清单（notHeard 的每个元素是 { id, item, error, attempts }，
 //   noSpeech 的是 { id, item, which, error }）。
 //   补做：planRedo 算要补做哪几项、各要调用多少次；redoNotHeard 只对没听成的那几项重新调用，合并成一份新报告，形状同上。
-//   每一项的含义见各函数的说明；怎么读这些数，见下面「怎么读这份报告」。库只给数，不设门槛，也不替人下「像不像」的结论。
+//   每一项的含义见各函数的说明；怎么读这些数，见下面「How to read this report」。库只给数，不设门槛，也不替人下「像不像」的结论。
 //
 // 显示报告（命令行、app）：lib/fidelity-reading.mjs 的 readReport(report) 把报告变成「要显示什么」的结构（每一组和总体的比值，判成同一人的次数、条数和档，
 //   能不能下结论，作废、没听成、量不到各几条，模型说出来的区别原话，补做要调几次），READING_NOTES 是读法每一点的显示用语。
 //   读法的规则只在那里程序化一次：命令行（cli/fidelity-report.mjs 的 renderFidelityReport）和 app 都从它显示，不各写一份阈值。
 //
-// 怎么读这份报告（读法只在这里写一份，显示报告的地方——命令行、app——照它写，规则的程序在 lib/fidelity-reading.mjs。读法用公开语料标定过，标定的记录不随基础部分发布，下面写的是记录里的数；
-//   第 1、5、7、8 点的数是 2026-11-01 这一次收的：盲听用现在的问法（BLIND_PROMPT），K 组两遍，M 组一遍，克隆一遍；
-//   更早的数（2026-10-14、2026-10-19，旧问法和旧提示）只在写明「旧记录」的地方带着）：
-//   读法不设门槛：分数低的包照样能发布，分数不隐藏。下面的三档只是读法，不挡任何事。
-//   盲听的结果有三样：「判成同一人的比例」这一版问法没有分得开，只列次数和条数，不读成分数，也不读成档（第 1 点）；「两问判断相同的比例」不是分数（第 3 点）；「哪里像、哪里不像」的原话不计数、不打分（第 4 点）。
-//   1. 判成同一人的比例（sameSpeakerRate）。一组留出录音一起读（报告里按标签分的每一组，和总体，各是一组）：
-//        有效的留出录音不到 5 条：只列比例和条数，写明「条数不够，不下结论」。
-//        三档的线：比例 >= 0.7 是「判成同一人」；比例 <= 0.3 是「判成不是同一人」；两者之间是「说不准」。
-//        「说不准」不当成好，也不当成坏，和说话人相似度的比值、模型说出来的区别（原话）一起看。
-//        显示时带上次数和条数（例如「9/10 次，5 条」），不只给比例或一个词。
-//      但这一版问法没有分得开，三档现在不用（lib/fidelity-reading.mjs 的 QUESTION_CALIBRATION 记着结果，separable 是 false）：
-//        2026-11-01 的 K 组是已知答案的真录音：同一人 12 对，同语言同性别的不同人（硬负例）12 对，每对问两次，跑两遍。
-//        Q1（同一人的问，判成同一人的比例 >= 0.7）两遍都过：答出的 22/22 次、24/24 次都判成同一人；
-//        Q2（不同人的问，判成同一人的比例 <= 0.3）两遍都没过：10/23 次（0.43）、11/24 次（0.46）；
-//        Q3（每个试次得分的 AUC >= 0.80）第一遍过（0.83），第二遍没过（0.79）；Q4（两遍一致的问 >= 0.8）过（0.98）；
-//        Q5（两问换序后答案一致，只报不卡）0.90 和 0.96。硬负例分得很不一样：同为中文女声的不同人（两遍共 12 次）全判成同一人（每遍 6/6），
-//        中文男声 5/12，英文女声 4/12，英文男声 0/11。
-//        所以这一项只列次数和条数，写明「问法没有分得开，只列次数和条数，不下结论」，不读成三档里的任何一档。
-//        三档的线（0.7、0.3，有效的不到 5 条）这一次没有核对：核对只在问法分得开时才做，线保持原值，等问法分得开的标定之后再用。
-//      数（这一次，按次数）：同一个人的两段真录音（M 组）23/24 次判成同一人；同语言同性别的不同人（M 组，硬负例）8/22 次；
-//        用本人的参考录音克隆、对着本人的真录音问（M 组）19/23 次；用别人的参考录音克隆、对着本人的真录音问（M 组）7/24 次。
-//        每组有效的 11 或 12 条（每条两问），每组只有 22 到 24 次答出的回答，差一次就是 4 到 5 个百分点，别当精确的分数读。
-//      同一个人的留出录音，答出的几乎全判成同一人（K 组 46 次中 46 次，M 组 24 次中 23 次）；同语言同性别的不同人也常判成同一人（K 组 47 次中 21 次，M 组 22 次中 8 次），所以两组在这一版问法下分不开。「判成同一人」是「没发现不是本人」，不是「证明是本人」：声音很接近的两个人，模型会判成同一人，说话人相似度也分不开。
-//      「分开声音差得远的」（不同的人、不带参考的默认声音）是旧问法的记录（2026-10-14、2026-10-19），这一版没有重测。
-//   2. 没有「认出合成的比例」了：问法不问哪段是合成的（只问是不是同一个人，哪里像、哪里不像）。旧问法的这个数不是分数，不要按「越接近 0.5 越好」读：
-//      旧问法的标定记录（2026-10-14）里，模型指对合成那一段的次数没有高于随机（32/56，Wilson 95% 区间 0.44 到 0.69，包着 0.5），0.5 左右分不开克隆得好和模型分辨不出来。这一版问法不问这一项，报告里不列。
-//   3. 两问「判成同一人」相同的比例（consistentRate）只说明判断是跟着声音走还是跟着位置走（两问都说是、或都说不是，才算相同）。不当分数读，低也不扣分。
-//   4. 模型说出来的区别是原话，给人看，不计数、不打分。「合成感」「机械」这类词，模型对两段真录音也会写（这一次，两段都是真录音、有效的 139 次里有 4 次含这类词；一段是克隆、一段是真录音、有效的 47 次里有 1 次），不能当成被听出来的证据。
-//   5. 作废：收音校验的上限 DEFAULT_MAX_ERROR_RATE（0.3）不变，依据在上面说的记录里。
-//      校验只比每段音频开头的 OPENING_WORDS 个词。这一次（2026-11-01，就是这个提示收的）：380 段转写（另有 2 问没有转写：一问回答格式不对，一问被模型的服务商拦下），开头的词 335 段逐字对上，
-//      错误率均值 0.026、最大 0.57，超过 0.3 的 4 段正是 4 问收音校验没过的（K 组第一遍 2 问，M 组 2 问），其余 186 问两段都在 0.3 以下。
-//      没给音频时的错误率这一次没有重量（旧记录，2026-10-19：1.00，作废）。换了音频和静音时的错误率另量过，量法和数不随基础部分发布。
-//      开头的错误率比两次，交回小的那个：一次原样比，一次两边先折写法（openingErrorRate 的 foldWritings）：片假名当平假名；这一对文字里有汉字的，阿拉伯数字当汉字数字（94 就是九十四；
-//      还有假名的照日文的写法，100 就是百、105 就是百五；千分位逗号先去掉，1,000 就是 1000）。
-//      上面的数是加这一条以前量的，没有折过写法重量。加它的依据（2026-11-06）：另一次照这个收音校验判的听音评测，
-//      原样比，352 问里作废 75 问；另有 48 问都用同一段日文（逐字稿写片假名、模型写平假名），作废 44 问。
-//      那边放宽以后（先折写法，另外多认几条同一段话的转写；这里一段只有一份已知文本，只做前一条）降到 57 问、0 问，降下来的多半是听到了、写法不同。
-//      那边的数一律照中文读，只比折过的；日文照日文的写法读、去掉千分位逗号、和原样比的取小的，是这里另加的（照中文读日文的「百」「千」「百五」，读出来多一两个词，折了也对不上），没有重量。
-//      上限、开头的词数、分词都不变；凭提示编出来的话照旧过不了。汉字和假名之间（「何なのよ」和「なんなのよ」）折不了，照旧算错。
-//      取小的，所以折写法不会比原样比差，原来过的不会因为它作废。折过反倒多算错的，交回的是原样比的那个，和加这一条以前一样：
-//      另一边的写法比读出来的短，读出来多的词都算错。5 位以上的数逐位读，另一边写「一万」「两万」的（已知文本「3万円もするの？」、模型写「30000円もするの」，
-//      折过 0.857，原样 0.286，交回 0.286）；中文不写「一」的「千元」（1000 读成一千，多一个词：「花了千元买了一个蛋糕」，折过 0.286，原样 0.143）；
-//      折过以后一个数占的词数变了，开头的 OPENING_WORDS 个词比到的字跟着变，标提示标注时可能比到交给模型的那一截（日文的「１，０００」原样是「1」「000」两个词，
-//      折过是一个「千」；见 afterOpening），模型照实只写了去掉的那几个词，原样比一个不差。
-//      作废的条数单独报，不进以上任何比例。作废有四种原因，error.code 里分得开：收音校验没过（listening_check_failed）、
-//      回答不是固定格式（blind_answer_invalid）、回答没正常结束或是空的（blind_answer_unusable：截断、出错中断、没有文字，能力标 details.unusable）、回答被模型的服务商拦下（provider_blocked）。被拦下的另外报条数（blocked，是作废的一部分），
-//      写明是被拦下，不写成「不是 JSON」：服务商拦的是这一段录音的这次问答，再问多半还是被拦（旧记录，整段转写的旧提示 2026-10-14：同一批录音再问一遍，
-//      上一次被拦的 49 次里 46 次又被拦；上一次问成的 261 次里 9 次这次被拦），所以记成作废，不记成没听成，补做多半没有用。
-//   6. 没听成：某条的盲听或说话人相似度碰到服务出错（上游 5xx、网关超时、网络错误、超时），那一项记成「没听成」，单独报：
-//      和作废是两回事（作废是模型听了、没听到；没听成是根本没问成），两者都不进任何比例，也不算分数低。
-//      显示时写条数，例如「5 条里 2 条没听成，可以补做」，再列是哪几条、什么错、试了几次；有效的不到 5 条，照第 1 点只列比例和条数，
-//      写「条数不够，不下结论」，补做完再读。没听成可以补做：库不自动重试（建任务和补全可能已经计费），
-//      由调用方明确地要（redoNotHeard，命令行是 --redo），只重新调用没听成的那几项，调用几次事先写明（planRedo）。
-//   7. 说话人相似度的比值本身就是分数，照数显示（1 表示和这个人自己的真录音之间一样像）。这一次（2026-11-01）M 组每组 12 条的比值，中位数（最小到最大）：
-//      同一个人的两段真录音（M 组）1.09（0.87 到 1.22）；同语言同性别的不同人（M 组）0.32（0.01 到 0.59）；
-//      用本人的参考录音克隆（M 组）0.95（0.70 到 1.16）；用别人的参考录音克隆（M 组）0.21（0.05 到 0.74）。
-//      角色语音（第 8 点）这一次（2026-11-01 UTC）的比值，同样是中位数（最小到最大）：同一个角色的两段真录音（6 条）1.05（0.87 到 1.23）；
-//      不同角色的两段真录音（6 条，性别未标，不设限）0.37（0.20 到 0.56）；用本角色的参考录音克隆（12 条）0.94（0.37 到 1.08）；
-//      用别的角色的参考录音克隆（12 条）0.28（0.10 到 0.82）。标签是数据集给的，没核过。
-//      按比值排，同一个角色的 6 条都高过不同角色的 6 条（AUC 1.00）；用本角色参考的克隆高过用别的角色参考的克隆（12 条对 12 条，AUC 0.97）。
-//      这两个 AUC 只是描述：样本小，没有标定过的线，不当成「像不像」的分界。
-//      两种方法不合成一个总分；两个对不上时，两个都照实列出，不替人选一个。
-//   8. 适用范围：标定用的是朗读语料（中文 AISHELL-1 测试集、英文 LibriSpeech clean 验证集，各 6 人、每人 8 段）、一个克隆模型（单段参考）、一个听者模型，用的是哪两个写在记录里；
-//      这一次 M 组每组有效的 11 或 12 条（盲听，按条数）。换了合成模型、听者或语料类型，要重新标定，这几条读法不能照搬。
-//      角色语音是另一种语料：Hugging Face 上的 AnimeVox 数据集（英文动画配音，标签是数据集给的，没核过）。取前 3 片（共 7 片）里合格段最多的 6 个角色，
-//      合格段是 4.5 秒以上、转写非空、没有敏感词的真录音：Frieren、Rin Tohsaka、Marin Kitagawa、Makima、Homura Akemi、Fern；每个角色 8 段（1 段参考、2 段留出、5 段其余）。
-//      盲听只列次数（每条问两遍，问法没分得开，第 1 点）：同一个角色 12/12 次判成同一人，不同角色 6/12 次，用本角色参考的克隆 21/24 次，用别的角色参考的克隆 13/24 次。
-//      这一组只能照数看，没有标定过的线，不能拿来判包像不像本人；要拿它判，先用更多角色和条数标定，再照上面的读法用。
-//   9. 量不到：某一条的说话人相似度，生成的或留出的那一段录音里没有能嵌出声纹的语音（短到嵌不出、近乎静音；说话人验证报
-//      capability_input_invalid、details.problem 是 no_speech，写法见 vocab/capability-signatures.md）。这是那一段录音自己的事，
-//      不是环境坏了，也不是服务出错：那一条的说话人相似度记成「量不到」，写明是生成的还是留出的那一段、能力报的原话，单独报，
-//      不进任何比例，也不算分数低。和「没听成」不同，同一段录音再量还是一样，所以不能补做（planRedo、redoNotHeard 都不算它）；
-//      和「量不了」不同，它只是某一条的某一段录音，别的条照常量，整份报告照常出。显示时写条数和是哪几条，例如「6 条里 1 条量不到」。
-//      留出的真录音自己嵌不出时，真人基线也不用它（报告里 baseline.excluded 记着）；剩下的真录音凑不出一对时，说话人相似度整体「量不了」。
-//   10. 设计来源的包（measureFidelity 的 options.designSource 是 true，做包时清单里有 designSource）。它的素材不是真人录音，读法不一样：
-//      基线是这个设计声音自己几次合成之间的一致程度（同一个设计声音的几段合成，两两之间相似度的平均），比值说的是「用这个包合成的，和这个设计声音自己有多一致」，
-//      不是像不像哪个真人。所以第 1 点的三档对它不适用：盲听的「判成同一人的比例」照列数（次数、条数），但不读成档，不下结论，写明「三档读法不适用」。
-//      有效的留出录音不到 5 条的，也照列数，不提示补素材（设计来源的包不给留出录音的提示，见 material-hints 文件头 designSource）。
-//      清单里没有 designSource 的，照真人录音读（第 1 点到第 9 点照旧）：判不出是不是设计来源，不猜。
+// How to read this report (the reading is written only here; the places that display the report, the command line and the app, follow it, and the program for its rules is lib/fidelity-reading.mjs. The reading was calibrated on public corpora; the calibration record is not released with the base part, and what is written below are the numbers in that record;
+//   the numbers of points 1, 5, 7 and 8 are from the run of 2026-11-01: blind listening with the current question (BLIND_PROMPT), group K twice, group M once, clones once;
+//   older numbers (2026-10-14, 2026-10-19, the old question and the old prompt) are carried only where it says "old record"):
+//   The reading sets no threshold: a pack with a low score can still be published, and no score is hidden. The three tiers below are only a way of reading and block nothing.
+//   Blind listening gives three things: the "proportion judged the same person" (this version of the question does not separate the cases, so only the counts of asks and trials are listed; it is not read as a score or as a tier, point 1); the "proportion of the two asks that agree" is not a score (point 3); the "where it is alike, where it is not" words are not counted or scored (point 4).
+//   1. The proportion judged the same person (sameSpeakerRate). A group of held-out recordings is read together (each group by label in the report, and the whole, is one group):
+//        Fewer than 5 valid held-out recordings: list only the proportion and the count of trials, and write "too few trials, no conclusion".
+//        The lines of the three tiers: a proportion >= 0.7 is "judged the same person"; a proportion <= 0.3 is "judged not the same person"; in between is "uncertain".
+//        "Uncertain" is counted neither as good nor as bad; read it together with the ratio of speaker similarity and the differences the model said (its own words).
+//        When displaying, give the counts of asks and trials (for example "9/10 asks, 5 trials"), not only the proportion or one word.
+//      But with this version of the question the cases are not separated, so the three tiers are not used now (QUESTION_CALIBRATION in lib/fidelity-reading.mjs records the result, separable is false):
+//        Group K of 2026-11-01 is real recordings with known answers: 12 pairs of the same person, 12 pairs of different people of the same language and gender (hard negatives), each pair asked twice, run twice.
+//        Q1 (asks about the same person, proportion judged the same person >= 0.7) passed in both runs: 22/22 and 24/24 of the answered asks were judged the same person;
+//        Q2 (asks about different people, proportion judged the same person <= 0.3) failed in both runs: 10/23 asks (0.43), 11/24 asks (0.46);
+//        Q3 (AUC of each trial's score >= 0.80) passed in the first run (0.83) and failed in the second (0.79); Q4 (asks that agree across the two runs >= 0.8) passed (0.98);
+//        Q5 (the answer is the same after the two asks swap order; reported, does not block) 0.90 and 0.96. The hard negatives differ a lot: different people who are all Chinese female voices (12 asks over the two runs) were all judged the same person (6/6 in each run),
+//        Chinese male voices 5/12, English female voices 4/12, English male voices 0/11.
+//        So this item lists only the counts of asks and trials, writes "the question does not separate the cases; only counts of asks and trials are listed, no conclusion", and is not read as any of the three tiers.
+//        The lines of the three tiers (0.7, 0.3, fewer than 5 valid trials) were not checked this time: they are checked only when the question separates the cases; the lines keep their values and are used after a calibration in which the question separates the cases.
+//      Numbers (this run, by asks): two real recordings of the same person (group M) 23/24 asks judged the same person; different people of the same language and gender (group M, hard negatives) 8/22;
+//        a clone made from the person's own reference recording, asked against the person's real recording (group M) 19/23; a clone made from someone else's reference recording, asked against the person's real recording (group M) 7/24.
+//        Each group has 11 or 12 valid trials (two asks each), and each group has only 22 to 24 answered asks; one ask more or less is 4 to 5 percentage points, so do not read these as exact scores.
+//      For held-out recordings of the same person, almost all answered asks were judged the same person (46 of 46 in group K, 23 of 24 in group M); different people of the same language and gender were often judged the same person too (21 of 47 in group K, 8 of 22 in group M), so the two groups cannot be told apart by this version of the question. "Judged the same person" means "did not find that it is not the same person", not "proved to be the same person": the model judges two people whose voices are very close as the same person, and speaker similarity cannot tell them apart either.
+//      "Telling apart voices that differ a lot" (different people, the default voice with no reference) is a record of the old question (2026-10-14, 2026-10-19); this version was not re-measured.
+//   2. There is no longer a "proportion that recognized the synthetic one": the question does not ask which is synthetic (it asks only whether it is the same person, and where it is alike and not alike). That number of the old question is not a score; do not read it as "the closer to 0.5 the better":
+//      in the calibration record of the old question (2026-10-14), the number of times the model pointed at the synthetic clip was not higher than chance (32/56, Wilson 95% interval 0.44 to 0.69, which contains 0.5); around 0.5 it cannot tell a well-made clone from a model that cannot tell the two apart. This version of the question does not ask this, and the report does not list it.
+//   3. The proportion of the two asks that give the same "judged the same person" (consistentRate) only says whether the judgment follows the voice or the position (the two asks both saying yes, or both saying no, count as the same). It is not read as a score, and a low value deducts nothing.
+//   4. The differences the model says are its own words, for people to read; they are not counted or scored. Words like "synthetic feel" and "mechanical" are also written by the model for two real recordings (this run: of 139 valid asks with two real recordings, 4 contained such words; of 47 valid asks with one clone and one real recording, 1), so they cannot be taken as evidence that it was heard.
+//   5. Voided: the upper limit of the listening check, DEFAULT_MAX_ERROR_RATE (0.3), is unchanged; the basis is in the record mentioned above.
+//      The check compares only the first OPENING_WORDS words of each audio. This run (2026-11-01, collected with this prompt): 380 transcriptions (2 more asks have none: one answer was in the wrong format, one was blocked by the model's provider); the opening words of 335 matched word for word,
+//      the mean error rate was 0.026 and the maximum 0.57; the 4 above 0.3 are exactly the 4 asks whose listening check failed (2 asks in the first run of group K, 2 in group M); the other 186 asks were below 0.3 on both clips.
+//      The error rate with no audio was not re-measured this time (old record, 2026-10-19: 1.00, voided). The error rates with a swapped audio and with silence were measured separately; how and the numbers are not released with the base part.
+//      The error rate of the opening is compared twice and the smaller one is returned: once as written, once after both sides have their writings folded (foldWritings of openingErrorRate): katakana is treated as hiragana; where this pair of texts has Han characters, Arabic numerals are treated as Han numerals (94 is 九十四;
+//      where there is kana as well, Japanese writing is followed: 100 is 百, 105 is 百五; thousands-separator commas are removed first, 1,000 is 1000).
+//      The numbers above were measured before this was added and were not re-measured with folded writings. The basis for adding it (2026-11-06): another listening evaluation judged with this same listening check,
+//      compared as written, voided 75 of 352 asks; another 48 asks all used the same Japanese passage (the transcript written in katakana, the model writing hiragana), and 44 of them were voided.
+//      After that side was relaxed (writings folded first, and a few more transcriptions of the same passage recognized; here a passage has only one known text, so only the first was done) it fell to 57 asks and 0 asks; most of the drop was clips that had been heard but written differently.
+//      The numbers on that side are all read as Chinese and compared only after folding; reading Japanese as Japanese, removing thousands-separator commas, and taking the smaller against the as-written comparison are additions made here (reading Japanese 「百」「千」「百五」 as Chinese gives one or two more words, which do not match even when folded); they were not re-measured.
+//      The limit, the number of opening words and the word splitting are all unchanged; a text made up from the prompt still does not pass. Between Han and kana (「何なのよ」 and 「なんなのよ」) cannot be folded and is still counted as wrong.
+//      Taking the smaller means folding the writings is never worse than comparing as written, and what passed before is not voided because of it. Where folding would count more as wrong, the as-written comparison is returned, the same as before this was added:
+//      the other side's writing is shorter than what is read, and every extra word read counts as wrong. A number of 5 or more digits is read digit by digit, and the other side writes 「一万」 or 「两万」 (known text 「3万円もするの？」, the model writing 「30000円もするの」,
+//      folded 0.857, as written 0.286, returned 0.286); a Chinese 「千元」 that does not write 「一」 (1000 is read as 一千, one more word: 「花了千元买了一个蛋糕」, folded 0.286, as written 0.143);
+//      after folding, a number takes a different number of words, so the characters that the first OPENING_WORDS words reach change, and when cue annotations are marked the comparison may reach the part that was handed to the model (a Japanese 「１，０００」 as written is two words 「1」「000」, folded it is one 「千」; see afterOpening);
+//      the model wrote, as it truly heard, only the words that were removed, and the as-written comparison misses none.
+//      The count of voided asks is reported on its own and enters none of the proportions above. There are four causes of voiding, told apart in error.code: the listening check did not pass (listening_check_failed),
+//      the answer is not the fixed format (blind_answer_invalid), the answer did not end normally or is empty (blind_answer_unusable: truncated, interrupted by an error, no text; the capability marks details.unusable), the answer was blocked by the model's provider (provider_blocked). The blocked ones are also counted separately (blocked, a part of voided),
+//      saying that they were blocked, not written as "not JSON": the provider blocked this ask for this recording, and asking again is most likely blocked again (old record, the old whole-transcription prompt, 2026-10-14: asking the same recordings once more,
+//      46 of the 49 asks blocked last time were blocked again; 9 of the 261 asks that had succeeded last time were blocked this time), so it is recorded as voided, not as not heard, and redoing it most likely does not help.
+//   6. Not heard: when the blind listening or the speaker similarity of an item meets a service error (upstream 5xx, gateway timeout, network error, timeout), that item is recorded as "not heard" and reported on its own:
+//      it is not the same as voided (voided is when the model listened and did not hear; not heard is when the ask was never made), and neither enters any proportion or counts as a low score.
+//      When displaying, write the count, for example "2 of 5 not heard, can be redone", then list which ones, what error, and how many tries; with fewer than 5 valid, follow point 1: list only the proportion and the count of trials,
+//      write "too few trials, no conclusion", and read again after the redo. A not heard can be redone: the library does not retry by itself (creating a task and completing it may already have been billed),
+//      the caller asks explicitly (redoNotHeard, `--redo` on the command line), only the not-heard items are called again, and the number of calls is written beforehand (planRedo).
+//   7. The ratio of speaker similarity is itself the score, displayed as it is (1 means as alike as the person's own real recordings are to each other). This run (2026-11-01) the ratios of the 12 items in each group of group M, median (minimum to maximum):
+//      two real recordings of the same person (group M) 1.09 (0.87 to 1.22); different people of the same language and gender (group M) 0.32 (0.01 to 0.59);
+//      a clone from the person's own reference recording (group M) 0.95 (0.70 to 1.16); a clone from someone else's reference recording (group M) 0.21 (0.05 to 0.74).
+//      The ratios for character voices (point 8) this run (2026-11-01 UTC), also median (minimum to maximum): two real recordings of the same character (6 items) 1.05 (0.87 to 1.23);
+//      two real recordings of different characters (6 items, gender not labelled, not restricted) 0.37 (0.20 to 0.56); a clone from this character's reference recording (12 items) 0.94 (0.37 to 1.08);
+//      a clone from another character's reference recording (12 items) 0.28 (0.10 to 0.82). The labels are the dataset's and were not checked.
+//      Ranked by ratio, the 6 items of the same character are all above the 6 of different characters (AUC 1.00); clones from this character's reference are above clones from another character's reference (12 against 12, AUC 0.97).
+//      These two AUCs are only descriptions: the samples are small, there is no calibrated line, and they are not taken as a boundary of "alike or not".
+//      The two methods are not merged into one total score; when the two do not agree, both are listed as they are and one is not chosen for the reader.
+//   8. Scope: the calibration used read-aloud corpora (the Chinese AISHELL-1 test set and the English LibriSpeech clean validation set, 6 people each, 8 clips each), one clone model (one reference clip), and one listener model; which two are written in the record;
+//      this run each group of group M had 11 or 12 valid items (blind listening, by items). If the synthesis model, the listener or the type of corpus changes, it has to be calibrated again, and these points of the reading cannot be copied.
+//      Character voices are another kind of corpus: the AnimeVox dataset on Hugging Face (English anime dubbing; the labels are the dataset's and were not checked). From the first 3 shards (of 7), the 6 characters with the most qualified clips,
+//      qualified clips being real recordings of 4.5 seconds or more, with non-empty transcripts and no sensitive words: Frieren, Rin Tohsaka, Marin Kitagawa, Makima, Homura Akemi, Fern; 8 clips for each character (1 reference, 2 held out, 5 the rest).
+//      Blind listening lists only the counts of asks (each item is asked twice; the question does not separate the cases, point 1): the same character 12/12 asks judged the same person, different characters 6/12, clones from this character's reference 21/24, clones from another character's reference 13/24.
+//      This group can only be read by its numbers; there is no calibrated line, and it cannot be used to judge whether a pack is like the person; to use it that way, first calibrate with more characters and items, then use it with the reading above.
+//   9. No speech: for the speaker similarity of one item, the generated recording or the held-out recording has no speech from which a voiceprint can be embedded (too short to embed, nearly silent; speaker verification reports
+//      capability_input_invalid, details.problem is no_speech, written as in vocab/capability-signatures.md). This is that recording's own matter, not a broken environment and not a service error: the speaker similarity of that item is recorded as "no speech",
+//      saying whether it is the generated or the held-out recording and giving the capability's own words, and reported on its own, entering no proportion and not counting as a low score. Unlike "not heard", measuring the same recording again gives the same result, so it cannot be redone (neither planRedo nor redoNotHeard counts it);
+//      unlike "unmeasurable", it is only one recording of one item, the other items are measured as usual, and the whole report is produced as usual. When displaying, write the count and which items, for example "1 of 6 items no speech".
+//      When a held-out real recording cannot be embedded itself, the real-person baseline does not use it either (baseline.excluded in the report records it); when the remaining real recordings cannot form one pair, the speaker similarity as a whole is "unmeasurable".
+//   10. Packs of design origin (options.designSource of measureFidelity is true; the manifest has designSource when the pack was made). Their material is not real-person recordings, so the reading is different:
+//      the baseline is how consistent the designed voice is with itself across several syntheses (the mean similarity between each pair of syntheses of the same designed voice), and the ratio says "how consistent what is synthesized with this pack is with the designed voice itself",
+//      not how much it sounds like some real person. So the three tiers of point 1 do not apply to it: the "proportion judged the same person" of blind listening is listed as counts (asks, trials), not read as a tier, no conclusion is drawn, and "the three-tier reading does not apply" is written.
+//      With fewer than 5 valid held-out recordings the counts are listed as well, and no hint to add material is given (a pack of design origin gets no hint about held-out recordings, see designSource at the head of material-hints).
+//      Where the manifest has no designSource, it is read as real-person recordings (points 1 to 9 as before): whether it is of design origin cannot be told, and no guess is made.
 //
 // 抛出的错误（code 小写下划线，details 里放什么在抛出处写明）：
 //   fidelity_input_invalid         输入不是约定的形状（补做时，上一次的报告不是 measureFidelity 出的形状、或要补做的留出录音不在输入里，也是它）。
@@ -138,7 +137,7 @@
 //   baseline_needs_two_recordings  真人基线要同一个人至少两段真录音。details.recordings 是能用的段数（嵌不出声纹的不算），
 //                                  去掉过真录音的话 details.excluded 是被去掉的（measureFidelity 接住它，说话人相似度整体报「量不了」，不往外抛）
 //   另外 capability_missing、audio_clip_invalid 来自 protocol/lib/env.mjs、protocol/lib/audio-clip.mjs。
-//   能力在 details.transient 里标了「服务暂时出错」的错（见 vocab/capability-signatures.md「通用约定」），measureFidelity 和 redoNotHeard 不抛，
+//   能力在 details.transient 里标了「服务暂时出错」的错（见 vocab/capability-signatures.md「General conventions」），measureFidelity 和 redoNotHeard 不抛，
 //   记成「没听成」；能力报「这段录音里没有能嵌的语音」的标准错误（读法第 9 点），同样不抛，记成「量不到」；
 //   别的错（401、返回的形状不对、别的写法的 capability_input_invalid、普通的 Error……）原样往上抛，一条也不吞。
 //
@@ -171,7 +170,7 @@ const invalid = (field, message) => new VoicePackError('fidelity_input_invalid',
  */
 function assertSingleModel(capability, models) {
   if (models.size > 1) {
-    throw new VoicePackError('evaluation_model_mismatch', `同一次评测里 ${capability} 给出了不止一个模型（${[...models].join('、')}），它们的结果不能互相比较`, {
+    throw new VoicePackError('evaluation_model_mismatch', `${capability} returned more than one model in the same evaluation (${[...models].join(', ')}); their results cannot be compared with each other`, {
       details: { capability, models: [...models] },
     });
   }
@@ -238,12 +237,12 @@ export function transcriptErrorRate(reference, hypothesis) {
  * fold 为真时分词之前两边先折写法（foldWritings，只有 openingErrorRate 这样做）。
  */
 function tokenizePair(reference, hypothesis, { fold = false } = {}) {
-  for (const [name, value] of [['已知文本', reference], ['转写', hypothesis]]) {
-    if (typeof value !== 'string') throw invalid(name, `${name}必须是字符串`);
+  for (const [name, value] of [['reference', reference], ['hypothesis', hypothesis]]) {
+    if (typeof value !== 'string') throw invalid(name, `${name} must be a string`);
   }
   const [known, written] = fold ? foldWritings(reference, hypothesis) : [reference, hypothesis];
   const expected = tokenizeTranscript(known);
-  if (expected.length === 0) throw new VoicePackError('fidelity_text_empty', '已知文本里一个词也没有（空的，或者只有标点），没法拿它核对转写');
+  if (expected.length === 0) throw new VoicePackError('fidelity_text_empty', 'The known text has no words (it is empty or only punctuation), so there is nothing to check the transcription against');
   return { expected, heard: tokenizeTranscript(written) };
 }
 
@@ -299,7 +298,7 @@ function numberReading(digits, { japanese = false } = {}) {
  * 折过反倒多算错的：另一边的写法比读出来的短，读出来多的词都算错。5 位以上的数逐位读，另一边写「一万」「两万」的
  * （已知文本「3万円もするの？」、模型写「30000円もするの」，折过 0.857，不折 0.286）；中文不写「一」的「千元」（1000 读成一千，多一个词）。
  * 所以 openingErrorRate 折过的和不折的各比一次，交回小的：这几种交回的是不折的那个，不比不折差。
- * 依据见文件头「怎么读这份报告」第 5 点：日文的段（片假名、平假名）和带数字的中文，模型听到了也被作废。
+ * 依据见文件头「How to read this report」第 5 点：日文的段（片假名、平假名）和带数字的中文，模型听到了也被作废。
  * @param {string} reference
  * @param {string} hypothesis
  * @returns {[string, string]}
@@ -442,14 +441,14 @@ export function tokenSpans(text) {
  * 为什么先定 0.3：听到了的模型，对干净的几秒到几十秒语音，转写错误率通常在个位数百分点到一成多（人名、数字、同音字最容易错）；
  * 没听到的模型凭提示编出来的话，和已知文本几乎全不一样，错误率接近 1 甚至更高。0.3 离前者有余量，离后者很远。
  * 短句要小心：文本比 OPENING_WORDS 个词还短时，开头就是它的全部，错两个词（6 个词里错 2 个，0.33）就超过 0.3，所以留出录音的文本不宜太短。
- * 用公开语料标定过，2026-10-19 用现在的提示（只比开头）重收了一遍，2026-11-01 又收了一遍，取值不变（依据见文件头「怎么读这份报告」第 5 点）。
+ * 用公开语料标定过，2026-10-19 用现在的提示（只比开头）重收了一遍，2026-11-01 又收了一遍，取值不变（依据见文件头「How to read this report」第 5 点）。
  */
 export const DEFAULT_MAX_ERROR_RATE = 0.3;
 
 /**
  * 问盲听用的提示：先让模型写出每段音频开头的 OPENING_WORDS 个词（收音校验用；要整段原话会被模型的服务商拦下，见 OPENING_WORDS 的说明），再问两件事：
  * 两段是不是同一个人，哪里像、哪里不像（后两个是原话，只存、不计数、不打分）。问法直接，不给选项、不列要比的维度、不提合成，也不写任何关于哪段是真人的信息，也不写已知文本。
- * 问法在 2026-11-01 定下，只定这一版；怎么读它的结果见文件头「怎么读这份报告」第 1、3、4 点。
+ * 问法在 2026-11-01 定下，只定这一版；怎么读它的结果见文件头「How to read this report」第 1、3、4 点。
  */
 export const BLIND_PROMPT = [
   '你会听到两段音频，依次标为 X 和 Y。请只根据你听到的内容回答。',
@@ -476,7 +475,7 @@ export function parseBlindAnswer(reply, order) {
   const fail = (reason) =>
     new VoicePackError(
       'blind_answer_invalid',
-      `盲听作废：${order ? `第 ${order} 次问的时候，` : ''}模型的回答不符合固定格式（${reason}），不猜，这次不算数`,
+      `Blind listening voided: ${order ? `on ask ${order}, ` : ''}the model's answer does not follow the fixed format (${reason}); not guessing, this one does not count`,
       { details: { ...(order ? { order } : {}), reason, reply: reportable(reply) } },
     );
   let body = String(reply).trim();
@@ -486,40 +485,40 @@ export function parseBlindAnswer(reply, order) {
   try {
     data = JSON.parse(body);
   } catch {
-    throw fail('不是 JSON');
+    throw fail('not JSON');
   }
-  if (!isPlainObject(data)) throw fail('不是 JSON 对象');
+  if (!isPlainObject(data)) throw fail('not a JSON object');
   for (const key of ['transcript_x', 'transcript_y', 'where_alike', 'where_unlike']) {
-    if (typeof data[key] !== 'string') throw fail(`${key} 必须是字符串`);
+    if (typeof data[key] !== 'string') throw fail(`${key} must be a string`);
   }
-  if (typeof data.same_speaker !== 'boolean') throw fail('same_speaker 必须是 true 或 false');
+  if (typeof data.same_speaker !== 'boolean') throw fail('same_speaker must be true or false');
   return { transcriptX: data.transcript_x, transcriptY: data.transcript_y, sameSpeaker: data.same_speaker, whereAlike: data.where_alike, whereUnlike: data.where_unlike };
 }
 
 function assertBlindClip(clip, name) {
-  if (!isPlainObject(clip)) throw invalid(name, `${name} 必须是 { audio, text, kind }`);
+  if (!isPlainObject(clip)) throw invalid(name, `${name} must be { audio, text, kind }`);
   assertAudioClip(clip.audio, `${name}.audio`);
-  if (typeof clip.text !== 'string') throw invalid(`${name}.text`, `${name}.text 必须是字符串（这段音频里说的话）`);
+  if (typeof clip.text !== 'string') throw invalid(`${name}.text`, `${name}.text must be a string (what is said in this audio)`);
   if (tokenizeTranscript(clip.text).length === 0) {
-    throw new VoicePackError('fidelity_text_empty', `${name}.text 里一个词也没有（空的，或者只有标点），没法拿它核对转写`, { details: { field: `${name}.text` } });
+    throw new VoicePackError('fidelity_text_empty', `${name}.text has no words (it is empty or only punctuation), so there is nothing to check the transcription against`, { details: { field: `${name}.text` } });
   }
-  if (clip.kind !== 'real' && clip.kind !== 'synthetic') throw invalid(`${name}.kind`, `${name}.kind 必须是 "real" 或 "synthetic"`);
+  if (clip.kind !== 'real' && clip.kind !== 'synthetic') throw invalid(`${name}.kind`, `${name}.kind must be "real" or "synthetic"`);
 }
 
 /** 核对盲听的选项，省略的用默认值。measureFidelity 也在开始前调它，免得量了一半才发现选项不对。 */
 function normalizeBlindOptions(options) {
   const { random = Math.random, maxErrorRate = DEFAULT_MAX_ERROR_RATE, firstX, designSource = false } = options ?? {};
-  if (typeof random !== 'function') throw invalid('random', 'random 必须是返回 [0, 1) 的函数');
-  if (typeof maxErrorRate !== 'number' || !Number.isFinite(maxErrorRate) || maxErrorRate < 0) throw invalid('maxErrorRate', 'maxErrorRate 必须是不小于 0 的数');
-  if (firstX !== undefined && firstX !== 'a' && firstX !== 'b') throw invalid('firstX', 'firstX 必须是 "a" 或 "b"（第一次问的时候放在 X 的是哪一段）');
-  if (typeof designSource !== 'boolean') throw invalid('designSource', 'designSource 必须是 true 或 false（素材是不是设计出来的：清单里有 designSource 就是 true，没有就是 false，见 lib/fidelity.mjs 文件头第 10 点）');
+  if (typeof random !== 'function') throw invalid('random', 'random must be a function that returns a number in [0, 1)');
+  if (typeof maxErrorRate !== 'number' || !Number.isFinite(maxErrorRate) || maxErrorRate < 0) throw invalid('maxErrorRate', 'maxErrorRate must be a number that is not less than 0');
+  if (firstX !== undefined && firstX !== 'a' && firstX !== 'b') throw invalid('firstX', 'firstX must be "a" or "b" (which recording is placed at X on the first ask)');
+  if (typeof designSource !== 'boolean') throw invalid('designSource', 'designSource must be true or false (whether the material was designed: true if the manifest has designSource, false if not; see item 10 of the header of lib/fidelity.mjs)');
   return { random, maxErrorRate, firstX, designSource };
 }
 
 /** 抽一次随机数，决定第一次问的时候哪一段放在 X：小于 0.5 是 a，否则是 b。 */
 function drawFirstX(random) {
   const value = random();
-  if (typeof value !== 'number' || !(value >= 0 && value < 1)) throw invalid('random', '注入的随机数必须返回 [0, 1) 里的数');
+  if (typeof value !== 'number' || !(value >= 0 && value < 1)) throw invalid('random', 'the injected random function must return a number in [0, 1)');
   return value < 0.5 ? 'a' : 'b';
 }
 
@@ -544,7 +543,7 @@ function drawFirstX(random) {
  *   capability_result_invalid，输入不对时的 fidelity_input_invalid、audio_clip_invalid、fidelity_text_empty
  */
 export async function blindListen(env, trial, options = {}) {
-  if (!isPlainObject(trial)) throw invalid('trial', 'trial 必须是 { a, b }');
+  if (!isPlainObject(trial)) throw invalid('trial', 'trial must be { a, b }');
   assertBlindClip(trial.a, 'a');
   assertBlindClip(trial.b, 'b');
   const { random, maxErrorRate, firstX } = normalizeBlindOptions(options);
@@ -566,8 +565,8 @@ export async function blindListen(env, trial, options = {}) {
       if (isUnusableAnswer(error)) throw unusableBlindAnswer(order, error);
       throw error;
     }
-    if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', '必须返回 { text: 字符串, model?: 字符串 }');
-    if (reply.model !== undefined && typeof reply.model !== 'string') throw badResult('audio-text-to-text', 'model 必须是字符串');
+    if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', 'must return { text: string, model?: string }');
+    if (reply.model !== undefined && typeof reply.model !== 'string') throw badResult('audio-text-to-text', 'model must be a string');
     const answer = parseBlindAnswer(reply.text, order);
     // 收音校验：每一段音频开头的转写都要和它自己的已知文本的开头对得上，对不上就是模型没听到，这次作废
     const errorRates = { x: openingErrorRate(clips[x].text, answer.transcriptX), y: openingErrorRate(clips[y].text, answer.transcriptY) };
@@ -576,7 +575,7 @@ export async function blindListen(env, trial, options = {}) {
       if (errorRate > maxErrorRate) {
         throw new VoicePackError(
           'listening_check_failed',
-          `盲听作废：第 ${order} 次问的时候，模型对音频 ${slot} 开头的转写和已知文本的开头对不上（错误率 ${errorRate.toFixed(2)}，上限 ${maxErrorRate}），说明它没有听到这段音频`,
+          `Blind listening voided: on ask ${order}, the model's transcription of the opening of audio ${slot} does not match the opening of the known text (error rate ${errorRate.toFixed(2)}, limit ${maxErrorRate}), which means it did not hear this audio`,
           { details: { order, slot, clip, errorRate, maxErrorRate } },
         );
       }
@@ -609,8 +608,8 @@ export async function blindListen(env, trial, options = {}) {
  */
 function unusableBlindAnswer(order, error) {
   const { problem, stopReason, model } = error.details ?? {};
-  const why = problem === 'stop_reason' ? `没有正常结束（stopReason：${stopReason}）` : '是空的';
-  return new VoicePackError('blind_answer_unusable', `盲听作废：第 ${order} 次问的时候，模型的回答${why}，这一条不算数`, {
+  const why = problem === 'stop_reason' ? `did not end normally (stopReason: ${stopReason})` : 'is empty';
+  return new VoicePackError('blind_answer_unusable', `Blind listening voided: on ask ${order}, the model's answer ${why}; this one does not count`, {
     cause: error,
     details: { order, ...(problem === undefined ? {} : { problem }), ...(stopReason === undefined ? {} : { stopReason }), ...(model === undefined ? {} : { model }) },
   });
@@ -619,10 +618,10 @@ function unusableBlindAnswer(order, error) {
 // ---------------------------------------------------------------- 量不了
 
 /** 报告里「这一项没量出来」的写法：不给假分数，写明原因，缺能力时点名缺的能力。 */
-export const UNMEASURABLE_LABEL = '量不了';
+export const UNMEASURABLE_LABEL = 'unmeasurable';
 
 function unmeasurable(reason, message, capability) {
-  return { status: 'unmeasurable', label: UNMEASURABLE_LABEL, reason, ...(capability === undefined ? {} : { capability }), message: `${UNMEASURABLE_LABEL}：${message}` };
+  return { status: 'unmeasurable', label: UNMEASURABLE_LABEL, reason, ...(capability === undefined ? {} : { capability }), message: `${UNMEASURABLE_LABEL}: ${message}` };
 }
 
 /** 环境有没有这项能力。只认 capability_missing；环境本身不合格等其他错误照常抛出。 */
@@ -655,9 +654,9 @@ export async function speakerSimilarity(env, audioA, audioB) {
   const verify = requireCapability(env, 'speaker-verification');
   const result = await verify({ audio_a: audioA, audio_b: audioB });
   if (!isPlainObject(result) || typeof result.similarity !== 'number' || !Number.isFinite(result.similarity)) {
-    throw badResult('speaker-verification', '必须返回 { similarity: 有限的数, model?: 字符串 }');
+    throw badResult('speaker-verification', 'must return { similarity: finite number, model?: string }');
   }
-  if (result.model !== undefined && typeof result.model !== 'string') throw badResult('speaker-verification', 'model 必须是字符串');
+  if (result.model !== undefined && typeof result.model !== 'string') throw badResult('speaker-verification', 'model must be a string');
   return { similarity: result.similarity, ...(result.model === undefined ? {} : { model: result.model }) };
 }
 
@@ -675,15 +674,15 @@ export async function speakerSimilarity(env, audioA, audioB) {
  *   去掉过录音的话 details.excluded 是被去掉的）、evaluation_model_mismatch、capability_missing、audio_clip_invalid、capability_result_invalid
  */
 export async function humanBaseline(env, recordings) {
-  if (!Array.isArray(recordings)) throw invalid('recordings', 'recordings 必须是数组：[{ id, audio }]');
+  if (!Array.isArray(recordings)) throw invalid('recordings', 'recordings must be an array: [{ id, audio }]');
   recordings.forEach((recording, index) => {
     if (!isPlainObject(recording) || typeof recording.id !== 'string' || recording.id === '') {
-      throw invalid(`recordings[${index}].id`, `recordings[${index}] 必须是 { id: 非空字符串, audio }`);
+      throw invalid(`recordings[${index}].id`, `recordings[${index}] must be { id: non-empty string, audio }`);
     }
     assertAudioClip(recording.audio, `recordings[${index}].audio`);
   });
   if (recordings.length < 2) {
-    throw new VoicePackError('baseline_needs_two_recordings', `真人基线要同一个人至少两段真录音才能凑成一对，现在只有 ${recordings.length} 段`, { details: { recordings: recordings.length } });
+    throw new VoicePackError('baseline_needs_two_recordings', `The human baseline needs at least two real recordings of the same person to make a pair; only ${recordings.length} given`, { details: { recordings: recordings.length } });
   }
   const pairs = [];
   const models = new Set();
@@ -708,7 +707,7 @@ export async function humanBaseline(env, recordings) {
     const usable = recordings.length - excluded.length;
     throw new VoicePackError(
       'baseline_needs_two_recordings',
-      `真人基线要同一个人至少两段真录音才能凑成一对，现在${excluded.length > 0 ? `${recordings.length} 段里 ${excluded.length} 段没有能嵌声纹的语音，只剩` : '只有'} ${usable} 段`,
+      `The human baseline needs at least two real recordings of the same person to make a pair; ${excluded.length > 0 ? `${excluded.length} of ${recordings.length} recordings have no speech a voiceprint can be taken from, so only` : 'only'} ${usable} usable`,
       { details: { recordings: usable, ...(excluded.length > 0 ? { excluded } : {}) } },
     );
   }
@@ -720,10 +719,10 @@ export async function humanBaseline(env, recordings) {
 
 function normalizeLabels(labels, where) {
   if (labels === undefined) return {};
-  if (!isPlainObject(labels)) throw invalid(`${where}.labels`, `${where}.labels 必须是 { 标签名: 取值 } 对象`);
+  if (!isPlainObject(labels)) throw invalid(`${where}.labels`, `${where}.labels must be an object { label name: value }`);
   const out = {};
   for (const [key, value] of Object.entries(labels)) {
-    if (!['string', 'number', 'boolean'].includes(typeof value)) throw invalid(`${where}.labels.${key}`, `${where}.labels.${key} 必须是字符串、数字或布尔值`);
+    if (!['string', 'number', 'boolean'].includes(typeof value)) throw invalid(`${where}.labels.${key}`, `${where}.labels.${key} must be a string, number or boolean`);
     out[key] = String(value);
   }
   return out;
@@ -734,21 +733,21 @@ function normalizeLabels(labels, where) {
  * only：补做用。给一组留出录音的 id，就只核对这几条留出录音（原来是第几个，报错里就写第几个），参考和别的留出录音都不看。
  */
 function normalizeFidelityInput(input, { only } = {}) {
-  if (!isPlainObject(input)) throw invalid('input', '输入必须是 { references, holdouts } 对象');
+  if (!isPlainObject(input)) throw invalid('input', 'input must be an object { references, holdouts }');
   const { references = [], holdouts = [] } = input;
-  if (!Array.isArray(references)) throw invalid('references', 'references 必须是数组');
-  if (!Array.isArray(holdouts)) throw invalid('holdouts', 'holdouts 必须是数组');
+  if (!Array.isArray(references)) throw invalid('references', 'references must be an array');
+  if (!Array.isArray(holdouts)) throw invalid('holdouts', 'holdouts must be an array');
   const seen = new Set();
   const take = (item, where, { needsText }) => {
-    if (!isPlainObject(item)) throw invalid(where, `${where} 必须是对象`);
-    if (typeof item.id !== 'string' || item.id === '') throw invalid(`${where}.id`, `${where}.id 必须是非空字符串`);
-    if (seen.has(item.id)) throw invalid(`${where}.id`, `${where}.id「${item.id}」重复了：参考和留出录音的 id 不能重名`);
+    if (!isPlainObject(item)) throw invalid(where, `${where} must be an object`);
+    if (typeof item.id !== 'string' || item.id === '') throw invalid(`${where}.id`, `${where}.id must be a non-empty string`);
+    if (seen.has(item.id)) throw invalid(`${where}.id`, `${where}.id "${item.id}" is duplicated: references and held-out recordings must not share an id`);
     seen.add(item.id);
     assertAudioClip(item.audio, `${where}.audio`);
     if (needsText) {
-      if (typeof item.text !== 'string') throw invalid(`${where}.text`, `${where}.text 必须是字符串（这段音频里说的话）`);
+      if (typeof item.text !== 'string') throw invalid(`${where}.text`, `${where}.text must be a string (what is said in this audio)`);
       if (tokenizeTranscript(item.text).length === 0) {
-        throw new VoicePackError('fidelity_text_empty', `${where}.text 里一个词也没有（空的，或者只有标点），没法拿它核对转写`, { details: { field: `${where}.text` } });
+        throw new VoicePackError('fidelity_text_empty', `${where}.text has no words (it is empty or only punctuation), so there is nothing to check the transcription against`, { details: { field: `${where}.text` } });
       }
     }
     return { id: item.id, audio: item.audio, text: item.text, labels: normalizeLabels(item.labels, where), ...(item.synthetic === true ? { synthetic: true } : {}) };
@@ -773,11 +772,11 @@ const BLOCKED_CODE = 'provider_blocked';
 
 // ---------------------------------------------------------------- 没听成
 
-/** 报告里「这一项因为服务出错没做成」的写法。和「作废」「量不了」「量不到」是四回事，见文件头「怎么读这份报告」第 6、9 点。 */
-export const NOT_HEARD_LABEL = '没听成';
+/** 报告里「这一项因为服务出错没做成」的写法。和「作废」「量不了」「量不到」是四回事，见文件头「How to read this report」第 6、9 点。 */
+export const NOT_HEARD_LABEL = 'not heard';
 
 /** 报告里「这一条的说话人相似度没有数：有一段录音里没有能嵌声纹的语音」的写法。第 9 点。 */
-export const NO_SPEECH_LABEL = '量不到';
+export const NO_SPEECH_LABEL = 'no speech';
 
 /**
  * 说话人验证报的是不是「这段录音里没有能嵌的语音」：标准写法（vocab/capability-signatures.md 的 speaker-verification 一节）是
@@ -857,7 +856,7 @@ async function measureBlindItem(env, holdout, { firstX, maxErrorRate }, attempts
     };
   } catch (error) {
     if (isServiceError(error)) return { blindListening: notHeardRecord('blind-listening', error, attempts, { firstX }), models: [] };
-    if (VOIDING_CODES.some((code) => isVoicePackError(error, code))) return { blindListening: { status: 'voided', label: '作废', error: summarizeError(error) }, models: [] };
+    if (VOIDING_CODES.some((code) => isVoicePackError(error, code))) return { blindListening: { status: 'voided', label: 'voided', error: summarizeError(error) }, models: [] };
     throw error;
   }
 }
@@ -892,7 +891,7 @@ function aggregateBlind(entries) {
   const blocked = entries.filter((entry) => entry.blind.status === 'voided' && entry.blind.error?.code === BLOCKED_CODE).length;
   const notHeard = entries.filter((entry) => entry.blind.status === 'not_heard').length;
   // 一条有效的都没有：有没听成的，就说没听成（补做也许能量出来）；否则全是作废
-  if (valid.length === 0) return { status: notHeard > 0 ? 'not_heard' : 'voided', label: notHeard > 0 ? NOT_HEARD_LABEL : '作废', trials: 0, voided, blocked, notHeard, asks: 0 };
+  if (valid.length === 0) return { status: notHeard > 0 ? 'not_heard' : 'voided', label: notHeard > 0 ? NOT_HEARD_LABEL : 'voided', trials: 0, voided, blocked, notHeard, asks: 0 };
   const total = (pick) => valid.reduce((sum, entry) => sum + pick(entry.blind), 0);
   const asks = total((blind) => blind.asks.length);
   return {
@@ -957,8 +956,8 @@ async function baselineOrUnmeasurable(env, real) {
   } catch (error) {
     if (!isVoicePackError(error, 'baseline_needs_two_recordings') || !Array.isArray(error.details?.excluded)) throw error;
     const { recordings: usable, excluded } = error.details;
-    const which = excluded.map((entry) => entry.id).join('、');
-    return { ...unmeasurable('not_enough_real_recordings', `真人基线要同一个人至少两段真录音，现在 ${real.length} 段里 ${excluded.length} 段（${which}）没有能嵌声纹的语音，只剩 ${usable} 段`), excluded };
+    const which = excluded.map((entry) => entry.id).join(', ');
+    return { ...unmeasurable('not_enough_real_recordings', `The human baseline needs at least two real recordings of the same person; ${excluded.length} of ${real.length} recordings (${which}) have no speech a voiceprint can be taken from, so only ${usable} usable`), excluded };
   }
 }
 
@@ -1007,9 +1006,9 @@ export async function measureFidelity(env, input, options = {}) {
   if (!verifier.available) {
     baseline = speakerUnmeasurable = unmeasurableForMissing('speaker-verification', verifier.error);
   } else if (holdouts.length === 0) {
-    baseline = speakerUnmeasurable = unmeasurable('no_holdout_recordings', '没有留出录音，没有东西可以拿生成的录音去比');
+    baseline = speakerUnmeasurable = unmeasurable('no_holdout_recordings', 'There are no held-out recordings, so there is nothing to compare the generated recordings with');
   } else if (real.length < 2) {
-    baseline = speakerUnmeasurable = unmeasurable('not_enough_real_recordings', `真人基线要同一个人至少两段真录音，现在只有 ${real.length} 段`);
+    baseline = speakerUnmeasurable = unmeasurable('not_enough_real_recordings', `The human baseline needs at least two real recordings of the same person; only ${real.length} given`);
   } else {
     baseline = await baselineOrUnmeasurable(env, real);
     if (baseline.status === 'unmeasurable') {
@@ -1029,7 +1028,7 @@ export async function measureFidelity(env, input, options = {}) {
         items[index].speakerSimilarity = part;
       }
       if (seenModels.size === 1) speakerModel = [...seenModels][0];
-      if (!(baseline.value > 0)) speakerUnmeasurable = unmeasurable('baseline_not_positive', `真人基线是 ${baseline.value}，不是正数，没法拿它当分母`);
+      if (!(baseline.value > 0)) speakerUnmeasurable = unmeasurable('baseline_not_positive', `The human baseline is ${baseline.value}, not a positive number, so it cannot be used as the denominator`);
     }
   }
 
@@ -1038,7 +1037,7 @@ export async function measureFidelity(env, input, options = {}) {
   if (!listener.available) {
     blindUnmeasurable = unmeasurableForMissing('audio-text-to-text', listener.error);
   } else if (holdouts.length === 0) {
-    blindUnmeasurable = unmeasurable('no_holdout_recordings', '没有留出录音，没有东西可以盲听');
+    blindUnmeasurable = unmeasurable('no_holdout_recordings', 'There are no held-out recordings, so there is nothing to blind-listen to');
   } else {
     const seenModels = new Set();
     for (const [index, holdout] of holdouts.entries()) {
@@ -1083,37 +1082,37 @@ const REPORT_SLOTS = {
  */
 function readPreviousReport(report, { forRedo = false } = {}) {
   const where = 'previous';
-  if (!isPlainObject(report)) throw invalid(where, '上一次的报告必须是 measureFidelity 出的报告对象');
-  if (!Array.isArray(report.items)) throw invalid(`${where}.items`, '上一次的报告缺 items（每条留出录音的结果）：它是 measureFidelity 出的报告吗');
+  if (!isPlainObject(report)) throw invalid(where, 'the previous report must be a report object produced by measureFidelity');
+  if (!Array.isArray(report.items)) throw invalid(`${where}.items`, 'the previous report has no items (the result of each held-out recording): is it a report produced by measureFidelity?');
   const seen = new Set();
   report.items.forEach((item, index) => {
     const at = `${where}.items[${index}]`;
-    if (!isPlainObject(item) || typeof item.id !== 'string' || item.id === '') throw invalid(`${at}.id`, `${at}.id 必须是非空字符串`);
-    if (seen.has(item.id)) throw invalid(`${at}.id`, `${at}.id「${item.id}」重复了`);
+    if (!isPlainObject(item) || typeof item.id !== 'string' || item.id === '') throw invalid(`${at}.id`, `${at}.id must be a non-empty string`);
+    if (seen.has(item.id)) throw invalid(`${at}.id`, `${at}.id "${item.id}" is duplicated`);
     seen.add(item.id);
-    if (forRedo && !isPlainObject(item.labels)) throw invalid(`${at}.labels`, `${at}.labels 必须是 { 标签名: 取值 } 对象`);
+    if (forRedo && !isPlainObject(item.labels)) throw invalid(`${at}.labels`, `${at}.labels must be an object { label name: value }`);
     for (const [key, slot] of Object.entries(REPORT_SLOTS)) {
       const part = item[key];
       if (part === null) continue;
-      if (!isPlainObject(part) || !slot.statuses.includes(part.status)) throw invalid(`${at}.${key}.status`, `${at}.${key}.status 必须是 ${slot.statuses.join('、')} 之一，或者整项是 null`);
+      if (!isPlainObject(part) || !slot.statuses.includes(part.status)) throw invalid(`${at}.${key}.status`, `${at}.${key}.status must be one of ${slot.statuses.join(', ')}, or the whole entry must be null`);
       if (part.status !== 'not_heard') continue;
-      if (part.item !== slot.item) throw invalid(`${at}.${key}.item`, `${at}.${key} 是没听成的记录，item 必须是 "${slot.item}"`);
-      if (!isPlainObject(part.error)) throw invalid(`${at}.${key}.error`, `${at}.${key}.error 必须是没听成的原因（{ code, message, details }）`);
-      if (!Number.isInteger(part.attempts) || part.attempts < 1) throw invalid(`${at}.${key}.attempts`, `${at}.${key}.attempts 必须是不小于 1 的整数（这一项试了几次）`);
-      if (part.firstX !== undefined && part.firstX !== 'a' && part.firstX !== 'b') throw invalid(`${at}.${key}.firstX`, `${at}.${key}.firstX 必须是 "a" 或 "b"`);
+      if (part.item !== slot.item) throw invalid(`${at}.${key}.item`, `${at}.${key} is a not-heard record, so item must be "${slot.item}"`);
+      if (!isPlainObject(part.error)) throw invalid(`${at}.${key}.error`, `${at}.${key}.error must be the reason it was not heard ({ code, message, details })`);
+      if (!Number.isInteger(part.attempts) || part.attempts < 1) throw invalid(`${at}.${key}.attempts`, `${at}.${key}.attempts must be an integer not less than 1 (how many times this item was tried)`);
+      if (part.firstX !== undefined && part.firstX !== 'a' && part.firstX !== 'b') throw invalid(`${at}.${key}.firstX`, `${at}.${key}.firstX must be "a" or "b"`);
     }
   });
   if (forRedo) {
     for (const key of ['counts', 'models', 'baseline', 'overall']) {
-      if (!isPlainObject(report[key])) throw invalid(`${where}.${key}`, `上一次的报告缺 ${key}：它是 measureFidelity 出的报告吗`);
+      if (!isPlainObject(report[key])) throw invalid(`${where}.${key}`, `the previous report has no ${key}: is it a report produced by measureFidelity?`);
     }
-    if (!Array.isArray(report.groups)) throw invalid(`${where}.groups`, '上一次的报告缺 groups（按标签分的组）：它是 measureFidelity 出的报告吗');
+    if (!Array.isArray(report.groups)) throw invalid(`${where}.groups`, 'the previous report has no groups (the groups split by label): is it a report produced by measureFidelity?');
     for (const key of Object.keys(REPORT_SLOTS)) {
-      if (!isPlainObject(report.overall[key])) throw invalid(`${where}.overall.${key}`, `上一次的报告缺 overall.${key}`);
+      if (!isPlainObject(report.overall[key])) throw invalid(`${where}.overall.${key}`, `the previous report has no overall.${key}`);
     }
     const needsBaseline = report.items.some((item) => item.speakerSimilarity?.status === 'not_heard');
     if (needsBaseline && !(report.baseline.status === 'measured' && Number.isFinite(report.baseline.value))) {
-      throw invalid(`${where}.baseline`, '有说话人相似度没听成，但上一次的报告里没有量出来的真人基线：补做要拿它当分母');
+      throw invalid(`${where}.baseline`, 'some speaker similarities were not heard, but the previous report has no measured human baseline: a redo needs it as the denominator');
     }
   }
   return report;
@@ -1173,7 +1172,7 @@ export async function redoNotHeard(env, input, previous, options = {}) {
   const wanted = new Set(plan.items.map((entry) => entry.id));
   const byId = new Map(normalizeFidelityInput(input, { only: wanted }).holdouts.map((holdout) => [holdout.id, holdout]));
   for (const id of wanted) {
-    if (!byId.has(id)) throw invalid('holdouts', `要补做的留出录音「${id}」不在给的 holdouts 里：补做要用第一次量的那几条同样的录音、文本和生成的录音`);
+    if (!byId.has(id)) throw invalid('holdouts', `the held-out recording "${id}" to redo is not in the holdouts given: a redo needs the same recordings, texts and generated recordings that were measured the first time`);
   }
   for (const capability of Object.keys(plan.calls)) requireCapability(env, capability);
 

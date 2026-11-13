@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 分享文件：把一个音色包打成一个文件，或者把它打开、检查。格式见 protocol/FORMAT.md「分享文件」。
+// 分享文件：把一个音色包打成一个文件，或者把它打开、检查。格式见 protocol/FORMAT.md「8. Share file」。
 //
 //   文件名     <名字>.voicepack.zip
 //   内容       普通 zip，根上依次是：
@@ -10,7 +10,7 @@
 //                4 README.md           写给人和 agent 的说明
 //   类型标识   文件名 mimetype，内容跟协议版本走（names.mjs 的表；没有换行）。开头的字节是固定的：
 //              50 4B 03 04（zip 本地头）、方法 0（存储）、文件名 mimetype 在第 30 字节、内容在第 38 字节。isShareFile、detectShareMime 只看这几十个字节，两套标识都认
-//              （2.x 和 3.x 共用一个标识，从这里分不出来，要看清单的协议版本：FORMAT.md 第 14 节「认」）。
+//              （2.x 和 3.x 共用一个标识，从这里分不出来，要看清单的协议版本：FORMAT.md 第 14 节「Telling versions apart」）。
 //   写的时候   同样的输入写出同样的字节（zip-write.mjs）：包目录里的文件按路径的 UTF-8 字节序排，其余按上面的次序。
 //   README 和预览卡片在打包时生成，不列进清单。卡片是什么、页面上有什么、怎么保证自包含，只在 preview-card.mjs 的文件头写一份；
 //   这里只管它在哪、什么时候生成：buildShareFile 默认给角色部分生成一张（options.card 给产品名和两个入口的链接，false 是不要，options.indexHtml 是用现成的）。
@@ -105,7 +105,7 @@ export function shareFileName(name, fallback = 'voicepack') {
  * @returns {string | null}
  */
 export function detectShareMime(bytes) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   const nameEnd = 30 + TYPE_NAME_BYTES.length;
   if (bytes.length < nameEnd) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -169,17 +169,17 @@ export function buildReadme(manifest, options = {}) {
       '',
       `想用这个包做一个新的声音（不是用这个声音配音）的，先不要放进下面第 1 步的目录：解压到别的地方，让 agent 读 \`${dir}/SKILL.md\` 的「怎么做新包」。放进去以后，它的说明文字会自动载入之后的会话，写新包文字的 agent 就见过它了，新包不算净室（净室：写新包文字的 agent 没见过来源包，这样新包才是新的）。`,
       '',
-      `1. 解压，把目录 \`${dir}/\` 放进项目的 \`.agents/skills/\`（Codex、Gemini CLI、Cursor、OpenCode 等读这里），再复制一份到 \`.claude/skills/\`（Claude Code 读这里）。目录里有基础部分（\`${baseDirectory}/\`）时，用它的放进环境命令一次做完这两步，并且先检查，命令见 \`${baseDirectory}/SKILL.md\` 的「用音色包配音和变声」一节。`,
+      `1. 解压，把目录 \`${dir}/\` 放进项目的 \`.agents/skills/\`（Codex、Gemini CLI、Cursor、OpenCode 等读这里），再复制一份到 \`.claude/skills/\`（Claude Code 读这里）。目录里有基础部分（\`${baseDirectory}/\`）时，用它的放进环境命令一次做完这两步，并且先检查，命令见 \`${baseDirectory}/SKILL.md\` 的「Dubbing and changing a voice with a pack」一节。`,
       `2. 让 agent 读 \`${dir}/SKILL.md\`：里面写了这是谁的声音、能拿来做什么、配音指引。`,
-      `3. 给台本配音：用基础部分的配音命令，命令的写法见 \`${baseDirectory}/SKILL.md\` 的「用音色包配音和变声」一节；用这个包配音要留意的，见 \`${dir}/SKILL.md\`。`,
+      `3. 给台本配音：用基础部分的配音命令，命令的写法见 \`${baseDirectory}/SKILL.md\` 的「Dubbing and changing a voice with a pack」一节；用这个包配音要留意的，见 \`${dir}/SKILL.md\`。`,
       `4. 目录里没有 \`${baseDirectory}/\`（基础部分）时，需要先补全，见 \`${dir}/SKILL.md\` 里讲补全的那一节。`,
       '5. 检查这个包有没有被改过：在解压出来的目录里运行 `node protocol/cli.mjs check .`。',
       '',
       `If you want to make a new voice from this pack (rather than dub with this voice), do not put it into the directories in step 1 below: unzip it somewhere else and ask your agent to read "怎么做新包" (how to make a new pack) in \`${dir}/SKILL.md\`. Once installed, its description is loaded into later sessions automatically, so the agent writing the new text has seen it and the new pack is no longer clean-room (clean room: the agent writing the new text has never seen the source pack, so that the new pack really is new).`,
       '',
-      `1. Unzip it and put the directory into the project's \`.agents/skills/\` (read by Codex, Gemini CLI, Cursor, OpenCode and others), plus a copy in \`.claude/skills/\` (read by Claude Code). When the base part is inside (\`${baseDirectory}/\`), its install command does both and checks first; the command is written in the section "用音色包配音和变声" of \`${baseDirectory}/SKILL.md\`.`,
+      `1. Unzip it and put the directory into the project's \`.agents/skills/\` (read by Codex, Gemini CLI, Cursor, OpenCode and others), plus a copy in \`.claude/skills/\` (read by Claude Code). When the base part is inside (\`${baseDirectory}/\`), its install command does both and checks first; the command is written in the section "Dubbing and changing a voice with a pack" of \`${baseDirectory}/SKILL.md\`.`,
       `2. Ask your agent to read \`${dir}/SKILL.md\`.`,
-      `3. To dub a script: use the base part's dub command; how to write it is in the section "用音色包配音和变声" of \`${baseDirectory}/SKILL.md\`. What to keep in mind when dubbing with this pack is in \`${dir}/SKILL.md\`.`,
+      `3. To dub a script: use the base part's dub command; how to write it is in the section "Dubbing and changing a voice with a pack" of \`${baseDirectory}/SKILL.md\`. What to keep in mind when dubbing with this pack is in \`${dir}/SKILL.md\`.`,
       `4. If \`${baseDirectory}/\` (the base part) is missing, complete it first; see the section about completion in \`${dir}/SKILL.md\`.`,
       '5. To verify the pack has not been modified, run `node protocol/cli.mjs check .` inside the unzipped directory.',
       '',
@@ -201,7 +201,7 @@ export function buildReadme(manifest, options = {}) {
 function directoryFor(manifest) {
   if (manifest.part === 'role') return manifest.id;
   if (manifest.part === 'base') return baseDirectoryOf(manifest.protocol);
-  throw fail('share_layout_invalid', '协议核心不单独分享：要分享的是角色部分或基础部分', { reason: 'part_not_shareable' });
+  throw fail('share_layout_invalid', 'the protocol core is not shared on its own: share the role part or the base part', { reason: 'part_not_shareable' });
 }
 
 /** 打包时生成的预览卡片（HTML 的字节）。基础部分里没有声音，不生成；card 是 false 就是不要。 */
@@ -222,7 +222,7 @@ function generatedCard(manifest, packFiles, card) {
 export function buildShareFile(packFiles, options = {}) {
   assertFileSet(packFiles);
   const manifestBytes = packFiles.get(MANIFEST_FILE);
-  if (manifestBytes === undefined) throw fail('manifest_missing', `包里没有 ${MANIFEST_FILE}：先用 sealPart 生成清单`, { path: MANIFEST_FILE });
+  if (manifestBytes === undefined) throw fail('manifest_missing', `the pack has no ${MANIFEST_FILE}: generate the manifest with sealPart first`, { path: MANIFEST_FILE });
   const manifest = parseManifest(manifestBytes, { limits: options.limits });
   const directory = directoryFor(manifest);
   const indexHtml = options.indexHtml ?? generatedCard(manifest, packFiles, options.card);
@@ -244,15 +244,15 @@ export function buildShareFile(packFiles, options = {}) {
  * @throws {VoicePackError} zip 的问题（见 zip-read.mjs）、share_not_voicepack、share_layout_invalid
  */
 export async function openShareFile(bytes, options = {}) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   const limits = resolveLimits(options.limits);
   const { entries } = await readZip(bytes, { limits });
 
   const first = entries.reduce((best, entry) => (best === null || entry.offset < best.offset ? entry : best), null);
-  if (first === null || first.name !== SHARE_TYPE_FILE) throw fail('share_not_voicepack', `不是音色包：zip 的第一项应该是 ${SHARE_TYPE_FILE}，这里是 ${first === null ? '（空的）' : JSON.stringify(first.name)}`, { reason: 'type_file_missing', first: first?.name ?? null });
-  if (first.method !== 0) throw fail('share_not_voicepack', `不是音色包：${SHARE_TYPE_FILE} 必须是不压缩的，这样读开头几十个字节就能认出来`, { reason: 'type_file_compressed' });
+  if (first === null || first.name !== SHARE_TYPE_FILE) throw fail('share_not_voicepack', `not a voice pack: the first entry of the zip should be ${SHARE_TYPE_FILE}, but it is ${first === null ? '(empty)' : JSON.stringify(first.name)}`, { reason: 'type_file_missing', first: first?.name ?? null });
+  if (first.method !== 0) throw fail('share_not_voicepack', `not a voice pack: ${SHARE_TYPE_FILE} must be stored uncompressed, so that reading the first few dozen bytes is enough to recognise the file`, { reason: 'type_file_compressed' });
   const known = KNOWN_MIMES.find((candidate) => same(first.data, candidate.bytes));
-  if (known === undefined) throw fail('share_not_voicepack', `不是音色包：${SHARE_TYPE_FILE} 的内容应该是 ${KNOWN_SHARE_MIMES.join(' 或 ')}`, { reason: 'type_file_wrong' });
+  if (known === undefined) throw fail('share_not_voicepack', `not a voice pack: the content of ${SHARE_TYPE_FILE} should be ${KNOWN_SHARE_MIMES.join(' or ')}`, { reason: 'type_file_wrong' });
 
   const directories = new Set();
   const root = new Map();
@@ -260,16 +260,16 @@ export async function openShareFile(bytes, options = {}) {
   for (const entry of entries) {
     const slash = entry.name.indexOf('/');
     if (slash === -1) {
-      if (!ROOT_FILES.has(entry.name)) throw fail('share_layout_invalid', `根上多了一个不该有的文件 ${JSON.stringify(entry.name)}：根上只有 ${[...ROOT_FILES].join('、')} 和包目录`, { reason: 'unexpected_root_file', path: entry.name });
+      if (!ROOT_FILES.has(entry.name)) throw fail('share_layout_invalid', `unexpected file ${JSON.stringify(entry.name)} in the root: the root may only have ${[...ROOT_FILES].join(', ')} and the pack directory`, { reason: 'unexpected_root_file', path: entry.name });
       root.set(entry.name, entry.data);
     } else {
       directories.add(entry.name.slice(0, slash));
       inside.set(entry.name, entry.data);
     }
   }
-  if (directories.size === 0) throw fail('share_layout_invalid', '根上没有包目录', { reason: 'missing_pack_dir' });
-  if (directories.size > 1) throw fail('share_layout_invalid', `根上有 ${directories.size} 个目录（${[...directories].sort(compareUtf8).map((d) => JSON.stringify(d)).join('、')}），应该只有一个包目录`, { reason: 'multiple_pack_dirs', directories: [...directories].sort(compareUtf8) });
-  if (!root.has(README_FILE)) throw fail('share_layout_invalid', `根上没有 ${README_FILE}`, { reason: 'readme_missing' });
+  if (directories.size === 0) throw fail('share_layout_invalid', 'the root has no pack directory', { reason: 'missing_pack_dir' });
+  if (directories.size > 1) throw fail('share_layout_invalid', `the root has ${directories.size} directories (${[...directories].sort(compareUtf8).map((d) => JSON.stringify(d)).join(', ')}), but should have only one pack directory`, { reason: 'multiple_pack_dirs', directories: [...directories].sort(compareUtf8) });
+  if (!root.has(README_FILE)) throw fail('share_layout_invalid', `the root has no ${README_FILE}`, { reason: 'readme_missing' });
 
   const [directory] = directories;
   const files = new Map([...inside].map(([name, data]) => [name.slice(directory.length + 1), data]));
@@ -293,7 +293,7 @@ export async function inspectShareFile(bytes, options = {}) {
 }
 
 async function inspectWithPolicy(bytes, options) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   let opened;
   try {
     opened = await openShareFile(bytes, { limits: options.limits });
@@ -306,21 +306,21 @@ async function inspectWithPolicy(bytes, options) {
   const read = opened.files.has(MANIFEST_FILE) ? readManifest(opened.files.get(MANIFEST_FILE), { limits: options.limits }) : null;
   if (read?.manifest) {
     if (read.manifest.part === 'protocol') {
-      report.problems.unshift({ code: 'share_layout_invalid', message: '协议核心不单独分享：要分享的是角色部分或基础部分', part: '', details: { reason: 'part_not_shareable' } });
+      report.problems.unshift({ code: 'share_layout_invalid', message: 'the protocol core is not shared on its own: share the role part or the base part', part: '', details: { reason: 'part_not_shareable' } });
     } else {
       const { protocol } = read.manifest;
       const expected = directoryFor(read.manifest);
       if (opened.directory !== expected) {
         // 基础部分的包目录叫的是另一套协议的名字：名字和协议版本对不上；叫的是任何一套都不是的名字：还是布局不对
         if (read.manifest.part === 'base' && protocolMajorOfBaseDirectory(opened.directory) !== null) {
-          report.problems.unshift({ code: 'protocol_name_mismatch', message: `包目录叫 ${JSON.stringify(opened.directory)}，协议 ${protocol} 里基础部分的目录叫 ${JSON.stringify(expected)}`, part: '', details: { item: 'base_directory', protocol, path: opened.directory, expected, actual: opened.directory } });
+          report.problems.unshift({ code: 'protocol_name_mismatch', message: `the pack directory is named ${JSON.stringify(opened.directory)}, but the base part directory in protocol ${protocol} is named ${JSON.stringify(expected)}`, part: '', details: { item: 'base_directory', protocol, path: opened.directory, expected, actual: opened.directory } });
         } else {
-          report.problems.unshift({ code: 'share_layout_invalid', message: `包目录叫 ${JSON.stringify(opened.directory)}，应该叫 ${JSON.stringify(expected)}（${read.manifest.part === 'role' ? '包 ID' : '基础部分的目录名'}）`, part: '', details: { reason: 'directory_name_mismatch', directory: opened.directory, expected } });
+          report.problems.unshift({ code: 'share_layout_invalid', message: `the pack directory is named ${JSON.stringify(opened.directory)}, but should be named ${JSON.stringify(expected)} (${read.manifest.part === 'role' ? 'the pack ID' : 'the directory name of the base part'})`, part: '', details: { reason: 'directory_name_mismatch', directory: opened.directory, expected } });
         }
       }
       const expectedMime = shareMimeOf(protocol);
       if (opened.mime !== expectedMime) {
-        report.problems.unshift({ code: 'protocol_name_mismatch', message: `类型标识是 ${opened.mime}，协议 ${protocol} 的分享文件里要写 ${expectedMime}`, part: '', details: { item: 'media_type', protocol, path: SHARE_TYPE_FILE, expected: expectedMime, actual: opened.mime } });
+        report.problems.unshift({ code: 'protocol_name_mismatch', message: `the type marker is ${opened.mime}, but a share file of protocol ${protocol} must have ${expectedMime}`, part: '', details: { item: 'media_type', protocol, path: SHARE_TYPE_FILE, expected: expectedMime, actual: opened.mime } });
       }
     }
   }

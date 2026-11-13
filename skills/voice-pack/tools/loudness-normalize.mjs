@@ -123,7 +123,7 @@ const dbOf = (amplitude) => (amplitude > 0 ? 20 * Math.log10(amplitude) : -Infin
 
 /** 峰值上限的检查（loudnessOptions 的 peakCeilingDbfs、limitPeaks 的 ceilingDbfs 同一条规矩）：−60 到 0 之间的数（dBFS）。 */
 function checkedCeiling(name, value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value > 0 || value < LOWEST_DB) throw new TypeError(`${name} 必须是 ${LOWEST_DB} 到 0 之间的数（dBFS），收到 ${JSON.stringify(value)}`);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value > 0 || value < LOWEST_DB) throw new TypeError(`${name} must be a number between ${LOWEST_DB} and 0 (dBFS); got ${JSON.stringify(value)}`);
   return value;
 }
 
@@ -131,12 +131,12 @@ function checkedCeiling(name, value) {
 function checkedLimiter(value) {
   if (value === undefined || value === true) return { maxDb: LIMITER_MAX_DB };
   if (value === false || value === null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`limiter 必须是 true、false 或 { maxDb }，收到 ${JSON.stringify(value)}`);
+  if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`limiter must be true, false or { maxDb }; got ${JSON.stringify(value)}`);
   for (const key of Object.keys(value)) {
-    if (!LIMITER_OPTION_NAMES.includes(key)) throw new TypeError(`limiter 里不认识的选项 ${key}（有：${LIMITER_OPTION_NAMES.join('、')}；预读和释放不能改）`);
+    if (!LIMITER_OPTION_NAMES.includes(key)) throw new TypeError(`Unknown limiter option ${key} (options: ${LIMITER_OPTION_NAMES.join(', ')}; lookahead and release cannot be changed)`);
   }
   const maxDb = value.maxDb === undefined ? LIMITER_MAX_DB : value.maxDb;
-  if (typeof maxDb !== 'number' || !Number.isFinite(maxDb) || maxDb <= 0 || maxDb > LIMITER_MAX_DB_LIMIT) throw new TypeError(`limiter.maxDb 必须是大于 0、不超过 ${LIMITER_MAX_DB_LIMIT} 的数（dB），收到 ${JSON.stringify(value.maxDb)}`);
+  if (typeof maxDb !== 'number' || !Number.isFinite(maxDb) || maxDb <= 0 || maxDb > LIMITER_MAX_DB_LIMIT) throw new TypeError(`limiter.maxDb must be a number greater than 0 and at most ${LIMITER_MAX_DB_LIMIT} (dB); got ${JSON.stringify(value.maxDb)}`);
   return { maxDb };
 }
 
@@ -147,13 +147,13 @@ function checkedLimiter(value) {
  * @throws {TypeError} 选项不是对象、不认识的选项、值不在范围里（点名）
  */
 export function loudnessOptions(options = {}) {
-  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options 必须是对象，例如 { targetLufs: -16 }');
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options must be an object, for example { targetLufs: -16 }');
   for (const key of Object.keys(options)) {
-    if (!OPTION_NAMES.includes(key)) throw new TypeError(`不认识的选项 ${key}（有：${OPTION_NAMES.join('、')}）`);
+    if (!OPTION_NAMES.includes(key)) throw new TypeError(`Unknown option ${key} (options: ${OPTION_NAMES.join(', ')})`);
   }
   const targetLufs = options.targetLufs === undefined ? REFERENCE_LOUDNESS_LUFS : options.targetLufs;
   const peakCeilingDbfs = options.peakCeilingDbfs === undefined ? PEAK_CEILING_DBFS : options.peakCeilingDbfs;
-  if (typeof targetLufs !== 'number' || !Number.isFinite(targetLufs) || targetLufs >= 0 || targetLufs < LOWEST_DB) throw new TypeError(`targetLufs 必须是 ${LOWEST_DB} 到 0 之间（不含 0）的数（LUFS），收到 ${JSON.stringify(options.targetLufs)}`);
+  if (typeof targetLufs !== 'number' || !Number.isFinite(targetLufs) || targetLufs >= 0 || targetLufs < LOWEST_DB) throw new TypeError(`targetLufs must be a number between ${LOWEST_DB} and 0, not including 0 (LUFS); got ${JSON.stringify(options.targetLufs)}`);
   checkedCeiling('peakCeilingDbfs', peakCeilingDbfs);
   return { targetLufs, peakCeilingDbfs, limiter: checkedLimiter(options.limiter) };
 }
@@ -201,9 +201,9 @@ function floorFloat32(x) {
  * @throws {TypeError} audio 的形状不对，或者选项写错（点名）
  */
 export function limitPeaks(audio, options = {}) {
-  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options 必须是对象，例如 { ceilingDbfs: -1 }');
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options must be an object, for example { ceilingDbfs: -1 }');
   for (const key of Object.keys(options)) {
-    if (key !== 'ceilingDbfs') throw new TypeError(`不认识的选项 ${key}（有：ceilingDbfs）`);
+    if (key !== 'ceilingDbfs') throw new TypeError(`Unknown option ${key} (options: ceilingDbfs)`);
   }
   const ceilingDbfs = checkedCeiling('ceilingDbfs', options.ceilingDbfs === undefined ? PEAK_CEILING_DBFS : options.ceilingDbfs);
   const { sampleRate, samples } = checkedAudio(audio);

@@ -8,6 +8,8 @@
 //   0.01 秒的尖峰被转写成一句话，0.11 秒的块被转写成十几个字，一块的回答是拒答。英文这类按词数的语言，每秒 12 个词宽得多，只拦得住编造的转写，没有在英文上量过。
 //
 // 怎么量（measurePoints；一段的第一步是 decodeAudio，混成单声道）：
+//   先调响度：options.loudness 给了（做包用的调响度设置，lib/make-pack-loudness.mjs 的 adjustedAudio），先在内存里把这一段调到目标响度再切块、转写：下面的静音门槛是固定的电平，
+//     在原电平上，小声的录音（林岚的默认段 −35.5 LUFS）字和字之间都被当成停顿，切成 11 块、写了 9 处 [short pause]；调到 −20 LUFS 是 7 块（t03 的读数）。不给（关了调响度，--no-loudness）就照原电平。
 //   切块（speechChunks）：SILENCE_WINDOW_SECONDS（5 毫秒）一窗，窗里的峰值低于 SILENCE_PEAK_DBFS（-30 dBFS）算静音；连续静音 ≥ SILENCE_MIN_SECONDS（0.05 秒）才算停顿，切开前后两块；两头的静音不算停顿。
 //     门槛比 tools/silence-split.mjs 严（那边切的是句，这里要切开词之间短到 0.29 秒的停顿：「却懂得｜怜香惜玉」）。
 //     太短的块不是语音：短于 CHUNK_MIN_SECONDS（0.05 秒）的块在切块时就去掉，不转写，它前后两块之间的静音（前一块的末尾到后一块的开头）算成一段停顿；在两头的，那头的静音照旧不算停顿。
@@ -58,6 +60,7 @@ import { encodeWav } from '../tools/wav.mjs';
 import { tokenSpans, tokenizeTranscript } from './fidelity.mjs';
 import { summarizeError, badResult, pool, keepsThrowing, isPlainObject } from './capability-calls.mjs';
 import { callWithRetries } from './call-attempts.mjs';
+import { adjustedAudio } from './make-pack-loudness.mjs';
 
 /** 一段录音最多切成几块（超过就并最短的停顿）。规划按它算转写的上限（lib/make-pack-plan.mjs）。 */
 export const POINT_CHUNKS_MAX = 24;
@@ -205,7 +208,7 @@ function editDistance(a, b) {
 }
 
 /** 中位数（没有数是 null）。 */
-function median(values) {
+export function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((x, y) => x - y);
   const middle = Math.floor(sorted.length / 2);
@@ -327,10 +330,10 @@ export function pointsOf(text, chunks, boundaries) {
  * 量一段录音（规则见文件头）。
  * @param {object} env 注入的运行环境
  * @param {{ audio: { bytes: Uint8Array, mimeType: string }, text: string, language?: string }} segment
- * @param {{ concurrency?: number, wait?: (ms: number) => Promise<void> }} [options]
+ * @param {{ concurrency?: number, wait?: (ms: number) => Promise<void>, loudness?: { targetLufs: number, peakCeilingDbfs: number, limiter: { maxDb: number } | null } | null }} [options] loudness：先调响度再量（见文件头「先调响度」），不给或 null 就照原电平
  * @returns {Promise<object>} 见文件头「返回」
  */
-export async function measurePoints(env, { audio, text, language }, { concurrency = 1, wait } = {}) {
+export async function measurePoints(env, { audio, text, language }, { concurrency = 1, wait, loudness } = {}) {
   const notMeasured = (reason, chunks = 0, details = {}) => ({ measured: false, reason, chunks, ...details });
   const spans = measureSpans(text);
   if (spans.length === 0) return notMeasured('text_empty');
@@ -343,10 +346,11 @@ export async function measurePoints(env, { audio, text, language }, { concurrenc
     if (kind === null) throw error;
     return notMeasured(kind, 0, { error: summarizeError(error) });
   }
+  const samples = loudness === undefined || loudness === null ? decoded.samples : adjustedAudio(decoded, loudness).audio.samples;
   const mono = new Float32Array(decoded.frames);
   for (let i = 0; i < decoded.frames; i++) {
     let sum = 0;
-    for (let channel = 0; channel < decoded.channels; channel++) sum += decoded.samples[channel][i];
+    for (let channel = 0; channel < decoded.channels; channel++) sum += samples[channel][i];
     mono[i] = sum / decoded.channels;
   }
   const chunks = speechChunks(mono, decoded.sampleRate);
@@ -372,7 +376,7 @@ export async function measurePoints(env, { audio, text, language }, { concurrenc
     const clip = { bytes: encodeWav({ sampleRate: decoded.sampleRate, samples: [mono.slice(Math.max(0, chunk.start - padding), Math.min(mono.length, chunk.end + padding))] }), mimeType: 'audio/wav' };
     const ask = async () => {
       const result = await recognize({ audio: clip, ...(language ? { language } : {}) });
-      if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', '必须返回 { text: 字符串, language?: 字符串, model?: 字符串 }');
+      if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', 'must return { text: string, language?: string, model?: string }');
       return result;
     };
     let outcome;
