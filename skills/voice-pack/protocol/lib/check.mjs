@@ -147,13 +147,13 @@ export function failedReport(problems, options = {}) {
  * @throws {TypeError} 选项的类型不对
  */
 export function requireSignaturePolicy(options, entry) {
-  if (options === null || typeof options !== 'object') throw new TypeError(`${entry} 的选项必须是对象`);
+  if (options === null || typeof options !== 'object') throw new TypeError(`The options of ${entry} must be an object`);
   const { verifySignature, allowUnsigned, mutual } = options;
-  if (verifySignature !== undefined && typeof verifySignature !== 'function') throw new TypeError('verifySignature 必须是函数');
-  if (allowUnsigned !== undefined && typeof allowUnsigned !== 'boolean') throw new TypeError(`allowUnsigned 必须是 true 或 false，收到 ${JSON.stringify(allowUnsigned)}`);
-  if (mutual !== undefined && typeof mutual !== 'boolean') throw new TypeError(`mutual 必须是 true 或 false，收到 ${JSON.stringify(mutual)}`);
+  if (verifySignature !== undefined && typeof verifySignature !== 'function') throw new TypeError('verifySignature must be a function');
+  if (allowUnsigned !== undefined && typeof allowUnsigned !== 'boolean') throw new TypeError(`allowUnsigned must be true or false, got ${JSON.stringify(allowUnsigned)}`);
+  if (mutual !== undefined && typeof mutual !== 'boolean') throw new TypeError(`mutual must be true or false, got ${JSON.stringify(mutual)}`);
   if (verifySignature === undefined && allowUnsigned !== true) {
-    throw new VoicePackError('signature_policy_missing', `${entry} 要明确选验签的策略，这次两样都没给：给 verifySignature（一般是 createSignatureVerifier(信任名单)：基础部分和协议核心不是官方签名的就拒绝），或者明确写 allowUnsigned: true（没有签名文件的部分放过、不验，有签名文件的照验：只给本地开发和测试用，产品里的入口不要这么写）。不选就不检查，免得哪一处忘了传，悄悄把非官方的基础部分或协议核心放进来。用法见 protocol/SIGNATURES.md 的「接进检查」`, { details: { entry } });
+    throw new VoicePackError('signature_policy_missing', `${entry} requires an explicit signature-verification policy, and neither was given: pass verifySignature (normally createSignatureVerifier(trustList): it rejects a base part or protocol core that is not officially signed), or write allowUnsigned: true explicitly (parts without a signature file are let through unverified, parts with a signature file are still verified: for local development and tests only, product entry points must not do this). Without a choice the check does not run, so that a place that forgot to pass one cannot quietly let an unofficial base part or protocol core in. Usage: see protocol/SIGNATURES.md「Wiring into the check」`, { details: { entry } });
   }
   return { ...options, allowUnsigned: allowUnsigned === true, mutual: mutual !== false };
 }
@@ -177,16 +177,16 @@ export async function checkPart(files, options = {}) {
  * 不收 verifySignature、allowUnsigned、mutual（给了抛 TypeError）。
  */
 export async function selfCheckPart(files, options = {}) {
-  if (options === null || typeof options !== 'object') throw new TypeError('selfCheckPart 的选项必须是对象');
+  if (options === null || typeof options !== 'object') throw new TypeError('The options of selfCheckPart must be an object');
   for (const name of ['verifySignature', 'allowUnsigned', 'mutual']) {
-    if (options[name] !== undefined) throw new TypeError(`selfCheckPart 不验签、不做互相校验，不收选项 ${name}：检查从外面来的东西用 checkPart`);
+    if (options[name] !== undefined) throw new TypeError(`selfCheckPart does not verify signatures and does not do mutual verification, so it takes no ${name} option: use checkPart to check anything that comes from outside`);
   }
   return runCheck(files, { ...options, allowUnsigned: false, mutual: false }, true);
 }
 
 async function runCheck(files, options, sealed) {
   assertFileSet(files);
-  if (options.part !== undefined && !PART_KINDS.includes(options.part)) throw new TypeError(`part 要是 role、base、protocol 之一，收到 ${JSON.stringify(options.part)}`);
+  if (options.part !== undefined && !PART_KINDS.includes(options.part)) throw new TypeError(`part must be one of role, base, protocol, got ${JSON.stringify(options.part)}`);
   const limits = resolveLimits(options.limits);
   const report = { ok: false, problems: [], parts: [], signatures: [], mutual: { checked: false, reason: options.mutual === true ? 'not_reached' : 'not_requested' } };
   const root = (code, message, details) => report.problems.push({ code, message, part: '', details });
@@ -209,13 +209,13 @@ async function runCheck(files, options, sealed) {
   // 文件名：每个都要安全，不能重名、不能只差大小写
   for (const name of names) {
     const found = pathProblem(name);
-    if (found) root('path_unsafe', `文件名不能要（${found.message}）：${JSON.stringify(name)}`, { path: name, reason: found.reason });
+    if (found) root('path_unsafe', `File name rejected (${found.message}): ${JSON.stringify(name)}`, { path: name, reason: found.reason });
   }
   let remaining = names;
   for (let n = 0; n < MAX_CONFLICTS; n++) {
     const conflict = findPathConflict(remaining);
     if (!conflict) break;
-    root('path_conflict', `路径 ${JSON.stringify(conflict.path)} 和 ${JSON.stringify(conflict.other)} 冲突（${conflict.kind}）：解到磁盘上会互相覆盖`, { ...conflict });
+    root('path_conflict', `Path ${JSON.stringify(conflict.path)} conflicts with ${JSON.stringify(conflict.other)} (${conflict.kind}): unpacked to disk they would overwrite each other`, { ...conflict });
     remaining = remaining.filter((name) => name !== conflict.path);
   }
 
@@ -255,14 +255,14 @@ async function checkOne(files, prefix, expectedKind, ctx) {
   let manifest = null;
   const manifestBytes = files.get(MANIFEST_FILE);
   if (manifestBytes === undefined) {
-    add('manifest_missing', `没有清单 ${manifestPath}`, { path: manifestPath });
+    add('manifest_missing', `No manifest ${manifestPath}`, { path: manifestPath });
   } else {
     const read = readManifest(manifestBytes, { limits });
-    for (const p of read.problems) add(p.code, `${manifestPath}：${p.message}`, { ...p.details, path: manifestPath });
+    for (const p of read.problems) add(p.code, `${manifestPath}: ${p.message}`, { ...p.details, path: manifestPath });
     manifest = read.manifest;
   }
   if (manifest !== null && expectedKind !== null && manifest.part !== expectedKind) {
-    add('part_mismatch', `${manifestPath} 说这是 ${manifest.part}，这里应该是 ${expectedKind}`, { path: manifestPath, expected: expectedKind, actual: manifest.part });
+    add('part_mismatch', `${manifestPath} says this is ${manifest.part}, but it should be ${expectedKind} here`, { path: manifestPath, expected: expectedKind, actual: manifest.part });
     return;
   }
   const kind = manifest === null ? expectedKind : manifest.part;
@@ -276,35 +276,35 @@ async function checkOne(files, prefix, expectedKind, ctx) {
     for (const entry of manifest.files) {
       const full = join(prefix, entry.path);
       const data = files.get(entry.path);
-      if (data === undefined) { add('file_missing', `清单里列了 ${full}，包里没有`, { path: full }); continue; }
-      if (data.length !== entry.size) { add('file_modified', `${full} 被改过：大小是 ${data.length} 字节，清单里记的是 ${entry.size} 字节`, { path: full, reason: 'size', expected: entry.size, actual: data.length }); continue; }
+      if (data === undefined) { add('file_missing', `The manifest lists ${full}, but the pack does not have it`, { path: full }); continue; }
+      if (data.length !== entry.size) { add('file_modified', `${full} has been modified: its size is ${data.length} bytes, but the manifest records ${entry.size} bytes`, { path: full, reason: 'size', expected: entry.size, actual: data.length }); continue; }
       const digest = await sha256Hex(data);
-      if (digest !== entry.sha256) add('file_modified', `${full} 被改过：SHA-256 和清单里记的不一样`, { path: full, reason: 'sha256', expected: entry.sha256, actual: digest });
+      if (digest !== entry.sha256) add('file_modified', `${full} has been modified: its SHA-256 differs from the one recorded in the manifest`, { path: full, reason: 'sha256', expected: entry.sha256, actual: digest });
     }
     const present = [...files.keys()].filter((path) => isManagedPath(path, kind, manifest.protocol)).sort(compareUtf8);
     // 角色部分里放着另一套协议的基础部分目录（比如 2.0 的包里放了 1.x 的目录名，或 1.x 的包里放了 2.x 的）：它不是「多出来的文件」，是名字和协议版本对不上，
     // 点名这一条，不把里面的每个文件都报成 file_extra。清单自己列了的（角色部分自己的文件碰巧放在这样的目录里）不算。
     const foreign = kind === 'role' ? foreignBaseDirectory(files.keys(), manifest.protocol) : null;
     if (foreign !== null && !listed.has(`${foreign}/${MANIFEST_FILE}`)) {
-      add('protocol_name_mismatch', `${join(prefix, foreign)}/ 是基础部分的目录名，但不是协议 ${manifest.protocol} 用的名字：这个协议里基础部分叫 ${baseDirectoryOf(manifest.protocol)}`, { item: 'base_directory', protocol: manifest.protocol, path: join(prefix, foreign), expected: baseDirectoryOf(manifest.protocol), actual: foreign });
+      add('protocol_name_mismatch', `${join(prefix, foreign)}/ is a base part directory name, but not the one protocol ${manifest.protocol} uses: in this protocol the base part is named ${baseDirectoryOf(manifest.protocol)}`, { item: 'base_directory', protocol: manifest.protocol, path: join(prefix, foreign), expected: baseDirectoryOf(manifest.protocol), actual: foreign });
     }
     const inForeign = (path) => foreign !== null && !listed.has(`${foreign}/${MANIFEST_FILE}`) && path.startsWith(`${foreign}/`);
-    for (const path of present) if (!listed.has(path) && !inForeign(path)) add('file_extra', `包里多了一个清单没列的文件 ${join(prefix, path)}`, { path: join(prefix, path) });
+    for (const path of present) if (!listed.has(path) && !inForeign(path)) add('file_extra', `The pack has a file the manifest does not list: ${join(prefix, path)}`, { path: join(prefix, path) });
 
     // SKILL.md：角色部分的 name 等于包 ID，基础部分的 name 等于它的协议版本对应的目录名（names.mjs 的表）
     if (kind === 'role' || kind === 'base') {
       const skillPath = join(prefix, SKILL_FILE);
       const skill = files.get(SKILL_FILE);
       if (skill === undefined) {
-        if (!listed.has(SKILL_FILE)) add('skill_md_missing', `没有 ${skillPath}：每个音色包的部分都是一个标准的 Agent Skill 目录`, { path: skillPath });
+        if (!listed.has(SKILL_FILE)) add('skill_md_missing', `No ${skillPath}: every part of a voice pack is a standard Agent Skill directory`, { path: skillPath });
       } else {
         let text = null;
-        try { text = utf8.decode(skill); } catch { add('skill_md_invalid', `${skillPath} 不是合法的 UTF-8`, { path: skillPath, reason: 'utf8' }); }
+        try { text = utf8.decode(skill); } catch { add('skill_md_invalid', `${skillPath} is not valid UTF-8`, { path: skillPath, reason: 'utf8' }); }
         if (text !== null) for (const p of skillMdProblems(text, { expectedName: kind === 'role' ? manifest.id : baseDirectoryOf(manifest.protocol) })) add(p.code, p.message, { ...p.details, path: skillPath });
       }
     }
 
-    // 音频：这个部分自己管的每个文件，按扩展名和内容对一对；清单里标明是音频的（参考段、留出录音、卡片试听那一句）扩展名也必须是音频
+    // 音频：这个部分自己管的每个文件，按扩展名和内容对一对；清单里标明是音频的（参考段、留出录音、试听句）扩展名也必须是音频
     const designated = new Set(kind === 'role' ? [...manifest.reference.segments, ...(manifest.holdout ?? []), ...(typeof manifest.cardLine?.audio === 'string' ? [manifest.cardLine] : [])].map((s) => s.audio) : []);
     for (const path of present) {
       const found = audioProblem(path, files.get(path), { designated: designated.has(path) });
@@ -324,7 +324,7 @@ async function checkOne(files, prefix, expectedKind, ctx) {
   if (manifest !== null && kind === 'base' && prefix !== '') {
     const expected = baseDirectoryOf(manifest.protocol);
     const actual = prefix.slice(prefix.lastIndexOf('/') + 1);
-    if (actual !== expected) add('protocol_name_mismatch', `${prefix}/ 里是按协议 ${manifest.protocol} 写的基础部分，这个协议里基础部分叫 ${expected}，目录却叫 ${actual}`, { item: 'base_directory', protocol: manifest.protocol, path: prefix, expected, actual });
+    if (actual !== expected) add('protocol_name_mismatch', `${prefix}/ holds a base part written for protocol ${manifest.protocol}; in this protocol the base part is named ${expected}, but the directory is named ${actual}`, { item: 'base_directory', protocol: manifest.protocol, path: prefix, expected, actual });
   }
 
   // 嵌套的部分（清单读不了时，也按位置查它们：它们有自己的清单）
@@ -332,7 +332,7 @@ async function checkOne(files, prefix, expectedKind, ctx) {
   for (const child of childrenToCheck(kind, manifest, files)) {
     const sub = subtree(files, child.directory);
     if (sub.size === 0) {
-      if (child.required) add('part_missing', `缺 ${join(prefix, child.directory)}/：每个部分都要带着协议核心`, { path: join(prefix, child.directory) });
+      if (child.required) add('part_missing', `Missing ${join(prefix, child.directory)}/: every part must carry the protocol core`, { path: join(prefix, child.directory) });
       continue;
     }
     await checkOne(sub, join(prefix, child.directory), child.kind, ctx);
@@ -363,7 +363,7 @@ async function checkSignature(ctx, call, entry, add) {
   if (ctx.verifySignature) { await runSignatureHook(ctx.verifySignature, call, entry, add); return; }
   if (kind === 'role') { entry.skipped = 'role'; return; }
   entry.verified = false;
-  add('signature_unverifiable', `${entry.file} 是一份签名文件，但这次检查没有验签的办法（只写了 allowUnsigned: true，没给 verifySignature）：没法验，不当成通过。要验就给 verifySignature（一般是 createSignatureVerifier(信任名单)）`, { path: entry.file });
+  add('signature_unverifiable', `${entry.file} is a signature file, but this check has no way to verify signatures (only allowUnsigned: true was given, not verifySignature): it cannot be verified and is not counted as passed. To verify it, pass verifySignature (normally createSignatureVerifier(trustList))`, { path: entry.file });
 }
 
 async function runSignatureHook(hook, call, entry, add) {
@@ -378,12 +378,12 @@ async function runSignatureHook(hook, call, entry, add) {
   }
   if (result === null || typeof result !== 'object' || typeof result.ok !== 'boolean') {
     entry.verified = false;
-    add('signature_hook_invalid', 'verifySignature 要返回 { ok: true } 或 { ok: false, code, message }', {});
+    add('signature_hook_invalid', 'verifySignature must return { ok: true } or { ok: false, code, message }', {});
     return;
   }
   if (!result.ok) {
     entry.verified = false;
-    add(typeof result.code === 'string' ? result.code : 'signature_invalid', result.message ?? '签名没有通过', { ...(result.details ?? {}) });
+    add(typeof result.code === 'string' ? result.code : 'signature_invalid', result.message ?? 'The signature did not pass verification', { ...(result.details ?? {}) });
     return;
   }
   if (typeof result.skipped === 'string') { entry.skipped = result.skipped; return; } // 钩子说这个部分它没验（原因写在 skipped 里）：verified 保持 null
@@ -397,30 +397,30 @@ async function checkExternals(externals, designated, ctx, prefix, add) {
   for (const entry of externals) {
     const path = join(prefix, entry.path);
     const base = { path, url: entry.url };
-    if (entry.size > limits.maxMemberBytes) { add('member_too_large', `外部资源 ${path} 太大：清单里写的是 ${entry.size} 字节，单个上限 ${limits.maxMemberBytes} 字节`, { path, size: entry.size, limit: limits.maxMemberBytes }); continue; }
-    if (fetcher === null) { add('external_unverifiable', `外部资源无法核对：运行环境没有网络（离线），${path} 没法从 ${entry.url} 取回来核对`, { ...base, reason: 'offline' }); continue; }
+    if (entry.size > limits.maxMemberBytes) { add('member_too_large', `External resource ${path} is too large: the manifest says ${entry.size} bytes, the per-file limit is ${limits.maxMemberBytes} bytes`, { path, size: entry.size, limit: limits.maxMemberBytes }); continue; }
+    if (fetcher === null) { add('external_unverifiable', `External resource cannot be checked: the runtime environment has no network (offline), so ${path} cannot be fetched from ${entry.url} to check it`, { ...base, reason: 'offline' }); continue; }
     let response;
     try {
       response = await fetcher(entry.url);
     } catch (error) {
-      add('external_unverifiable', `外部资源无法核对：从 ${entry.url} 取 ${path} 时网络出错（${error?.message ?? error}）`, { ...base, reason: 'network' });
+      add('external_unverifiable', `External resource cannot be checked: network error while fetching ${path} from ${entry.url} (${error?.message ?? error})`, { ...base, reason: 'network' });
       continue;
     }
-    if (!response || response.ok !== true) { add('external_fetch_failed', `外部资源 ${path} 取不到：${entry.url} 返回 ${response?.status ?? '没有响应'}`, { ...base, status: response?.status ?? null }); continue; }
+    if (!response || response.ok !== true) { add('external_fetch_failed', `External resource ${path} cannot be fetched: ${entry.url} returned ${response?.status ?? 'no response'}`, { ...base, status: response?.status ?? null }); continue; }
     let read;
     try {
       read = await readCapped(response, entry.size);
     } catch (error) {
-      add('external_unverifiable', `外部资源无法核对：读 ${entry.url} 的内容时出错（${error?.message ?? error}）`, { ...base, reason: 'network' });
+      add('external_unverifiable', `External resource cannot be checked: error while reading the content of ${entry.url} (${error?.message ?? error})`, { ...base, reason: 'network' });
       continue;
     }
     if (read.tooLarge || read.bytes.length !== entry.size) {
       const got = read.tooLarge ? read.actual : read.bytes.length;
-      add('external_hash_mismatch', `外部资源 ${path} 和清单对不上：清单里写的是 ${entry.size} 字节，取回来的${read.tooLarge ? '超过了' : '是'} ${got} 字节`, { ...base, reason: 'size', expected: entry.size, actual: got });
+      add('external_hash_mismatch', `External resource ${path} does not match the manifest: the manifest says ${entry.size} bytes, the fetched content ${read.tooLarge ? 'exceeds' : 'is'} ${got} bytes`, { ...base, reason: 'size', expected: entry.size, actual: got });
       continue;
     }
     const digest = await sha256Hex(read.bytes);
-    if (digest !== entry.sha256) { add('external_hash_mismatch', `外部资源 ${path} 和清单对不上：SHA-256 不一样`, { ...base, reason: 'sha256', expected: entry.sha256, actual: digest }); continue; }
+    if (digest !== entry.sha256) { add('external_hash_mismatch', `External resource ${path} does not match the manifest: the SHA-256 differs`, { ...base, reason: 'sha256', expected: entry.sha256, actual: digest }); continue; }
     const found = audioProblem(entry.path, read.bytes, { designated: designated.has(entry.path) });
     if (found) add(found.code, found.message, { ...found.details, path });
   }

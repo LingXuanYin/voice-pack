@@ -47,8 +47,8 @@ const pointerJoin = (pointer, key) => `${pointer}/${String(key).replace(/~/g, '~
 
 function describe(value) {
   if (value === null) return 'null';
-  if (Array.isArray(value)) return '数组';
-  if (typeof value === 'object') return '对象';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'object') return 'object';
   return typeof value === 'string' ? JSON.stringify(value.length > 60 ? `${value.slice(0, 60)}…` : value) : String(value);
 }
 
@@ -98,7 +98,7 @@ export function checkSchemaKeywords(schema, pointer = '') {
   for (const [key, value] of Object.entries(schema)) {
     if (VALUE_KEYS.has(key) || key.startsWith('x-')) continue;
     if (!BASE_KEYWORDS.has(key) && !ANNOTATIONS.has(key)) {
-      throw schemaInvalid(`schema 里用了这个校验器不支持的关键字：${key}（要么按标准补上实现，要么改用支持的关键字）`, { keyword: key, pointer: pointer || '/' });
+      throw schemaInvalid(`the schema uses a keyword this validator does not support: ${key} (either implement it per the standard, or use a supported keyword)`, { keyword: key, pointer: pointer || '/' });
     }
     if (NAME_KEYS.has(key) && isObject(value)) {
       for (const [name, sub] of Object.entries(value)) checkSchemaKeywords(sub, pointerJoin(pointerJoin(pointer, key), name));
@@ -111,15 +111,15 @@ export function checkSchemaKeywords(schema, pointer = '') {
 }
 
 function resolveRef(root, ref, seen) {
-  if (typeof ref !== 'string' || !ref.startsWith('#/')) throw schemaInvalid(`$ref 只认本文档里的 #/$defs/…：${JSON.stringify(ref)}`, { ref });
-  if (seen.includes(ref)) throw schemaInvalid(`$ref 绕圈了：${[...seen, ref].join(' → ')}`, { ref });
+  if (typeof ref !== 'string' || !ref.startsWith('#/')) throw schemaInvalid(`$ref only supports #/$defs/… within this document: ${JSON.stringify(ref)}`, { ref });
+  if (seen.includes(ref)) throw schemaInvalid(`$ref is circular: ${[...seen, ref].join(' → ')}`, { ref });
   let node = root;
   for (const rawPart of ref.slice(2).split('/')) {
     const part = rawPart.replace(/~1/g, '/').replace(/~0/g, '~');
-    if (!isObject(node) || !own(node, part)) throw schemaInvalid(`$ref 指向的东西不存在：${ref}`, { ref });
+    if (!isObject(node) || !own(node, part)) throw schemaInvalid(`$ref points to something that does not exist: ${ref}`, { ref });
     node = node[part];
   }
-  if (!isObject(node) && typeof node !== 'boolean') throw schemaInvalid(`$ref 指向的不是 schema：${ref}`, { ref });
+  if (!isObject(node) && typeof node !== 'boolean') throw schemaInvalid(`$ref does not point to a schema: ${ref}`, { ref });
   return { node, seen: [...seen, ref] };
 }
 
@@ -149,10 +149,10 @@ export function validateSchema(schema, value, options = {}) {
     };
     if (out.length >= maxProblems) { state.truncated = true; return; }
     if (node === true) return;
-    if (node === false) { add(pointer, 'false', '这里不允许有值'); return; }
+    if (node === false) { add(pointer, 'false', 'no value is allowed here'); return; }
     // 到这里 node 必须是对象。undefined、数字、字符串、数组这类是 schema 写坏了：当成「什么都能过」会悄悄放过所有数据
-    if (!isObject(node)) throw schemaInvalid(`校验 ${pointer || '/'} 用的 schema 既不是对象，也不是 true/false：${describe(node)}`, { dataPointer: pointer || '/' });
-    if (depth > maxDepth) { add(pointer, 'depth', `数据嵌套太深（超过 ${maxDepth} 层）`); return; }
+    if (!isObject(node)) throw schemaInvalid(`the schema used to validate ${pointer || '/'} is neither an object nor true/false: ${describe(node)}`, { dataPointer: pointer || '/' });
+    if (depth > maxDepth) { add(pointer, 'depth', `the data is nested too deeply (more than ${maxDepth} levels)`); return; }
 
     if (own(node, '$ref')) {
       const target = resolveRef(schema, node.$ref, seen);
@@ -162,42 +162,42 @@ export function validateSchema(schema, value, options = {}) {
 
     if (own(node, 'type')) {
       const types = Array.isArray(node.type) ? node.type : [node.type];
-      for (const type of types) if (!TYPES.has(type)) throw schemaInvalid(`type 只能是 ${[...TYPES].join('/')}：${JSON.stringify(type)}`, { keyword: 'type' });
+      for (const type of types) if (!TYPES.has(type)) throw schemaInvalid(`type must be one of ${[...TYPES].join('/')}: ${JSON.stringify(type)}`, { keyword: 'type' });
       if (!types.some((type) => matchesType(data, type))) {
-        add(pointer, 'type', `这里的值应该是 ${types.join(' 或 ')}，实际是 ${describe(data)}`);
+        add(pointer, 'type', `the value here should be ${types.join(' or ')}, but is ${describe(data)}`);
         return; // 类型都不对，后面的关键字（长度、属性……）说的不是这个值，不再报第二遍
       }
     }
-    if (own(node, 'const') && !sameValue(data, node.const)) add(pointer, 'const', `这里的值只能是 ${JSON.stringify(node.const)}，实际是 ${describe(data)}`);
-    if (Array.isArray(node.enum) && !node.enum.some((item) => sameValue(data, item))) add(pointer, 'enum', `这里的值要在这几个里：${JSON.stringify(node.enum)}，实际是 ${describe(data)}`);
+    if (own(node, 'const') && !sameValue(data, node.const)) add(pointer, 'const', `the value here must be ${JSON.stringify(node.const)}, but is ${describe(data)}`);
+    if (Array.isArray(node.enum) && !node.enum.some((item) => sameValue(data, item))) add(pointer, 'enum', `the value here must be one of ${JSON.stringify(node.enum)}, but is ${describe(data)}`);
 
     if (typeof data === 'string') {
       const length = [...data].length;
-      if (typeof node.minLength === 'number' && length < node.minLength) add(pointer, 'minLength', `太短：至少 ${node.minLength} 个字符`);
-      if (typeof node.maxLength === 'number' && length > node.maxLength) add(pointer, 'maxLength', `太长：最多 ${node.maxLength} 个字符，这里有 ${length} 个`);
+      if (typeof node.minLength === 'number' && length < node.minLength) add(pointer, 'minLength', `too short: at least ${node.minLength} characters`);
+      if (typeof node.maxLength === 'number' && length > node.maxLength) add(pointer, 'maxLength', `too long: at most ${node.maxLength} characters, but there are ${length}`);
       if (typeof node.pattern === 'string' && !(typeof node.maxLength === 'number' && length > node.maxLength)) { // 已经超长的不再跑正则，省得在恶意的长串上白费工夫
         let re;
-        try { re = new RegExp(node.pattern, 'u'); } catch (cause) { throw new VoicePackError('schema_invalid', `pattern 不是合法的正则：${JSON.stringify(node.pattern)}`, { details: { keyword: 'pattern' }, cause }); }
-        if (!re.test(data)) add(pointer, 'pattern', `写法不对（要符合 ${node.pattern}）：${describe(data)}`);
+        try { re = new RegExp(node.pattern, 'u'); } catch (cause) { throw new VoicePackError('schema_invalid', `pattern is not a valid regular expression: ${JSON.stringify(node.pattern)}`, { details: { keyword: 'pattern' }, cause }); }
+        if (!re.test(data)) add(pointer, 'pattern', `wrong format (must match ${node.pattern}): ${describe(data)}`);
       }
     }
     if (typeof data === 'number') {
-      if (typeof node.minimum === 'number' && data < node.minimum) add(pointer, 'minimum', `不能小于 ${node.minimum}，实际是 ${data}`);
-      if (typeof node.maximum === 'number' && data > node.maximum) add(pointer, 'maximum', `不能大于 ${node.maximum}，实际是 ${data}`);
-      if (typeof node.exclusiveMinimum === 'number' && data <= node.exclusiveMinimum) add(pointer, 'exclusiveMinimum', `要大于 ${node.exclusiveMinimum}，实际是 ${data}`);
-      if (typeof node.exclusiveMaximum === 'number' && data >= node.exclusiveMaximum) add(pointer, 'exclusiveMaximum', `要小于 ${node.exclusiveMaximum}，实际是 ${data}`);
+      if (typeof node.minimum === 'number' && data < node.minimum) add(pointer, 'minimum', `must not be less than ${node.minimum}, but is ${data}`);
+      if (typeof node.maximum === 'number' && data > node.maximum) add(pointer, 'maximum', `must not be greater than ${node.maximum}, but is ${data}`);
+      if (typeof node.exclusiveMinimum === 'number' && data <= node.exclusiveMinimum) add(pointer, 'exclusiveMinimum', `must be greater than ${node.exclusiveMinimum}, but is ${data}`);
+      if (typeof node.exclusiveMaximum === 'number' && data >= node.exclusiveMaximum) add(pointer, 'exclusiveMaximum', `must be less than ${node.exclusiveMaximum}, but is ${data}`);
     }
 
     if (Array.isArray(data)) {
       const tooLong = typeof node.maxItems === 'number' && data.length > node.maxItems;
-      if (typeof node.minItems === 'number' && data.length < node.minItems) add(pointer, 'minItems', `至少要有 ${node.minItems} 项，这里有 ${data.length} 项`);
-      if (tooLong) add(pointer, 'maxItems', `最多 ${node.maxItems} 项，这里有 ${data.length} 项`);
+      if (typeof node.minItems === 'number' && data.length < node.minItems) add(pointer, 'minItems', `must have at least ${node.minItems} items, but has ${data.length}`);
+      if (tooLong) add(pointer, 'maxItems', `must have at most ${node.maxItems} items, but has ${data.length}`);
       if (!tooLong) { // 已经超长的数组不再逐项报：既无益，也防止一个恶意的大数组刷出海量的错
         if (node.uniqueItems === true) {
           const first = new Map();
           data.forEach((item, i) => {
             const key = canonical(item);
-            if (first.has(key)) add(pointerJoin(pointer, i), 'uniqueItems', `和第 ${first.get(key)} 项重复`);
+            if (first.has(key)) add(pointerJoin(pointer, i), 'uniqueItems', `duplicate of item ${first.get(key)}`);
             else first.set(key, i);
           });
         }
@@ -209,15 +209,15 @@ export function validateSchema(schema, value, options = {}) {
       const keys = Object.keys(data);
       if (Array.isArray(node.required)) {
         const missing = node.required.filter((name) => !own(data, name));
-        if (missing.length) add(pointer, 'required', `缺字段：${missing.join('、')}`);
+        if (missing.length) add(pointer, 'required', `missing fields: ${missing.join(', ')}`);
       }
-      if (typeof node.minProperties === 'number' && keys.length < node.minProperties) add(pointer, 'minProperties', `字段太少：至少 ${node.minProperties} 个`);
-      if (typeof node.maxProperties === 'number' && keys.length > node.maxProperties) add(pointer, 'maxProperties', `字段太多：最多 ${node.maxProperties} 个，这里有 ${keys.length} 个`);
+      if (typeof node.minProperties === 'number' && keys.length < node.minProperties) add(pointer, 'minProperties', `too few fields: at least ${node.minProperties}`);
+      if (typeof node.maxProperties === 'number' && keys.length > node.maxProperties) add(pointer, 'maxProperties', `too many fields: at most ${node.maxProperties}, but there are ${keys.length}`);
       if (own(node, 'propertyNames')) {
         for (const key of keys) {
           const sub = [];
           walk(node.propertyNames, key, pointerJoin(pointer, key), [], depth + 1, sub);
-          if (sub.length) add(pointerJoin(pointer, key), 'propertyNames', `字段名不合格：${JSON.stringify(key)}`);
+          if (sub.length) add(pointerJoin(pointer, key), 'propertyNames', `invalid field name: ${JSON.stringify(key)}`);
         }
       }
       const props = isObject(node.properties) ? node.properties : {};
@@ -225,7 +225,7 @@ export function validateSchema(schema, value, options = {}) {
         const at = pointerJoin(pointer, key);
         if (own(props, key)) { walk(props[key], data[key], at, [], depth + 1, out); continue; }
         if (!own(node, 'additionalProperties')) continue;
-        if (node.additionalProperties === false) { add(at, 'additionalProperties', `不该有这个字段：${key}`); continue; }
+        if (node.additionalProperties === false) { add(at, 'additionalProperties', `unexpected field: ${key}`); continue; }
         walk(node.additionalProperties, data[key], at, [], depth + 1, out);
       }
     }
@@ -235,7 +235,7 @@ export function validateSchema(schema, value, options = {}) {
       const results = node.oneOf.map((branch) => { const sub = []; walk(branch, data, pointer, seen, depth, sub); return sub; });
       const passing = results.filter((sub) => sub.length === 0).length;
       if (passing === 1) return;
-      if (passing > 1) { add(pointer, 'oneOf', `有 ${passing} 支都通过：schema 没有写清楚`); return; }
+      if (passing > 1) { add(pointer, 'oneOf', `${passing} branches pass: the schema is ambiguous`); return; }
       // 一支都没通过：报哪一支的错？分支里有 const 字段的（相当于 discriminator，清单的 part），优先挑 const 和数据对得上的那一支，
       // 只报它里面的错，不把别的支的错也倒出来；对不上任何一支，就只说这个字段该写什么。没有这种字段的 oneOf，只报一条 oneOf。
       const resolved = node.oneOf.map((branch) => (isObject(branch) && own(branch, '$ref') ? resolveRef(schema, branch.$ref, seen).node : branch));
@@ -249,10 +249,10 @@ export function validateSchema(schema, value, options = {}) {
         return;
       }
       const discriminator = constsOf(resolved[0]).map(([name]) => name).find((name) => resolved.every((branch) => constsOf(branch).some(([other]) => other === name)));
-      if (discriminator === undefined) { add(pointer, 'oneOf', `和 ${node.oneOf.length} 种写法都对不上`); return; }
-      const allowed = resolved.map((branch) => JSON.stringify(constsOf(branch).find(([name]) => name === discriminator)[1].const)).join('、');
+      if (discriminator === undefined) { add(pointer, 'oneOf', `does not match any of the ${node.oneOf.length} accepted forms`); return; }
+      const allowed = resolved.map((branch) => JSON.stringify(constsOf(branch).find(([name]) => name === discriminator)[1].const)).join(', ');
       const at = pointerJoin(pointer, discriminator);
-      add(at, 'oneOf', isObject(data) && own(data, discriminator) ? `${discriminator} 要写这几个之一：${allowed}，实际是 ${describe(data[discriminator])}` : `缺 ${discriminator}：要写这几个之一：${allowed}`);
+      add(at, 'oneOf', isObject(data) && own(data, discriminator) ? `${discriminator} must be one of ${allowed}, but is ${describe(data[discriminator])}` : `${discriminator} is missing; it must be one of ${allowed}`);
     }
   };
 

@@ -306,7 +306,7 @@ function hashesOf(peaks, settings) {
 function checkedAudio(audio) {
   if (audio === null || typeof audio !== 'object' || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0 || !Array.isArray(audio.samples) || audio.samples.length === 0
     || !audio.samples.every((channel) => channel instanceof Float32Array && channel.length === audio.samples[0].length)) {
-    throw new TypeError('音频必须是 { sampleRate, samples: Float32Array[] }（每个声道一个数组，长度一样）');
+    throw new TypeError('audio must be { sampleRate, samples: Float32Array[] } (one array per channel, all the same length)');
   }
   return audio;
 }
@@ -320,7 +320,7 @@ function checkedAudio(audio) {
 export function fingerprintAudio(audio, options = {}) {
   checkedAudio(audio);
   const unknown = Object.keys(options).filter((key) => !Object.hasOwn(PEAKS, key));
-  if (unknown.length > 0) throw new TypeError(`不认识的选项：${unknown.join('、')}`);
+  if (unknown.length > 0) throw new TypeError(`Unknown options: ${unknown.join(', ')}`);
   const settings = { ...PEAKS, ...options };
   const durationSec = audio.samples[0].length / audio.sampleRate;
   const mono = resample(toMono(audio), audio.sampleRate, SAMPLE_RATE);
@@ -334,7 +334,7 @@ export function fingerprintAudio(audio, options = {}) {
  * @param {{ maxBucket?: number }} [options]
  */
 export function indexFingerprints(entries, { maxBucket = MATCHING.maxBucket } = {}) {
-  if (!Array.isArray(entries)) throw new TypeError('entries 必须是数组 [{ id, fingerprint }]');
+  if (!Array.isArray(entries)) throw new TypeError('entries must be an array [{ id, fingerprint }]');
   const buckets = new Map();
   entries.forEach((entry, clip) => {
     const { hashes, times } = entry.fingerprint;

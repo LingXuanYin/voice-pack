@@ -151,44 +151,44 @@ const round = (value, digits) => {
 /** 容器和类型的问题。 */
 function shapeIssues(adapter) {
   if (!isPlainObject(adapter)) {
-    return [issue('error', 'adapter_not_object', `适配器的返回值要是对象：{ ${ADAPTER_KEYS.map((key) => `${key}?`).join(', ')} }（约定见 adapters/README.md）`)];
+    return [issue('error', 'adapter_not_object', `The adapter must return an object: { ${ADAPTER_KEYS.map((key) => `${key}?`).join(', ')} } (see adapters/README.md for the contract)`)];
   }
   const issues = [];
   for (const key of Object.keys(adapter)) {
-    if (!ADAPTER_KEYS.includes(key)) issues.push(issue('error', 'adapter_key_unknown', `返回值里有不认识的键 ${JSON.stringify(key)}（只认 ${ADAPTER_KEYS.join('、')}）`, { key }));
+    if (!ADAPTER_KEYS.includes(key)) issues.push(issue('error', 'adapter_key_unknown', `The returned object has an unknown key ${JSON.stringify(key)} (allowed: ${ADAPTER_KEYS.join(', ')})`, { key }));
   }
   for (const key of ['capabilities', 'runtimes']) {
-    if (adapter[key] !== undefined && !isPlainObject(adapter[key])) issues.push(issue('error', 'container_not_object', `${key} 要是对象，不是数组、字符串或别的`, { key }));
+    if (adapter[key] !== undefined && !isPlainObject(adapter[key])) issues.push(issue('error', 'container_not_object', `${key} must be an object, not an array, a string or anything else`, { key }));
   }
-  if (adapter.fetch !== undefined && typeof adapter.fetch !== 'function') issues.push(issue('error', 'fetch_not_function', 'fetch 要是函数（形同标准 fetch）'));
+  if (adapter.fetch !== undefined && typeof adapter.fetch !== 'function') issues.push(issue('error', 'fetch_not_function', 'fetch must be a function (same shape as the standard fetch)'));
   if (adapter.billing !== undefined && (typeof adapter.billing !== 'string' || adapter.billing.trim() === '')) {
-    issues.push(issue('error', 'billing_invalid', 'billing 要是非空字符串：一句话写明这个适配器的调用费用记在哪个账户上'));
+    issues.push(issue('error', 'billing_invalid', 'billing must be a non-empty string: one sentence saying which account the calls of this adapter are billed to'));
   }
   if (adapter.limits !== undefined) {
     if (!isPlainObject(adapter.limits)) {
-      issues.push(issue('error', 'limits_invalid', `limits 要是对象，例如 { maxChars: 200 }`, { key: 'limits' }));
+      issues.push(issue('error', 'limits_invalid', `limits must be an object, for example { maxChars: 200 }`, { key: 'limits' }));
     } else {
       for (const key of Object.keys(adapter.limits)) {
-        if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits 里有不认识的键 ${JSON.stringify(key)}（只认 ${LIMIT_KEYS.join('、')}）`, { key }));
+        if (!LIMIT_KEYS.includes(key)) issues.push(issue('error', 'limits_invalid', `limits has an unknown key ${JSON.stringify(key)} (allowed: ${LIMIT_KEYS.join(', ')})`, { key }));
       }
       const { maxChars, minChars, maxPromptTokens, maxPauseInRequestMs, maxPauseInTextMs, maxSpeakers } = adapter.limits;
       if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxChars 要是不小于 ${MIN_MAX_CHARS} 的整数（一次合成最多多少个字），收到 ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxChars must be an integer not less than ${MIN_MAX_CHARS} (the most characters one synthesis takes), got ${JSON.stringify(maxChars)}`, { key: 'maxChars' }));
       }
       if (minChars !== undefined && (!Number.isInteger(minChars) || minChars < MIN_MIN_CHARS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.minChars 要是不小于 ${MIN_MIN_CHARS} 的整数（合成能力一次至少要多少个字），收到 ${JSON.stringify(minChars)}`, { key: 'minChars' }));
+        issues.push(issue('error', 'limits_invalid', `limits.minChars must be an integer not less than ${MIN_MIN_CHARS} (the fewest characters one synthesis needs), got ${JSON.stringify(minChars)}`, { key: 'minChars' }));
       }
       if (maxPromptTokens !== undefined && (!Number.isInteger(maxPromptTokens) || maxPromptTokens < MIN_PROMPT_TOKENS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxPromptTokens 要是不小于 ${MIN_PROMPT_TOKENS} 的整数（text-generation 一次请求最多收多少输入），收到 ${JSON.stringify(maxPromptTokens)}`, { key: 'maxPromptTokens' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxPromptTokens must be an integer not less than ${MIN_PROMPT_TOKENS} (the most input one text-generation request takes), got ${JSON.stringify(maxPromptTokens)}`, { key: 'maxPromptTokens' }));
       }
       if (maxPauseInRequestMs !== undefined && (!Number.isInteger(maxPauseInRequestMs) || maxPauseInRequestMs < MIN_PAUSE_IN_REQUEST_MS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInRequestMs 要是不小于 ${MIN_PAUSE_IN_REQUEST_MS} 的整数（一个请求里一处停顿最多多少毫秒），收到 ${JSON.stringify(maxPauseInRequestMs)}`, { key: 'maxPauseInRequestMs' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInRequestMs must be an integer not less than ${MIN_PAUSE_IN_REQUEST_MS} (the longest pause, in milliseconds, one request can hold), got ${JSON.stringify(maxPauseInRequestMs)}`, { key: 'maxPauseInRequestMs' }));
       }
       if (maxPauseInTextMs !== undefined && (!Number.isInteger(maxPauseInTextMs) || maxPauseInTextMs < MIN_PAUSE_IN_TEXT_MS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInTextMs 要是不小于 ${MIN_PAUSE_IN_TEXT_MS} 的整数（旧的键，配音不再用它），收到 ${JSON.stringify(maxPauseInTextMs)}`, { key: 'maxPauseInTextMs' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxPauseInTextMs must be an integer not less than ${MIN_PAUSE_IN_TEXT_MS} (an old key; dubbing no longer uses it), got ${JSON.stringify(maxPauseInTextMs)}`, { key: 'maxPauseInTextMs' }));
       }
       if (maxSpeakers !== undefined && (!Number.isInteger(maxSpeakers) || maxSpeakers < MIN_SCENE_SPEAKERS)) {
-        issues.push(issue('error', 'limits_invalid', `limits.maxSpeakers 要是不小于 ${MIN_SCENE_SPEAKERS} 的整数（声明了 scene-in-request 的环境，一场戏最多几个说话人），收到 ${JSON.stringify(maxSpeakers)}`, { key: 'maxSpeakers' }));
+        issues.push(issue('error', 'limits_invalid', `limits.maxSpeakers must be an integer not less than ${MIN_SCENE_SPEAKERS} (for an environment that declares scene-in-request: the most speakers in one scene), got ${JSON.stringify(maxSpeakers)}`, { key: 'maxSpeakers' }));
       }
     }
   }
@@ -204,21 +204,21 @@ function shapeIssues(adapter) {
  */
 function previewCardIssues(card) {
   const bad = (message, key) => issue('error', 'preview_card_invalid', message, { key });
-  if (!isPlainObject(card)) return [bad('previewCard 要是对象，例如 { productName: "某某", links: { open: "https://…", make: "https://…?pack={id}" } }', 'previewCard')];
+  if (!isPlainObject(card)) return [bad('previewCard must be an object, for example { productName: "Acme", links: { open: "https://…", make: "https://…?pack={id}" } }', 'previewCard')];
   const issues = [];
   for (const key of Object.keys(card)) {
-    if (!PREVIEW_CARD_KEYS.includes(key)) issues.push(bad(`previewCard 里有不认识的键 ${JSON.stringify(key)}（只认 ${PREVIEW_CARD_KEYS.join('、')}）`, key));
+    if (!PREVIEW_CARD_KEYS.includes(key)) issues.push(bad(`previewCard has an unknown key ${JSON.stringify(key)} (allowed: ${PREVIEW_CARD_KEYS.join(', ')})`, key));
   }
   if (card.productName !== undefined && (typeof card.productName !== 'string' || card.productName.trim() === '')) {
-    issues.push(bad('previewCard.productName 要是非空字符串（预览卡片上「在 X 里打开」里的 X）', 'productName'));
+    issues.push(bad('previewCard.productName must be a non-empty string (the X in "Open in X" on the preview card)', 'productName'));
   }
   if (card.links !== undefined) {
     if (!isPlainObject(card.links)) {
-      issues.push(bad('previewCard.links 要是对象：{ open?, make? }（两个入口的链接）', 'links'));
+      issues.push(bad('previewCard.links must be an object: { open?, make? } (the links of the two entry points)', 'links'));
     } else {
       for (const [key, link] of Object.entries(card.links)) {
-        if (!PREVIEW_LINK_KEYS.includes(key)) issues.push(bad(`previewCard.links 里有不认识的键 ${JSON.stringify(key)}（只认 ${PREVIEW_LINK_KEYS.join('、')}）`, key));
-        else if (typeof link !== 'string' || link.trim() === '') issues.push(bad(`previewCard.links.${key} 要是非空字符串（链接，里面的 {id} 换成包 ID）`, key));
+        if (!PREVIEW_LINK_KEYS.includes(key)) issues.push(bad(`previewCard.links has an unknown key ${JSON.stringify(key)} (allowed: ${PREVIEW_LINK_KEYS.join(', ')})`, key));
+        else if (typeof link !== 'string' || link.trim() === '') issues.push(bad(`previewCard.links.${key} must be a non-empty string (a link; {id} in it is replaced by the pack ID)`, key));
       }
     }
   }
@@ -227,18 +227,18 @@ function previewCardIssues(card) {
 
 /** prices 的问题：{ 能力名: 每次约多少美元 }，单价是不小于 0 的数（能力名在不在词表里，结构检查再看）。 */
 function pricesIssues(prices) {
-  if (!isPlainObject(prices)) return [issue('error', 'prices_invalid', 'prices 要是对象：{ 能力名: 每次约多少美元 }，例如 { "voice-cloning": 0.01 }', { key: 'prices' })];
+  if (!isPlainObject(prices)) return [issue('error', 'prices_invalid', 'prices must be an object: { capability name: approximate US dollars per call }, for example { "voice-cloning": 0.01 }', { key: 'prices' })];
   return Object.entries(prices)
     .filter(([, price]) => typeof price !== 'number' || !Number.isFinite(price) || price < 0)
-    .map(([capability]) => issue('error', 'prices_invalid', `prices.${capability} 要是不小于 0 的数（这项能力每次约多少美元）`, { key: capability }));
+    .map(([capability]) => issue('error', 'prices_invalid', `prices.${capability} must be a number not less than 0 (approximate US dollars per call of this capability)`, { key: capability }));
 }
 
 /** models 的问题：{ 能力名: 模型名 }，模型名是非空字符串（能力名在不在词表里，结构检查再看）。 */
 function modelsIssues(models) {
-  if (!isPlainObject(models)) return [issue('error', 'models_invalid', 'models 要是对象：{ 能力名: 模型名 }，例如 { "voice-cloning": "某个模型" }', { key: 'models' })];
+  if (!isPlainObject(models)) return [issue('error', 'models_invalid', 'models must be an object: { capability name: model name }, for example { "voice-cloning": "some-model" }', { key: 'models' })];
   return Object.entries(models)
     .filter(([, model]) => typeof model !== 'string' || model.trim() === '')
-    .map(([capability]) => issue('error', 'models_invalid', `models.${capability} 要是非空字符串（这项能力用的模型名）`, { key: capability }));
+    .map(([capability]) => issue('error', 'models_invalid', `models.${capability} must be a non-empty string (the name of the model this capability uses)`, { key: capability }));
 }
 
 const report = (issues, extra = {}) => ({ ok: !hasErrors(issues), issues, ...extra });
@@ -268,25 +268,25 @@ export function checkAdapterStructure(adapter, { vocabulary = defaultVocabulary,
   for (const name of names) {
     const value = container[name];
     if (!Object.hasOwn(vocabulary.capabilities, name)) {
-      issues.push(issue('error', 'capability_unknown', `能力名 ${JSON.stringify(name)} 不在能力词表里（vocab/capabilities.json；多半是拼错了）`, { capability: name }));
+      issues.push(issue('error', 'capability_unknown', `Capability name ${JSON.stringify(name)} is not in the capability vocabulary (vocab/capabilities.json; most likely a typo)`, { capability: name }));
     } else if (DECLARED_CAPABILITIES.includes(name)) {
       if (value === true) capabilities.push({ name, kind: 'declaration' });
-      else issues.push(issue('error', 'declaration_not_true', `${name} 只是声明，不是函数：值要写 true`, { capability: name }));
+      else issues.push(issue('error', 'declaration_not_true', `${name} is only a declaration, not a function: its value must be true`, { capability: name }));
     } else if (typeof value === 'function') {
       capabilities.push({ name, kind: 'function' });
     } else {
-      issues.push(issue('error', 'capability_not_function', `${name} 要是函数（收到 ${typeof value}）`, { capability: name }));
+      issues.push(issue('error', 'capability_not_function', `${name} must be a function (got ${typeof value})`, { capability: name }));
     }
   }
-  if (names.length === 0) issues.push(issue('warning', 'no_capabilities', '适配器没有提供任何能力'));
+  if (names.length === 0) issues.push(issue('warning', 'no_capabilities', 'The adapter provides no capability'));
   for (const name of isPlainObject(adapter.prices) ? Object.keys(adapter.prices) : []) {
-    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `prices 里的能力名 ${JSON.stringify(name)} 不在能力词表里（vocab/capabilities.json；多半是拼错了）`, { capability: name, key: 'prices' }));
+    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `Capability name ${JSON.stringify(name)} in prices is not in the capability vocabulary (vocab/capabilities.json; most likely a typo)`, { capability: name, key: 'prices' }));
   }
   for (const name of isPlainObject(adapter.models) ? Object.keys(adapter.models) : []) {
-    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `models 里的能力名 ${JSON.stringify(name)} 不在能力词表里（vocab/capabilities.json；多半是拼错了）`, { capability: name, key: 'models' }));
+    if (!Object.hasOwn(vocabulary.capabilities, name)) issues.push(issue('error', 'capability_unknown', `Capability name ${JSON.stringify(name)} in models is not in the capability vocabulary (vocab/capabilities.json; most likely a typo)`, { capability: name, key: 'models' }));
   }
   for (const name of expect) {
-    if (!provided(name)) issues.push(issue('error', 'capability_missing', `适配器没有提供要求的能力 ${name}`, { capability: name }));
+    if (!provided(name)) issues.push(issue('error', 'capability_missing', `The adapter does not provide the required capability ${name}`, { capability: name }));
   }
   const runtimeContainer = isPlainObject(adapter.runtimes) ? adapter.runtimes : {};
   const runtimes = [];
@@ -294,7 +294,7 @@ export function checkAdapterStructure(adapter, { vocabulary = defaultVocabulary,
     const value = runtimeContainer[name];
     if (value === undefined || value === null || value === false) continue;
     if (typeof value === 'function') runtimes.push(name);
-    else issues.push(issue('error', 'runtime_not_function', `运行时 ${name} 要是函数`, { runtime: name }));
+    else issues.push(issue('error', 'runtime_not_function', `Runtime ${name} must be a function`, { runtime: name }));
   }
   return report(issues, { capabilities, runtimes });
 }
@@ -322,9 +322,9 @@ async function audioProblems(clip, field, env) {
   const sniffed = sniffAudio(bytes);
   const claimed = FORMAT_OF_MIME[mediaType(mimeType)] ?? null;
   if (claimed === null) {
-    issues.push(issue('warning', 'audio_format_unverified', `${field} 的 mimeType ${mimeType} 不是认得的几种（${[...new Set(Object.values(FORMAT_OF_MIME))].join('、')}），没法核对它和字节对不对`, { field, mimeType }));
+    issues.push(issue('warning', 'audio_format_unverified', `${field} has mimeType ${mimeType}, which is not one of the known types (${[...new Set(Object.values(FORMAT_OF_MIME))].join(', ')}), so it cannot be checked against the bytes`, { field, mimeType }));
   } else if (sniffed === null || sniffed.format !== claimed) {
-    issues.push(issue('error', 'audio_mime_mismatch', `${field} 的 mimeType 是 ${mimeType}，字节${sniffed === null ? '认不出是这种（或任何允许的）音频' : `看着是 ${sniffed.format}`}`, { field, mimeType, actual: sniffed?.format ?? null }));
+    issues.push(issue('error', 'audio_mime_mismatch', `${field} has mimeType ${mimeType}, but its bytes ${sniffed === null ? 'are not recognised as this (or any allowed) audio format' : `look like ${sniffed.format}`}`, { field, mimeType, actual: sniffed?.format ?? null }));
   }
   const summary = { kind: 'audio', mimeType, format: sniffed?.format ?? null, bytes: bytes.length };
   try {
@@ -332,25 +332,25 @@ async function audioProblems(clip, field, env) {
     summary.sampleRate = decoded.sampleRate;
     summary.channels = decoded.channels;
     summary.durationSeconds = round(decoded.frames / decoded.sampleRate, 3);
-    if (decoded.frames === 0) issues.push(issue('error', 'audio_empty', `${field} 解出来一个采样都没有（长度 0）`, { field }));
+    if (decoded.frames === 0) issues.push(issue('error', 'audio_empty', `${field} decodes to no samples at all (length 0)`, { field }));
   } catch (error) {
     if (isVoicePackError(error, 'runtime_missing')) {
-      issues.push(issue('warning', 'audio_decode_skipped', `${field} 不是自己能解的 WAV，环境又没有 ffmpeg，没法解码核对（只核对了 mimeType 和字节）`, { field }));
+      issues.push(issue('warning', 'audio_decode_skipped', `${field} is not a WAV this code can decode itself and the environment has no ffmpeg, so it cannot be decoded and checked (only mimeType and bytes were checked)`, { field }));
     } else {
-      issues.push(issue('error', 'audio_undecodable', `${field} 解不开：${reportable(error?.message ?? error)}`, { field, errorCode: isVoicePackError(error) ? error.code : undefined }));
+      issues.push(issue('error', 'audio_undecodable', `${field} cannot be decoded: ${reportable(error?.message ?? error)}`, { field, errorCode: isVoicePackError(error) ? error.code : undefined }));
     }
   }
   return { issues, summary };
 }
 
-const invalid = (capability, problem, message) => issue('error', 'result_invalid', `${capability} 的返回不符合签名：${message}`, { capability, problem });
+const invalid = (capability, problem, message) => issue('error', 'result_invalid', `The result of ${capability} does not match its signature: ${message}`, { capability, problem });
 
 async function synthesisResult(capability, result, { env }) {
   const { issues, summary } = await audioProblems(result, 'result', env);
   if (isPlainObject(result) && result.enhancers_used !== undefined) {
     const used = result.enhancers_used;
     if (!Array.isArray(used) || used.length > 0) {
-      issues.push(issue('error', 'enhancers_used_invalid', `${capability} 没有收到增强件，返回里却有 enhancers_used：${JSON.stringify(used)}（报了没有递给它的 id，库会抛 capability_result_invalid）`, { capability }));
+      issues.push(issue('error', 'enhancers_used_invalid', `${capability} received no enhancers, yet its result has enhancers_used: ${JSON.stringify(used)} (it reports ids it was never given; the library throws capability_result_invalid)`, { capability }));
     }
   }
   return { issues, summary };
@@ -358,29 +358,29 @@ async function synthesisResult(capability, result, { env }) {
 
 function textResult(capability) {
   return async (result) => {
-    if (!isPlainObject(result) || typeof result.text !== 'string') return { issues: [invalid(capability, 'text_missing', '要 { text: 字符串, model?: 字符串 }')], summary: null };
-    const issues = result.text.trim() === '' ? [issue('warning', 'text_empty', `${capability} 的回答是空的`, { capability })] : [];
+    if (!isPlainObject(result) || typeof result.text !== 'string') return { issues: [invalid(capability, 'text_missing', 'Expected { text: string, model?: string }')], summary: null };
+    const issues = result.text.trim() === '' ? [issue('warning', 'text_empty', `The answer of ${capability} is empty`, { capability })] : [];
     return { issues, summary: { kind: 'text', characters: result.text.length } };
   };
 }
 
 async function transcriptionResult(capability, result) {
-  if (!isPlainObject(result) || typeof result.text !== 'string') return { issues: [invalid(capability, 'text_missing', '要 { text: 字符串（可以是空串）, language?: 字符串, model?: 字符串 }')], summary: null };
+  if (!isPlainObject(result) || typeof result.text !== 'string') return { issues: [invalid(capability, 'text_missing', 'Expected { text: string (may be empty), language?: string, model?: string }')], summary: null };
   if (result.language !== undefined && (typeof result.language !== 'string' || result.language.trim() === '')) {
-    return { issues: [invalid(capability, 'language_invalid', 'language 要是非空字符串（BCP 47，例如 en、zh），报不出就不带这个键')], summary: null };
+    return { issues: [invalid(capability, 'language_invalid', 'language must be a non-empty string (BCP 47, for example en, zh); leave the key out if it cannot be reported')], summary: null };
   }
   return { issues: [], summary: { kind: 'text', characters: result.text.length, ...(result.language === undefined ? {} : { language: result.language }) } };
 }
 
 async function similarityResult(capability, result) {
   if (!isPlainObject(result) || typeof result.similarity !== 'number' || !Number.isFinite(result.similarity)) {
-    return { issues: [invalid(capability, 'similarity_invalid', '要 { similarity: 有限的数, model?: 字符串 }')], summary: null };
+    return { issues: [invalid(capability, 'similarity_invalid', 'Expected { similarity: finite number, model?: string }')], summary: null };
   }
   return { issues: [], summary: { kind: 'number', similarity: result.similarity } };
 }
 
 async function separationResult(capability, result, { env }) {
-  if (!isPlainObject(result) || result.vocals === undefined) return { issues: [invalid(capability, 'vocals_missing', '要 { vocals: {bytes, mimeType}, accompaniment?: {bytes, mimeType}, model?: 字符串 }，vocals 必有')], summary: null };
+  if (!isPlainObject(result) || result.vocals === undefined) return { issues: [invalid(capability, 'vocals_missing', 'Expected { vocals: {bytes, mimeType}, accompaniment?: {bytes, mimeType}, model?: string }; vocals is required')], summary: null };
   const vocals = await audioProblems(result.vocals, 'vocals', env);
   const issues = [...vocals.issues];
   const summary = { kind: 'separation', vocals: vocals.summary };
@@ -394,13 +394,13 @@ async function separationResult(capability, result, { env }) {
 
 async function speechResult(capability, result, { durationSeconds }) {
   const bad = (problem, message) => ({ issues: [invalid(capability, problem, message)], summary: null });
-  if (!isPlainObject(result) || !Array.isArray(result.speech)) return bad('speech_invalid', '要 { speech: [{ start_sec, end_sec }], model?: 字符串 }');
+  if (!isPlainObject(result) || !Array.isArray(result.speech)) return bad('speech_invalid', 'Expected { speech: [{ start_sec, end_sec }], model?: string }');
   let previousEnd = 0;
   for (const [index, region] of result.speech.entries()) {
-    if (!isPlainObject(region) || !Number.isFinite(region.start_sec) || !Number.isFinite(region.end_sec)) return bad('speech_invalid', `speech[${index}] 必须是 { start_sec, end_sec }，两个都是数（秒）`);
-    if (region.start_sec < 0 || !(region.end_sec > region.start_sec)) return bad('speech_invalid', `speech[${index}] 要满足 0 <= start_sec < end_sec，收到 ${region.start_sec}–${region.end_sec}`);
-    if (region.start_sec < previousEnd) return bad('speech_invalid', `speech[${index}] 和前一个区间重叠，或者没有按先后排`);
-    if (durationSeconds !== undefined && region.end_sec > durationSeconds + SPEECH_TOLERANCE_SECONDS) return bad('speech_invalid', `speech[${index}] 的 end_sec（${region.end_sec}）超出了录音的时长（${durationSeconds} 秒）`);
+    if (!isPlainObject(region) || !Number.isFinite(region.start_sec) || !Number.isFinite(region.end_sec)) return bad('speech_invalid', `speech[${index}] must be { start_sec, end_sec }, both numbers (seconds)`);
+    if (region.start_sec < 0 || !(region.end_sec > region.start_sec)) return bad('speech_invalid', `speech[${index}] must satisfy 0 <= start_sec < end_sec, got ${region.start_sec}–${region.end_sec}`);
+    if (region.start_sec < previousEnd) return bad('speech_invalid', `speech[${index}] overlaps the previous region or is out of order`);
+    if (durationSeconds !== undefined && region.end_sec > durationSeconds + SPEECH_TOLERANCE_SECONDS) return bad('speech_invalid', `end_sec of speech[${index}] (${region.end_sec}) is beyond the length of the recording (${durationSeconds} seconds)`);
     previousEnd = region.end_sec;
   }
   return { issues: [], summary: { kind: 'speech', regions: result.speech.length } };
@@ -437,14 +437,14 @@ export const LIVE_CAPABILITIES = Object.freeze(Object.keys(RULES));
  * @returns {Promise<{ issues: object[], model: string | null, summary: object | null }>}
  */
 export async function checkCapabilityResult(capability, result, { env = { capabilities: {}, runtimes: {} }, durationSeconds } = {}) {
-  if (!Object.hasOwn(RULES, capability)) throw new TypeError(`没有 ${capability} 的返回值规则：签名表（vocab/capability-signatures.md）里没有这一项的写法，或者有、但这个检查还没接上（NOT_WIRED）`);
+  if (!Object.hasOwn(RULES, capability)) throw new TypeError(`No result rule for ${capability}: the signature table (vocab/capability-signatures.md) has no call form for it, or has one but this check is not wired up yet (NOT_WIRED)`);
   const { issues, summary } = await RULES[capability].check(result, { env, durationSeconds });
   let model = null;
   if (isPlainObject(result)) {
     if (result.model === undefined) {
-      issues.push(issue('warning', 'model_missing', `${capability} 的返回里没有 model：验证记录里就写不出这项能力用的是哪个模型（约定见 adapters/README.md）`, { capability }));
+      issues.push(issue('warning', 'model_missing', `The result of ${capability} has no model: the verification record cannot say which model this capability used (see adapters/README.md for the contract)`, { capability }));
     } else if (typeof result.model !== 'string' || result.model.trim() === '') {
-      issues.push(issue('error', 'model_invalid', `${capability} 返回的 model 要是非空字符串，收到 ${JSON.stringify(result.model)}`, { capability }));
+      issues.push(issue('error', 'model_invalid', `The model returned by ${capability} must be a non-empty string, got ${JSON.stringify(result.model)}`, { capability }));
     } else {
       model = result.model;
     }
@@ -495,7 +495,7 @@ export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT,
   if (hasErrors(shape)) return { ok: false, issues: shape, results: [] };
   const entries = liveEntries(env, capabilities, vocabulary, notWired);
   const audio = entries.filter((entry) => entry.call !== undefined && RULES[entry.capability].audio === true).map((entry) => entry.capability);
-  if (audio.length > 0 && !isVoice(voice)) throw new TypeError(`要音频输入的能力（${audio.join('、')}）需要 options.voice：一段人声 { bytes, mimeType, text }，text 是它念的逐字文本（命令行上由 cli/commands/adapter.mjs 给）`);
+  if (audio.length > 0 && !isVoice(voice)) throw new TypeError(`Capabilities that take audio input (${audio.join(', ')}) need options.voice: a voice clip { bytes, mimeType, text }, where text is the verbatim transcript of what it says (on the command line, cli/commands/adapter.mjs supplies it)`);
   const clip = audio.length > 0 ? { bytes: voice.bytes, mimeType: voice.mimeType } : undefined;
   const durationSeconds = audio.length > 0 ? await voiceSeconds(env, voice.bytes) : undefined;
   const results = [];
@@ -513,7 +513,7 @@ export async function checkAdapterLive(env, { capabilities, text = DEFAULT_TEXT,
       const status = isVoicePackError(error) && Number.isInteger(error.details?.status) ? error.details.status : undefined;
       results.push({
         capability, status: 'failed', calls: 1, model: null, elapsedMs: Date.now() - started,
-        issues: [issue('error', 'call_failed', `调用 ${capability} 抛了错：${reportable(error?.message ?? error)}`, {
+        issues: [issue('error', 'call_failed', `Calling ${capability} threw an error: ${reportable(error?.message ?? error)}`, {
           capability, ...(typeof error?.code === 'string' ? { errorCode: error.code } : {}), transient: isServiceError(error), ...(status === undefined ? {} : { status }), message: reportable(error?.message ?? error),
         })],
       });

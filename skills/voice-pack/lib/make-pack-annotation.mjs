@@ -14,12 +14,13 @@
 //   没标上的段、名字缺了或是空白的，没有 modelTag（标签用段名）。素材给了提示标注的段不调模型，也就没有名字（不为一个名字另调一次）。
 //
 //   needsAnnotation(item)                                   这一段要不要调模型：不是上一版带来的、素材没给提示标注。规划（lib/make-pack-plan.mjs）数的也是它
-//   annotateReferences(env, items, referenceIds, { concurrency, maxErrorRate, wait, nameLanguage })   给参考集里要标的段标提示标注（nameLanguage 是名字用的语言，见上；情绪词表、快慢标记也用它，素材给了标签的段一样），返回这一步的情况（steps.annotation）：
+//   annotateReferences(env, items, referenceIds, { concurrency, maxErrorRate, wait, nameLanguage, loudness })   给参考集里要标的段标提示标注（loudness 是调响度的设置，量停顿和快慢先调到目标响度（lib/point-measure.mjs 文件头「先调响度」），null 或不给照原电平；nameLanguage 是名字用的语言，见上；情绪词表、快慢标记也用它，素材给了标签的段一样），返回这一步的情况（steps.annotation）：
 //     { status: 'not_needed', given }                                    参考里没有要标的段（都是素材给了的、上一版带来的）
 //     { status: 'skipped', capability, reason: 'capability_missing', segments, given, notAnnotated }   环境没有 audio-text-to-text：要标的 segments 段都只存逐字稿
-//     { status: 'done', capability, calls, chunks, measured, notMeasured, given, annotated, withoutCues, voided, blocked, unusable, unmatched, notHeard, retried, droppedCues, models, notAnnotated }
+//     { status: 'done', capability, calls, chunks, measured, notMeasured, given, annotated, withoutCues, openingMismatched, voided, blocked, unusable, unmatched, notHeard, retried, droppedCues, models, notAnnotated }
 //   given 是素材给了提示标注的参考段数；calls 是听了几次（一段一次，重试在 retried 里）；chunks 是量的时候转写了几块（重试不算）；
 //   measured、notMeasured 是听成了的段里，量上了几段、量失败只用听的结果的有几段（原因在每段的 annotation.measureReason）；annotated 是标上了的；withoutCues 是模型说说法没有变化的（量出来也没有要写的）；
+//   openingMismatched 是标上了（或说法没有变化）、但模型写的开头对不上逐字稿的段数：不作废，提示只按 before 在逐字稿里找到的地方放（lib/segment-annotation.mjs 文件头「收音校验」），每段的 annotation.openingErrorRate 是错误率；
 //   voided 是作废的总段数，blocked（被服务商拦下）、unusable（回答没正常结束或是空的）、unmatched（提示一条都对不上原文）是其中的几种；
 //   notHeard 是服务暂时出错、试满次数也没成的段数；retried 是听的时候为暂时出错多问了几次（听的这一步一共问了 calls + retried 次）；
 //   droppedCues 是标上了的段里，找不到 before、丢掉的提示一共几条；models 是模型报的模型名；
@@ -28,8 +29,8 @@
 // 读条目的：id、previous、annotatedText（素材给的、上一版的）、givenTag（素材给的标签：给了就不要名字）、audio、text；
 // 写条目的：annotatedText（标上了的）、modelTag（模型给的名字，见上）、annotation（这一段的结果，进报告；名字不在里面，在报告的 tag、tagSource）：
 //   { status: 'given' }                                      素材给的
-//   { status: 'annotated', cues, droppedCues?, measured, measureReason?, measureErrorRate? }   标上了（cues 是听出来写进去的提示条数）
-//   { status: 'no_cues', measured, measureReason?, measureErrorRate? }       说法没有变化，量出来也没有要写的，没有提示
+//   { status: 'annotated', cues, droppedCues?, openingErrorRate?, measured, measureReason?, measureErrorRate? }   标上了（cues 是听出来写进去的提示条数；openingErrorRate 只在开头对不上时有）
+//   { status: 'no_cues', openingErrorRate?, measured, measureReason?, measureErrorRate? }       说法没有变化，量出来也没有要写的，没有提示
 //   { status: 'voided', reason, errorRate?, problem?, stopReason?, droppedCues?, model?, measured: false }   作废（model 只在回答没正常结束时带）
 //   { status: 'not_heard', error, attempts, measured: false }               没听成
 //   measured 是这一段写没写量出来的停顿和快慢；measureReason 是量失败的原因（lib/point-measure.mjs 的文件头）；measureErrorRate 只在原因是 not_aligned 又对过字时有（可用的块太少没对字，切不出一条路的也没有），是对字的错误率。
@@ -53,7 +54,7 @@ import { isLanguageTag } from './language-tag.mjs';
 export const needsAnnotation = (item) => item.previous === undefined && item.annotatedText === undefined;
 
 /** 给参考集里要标的段标提示标注。规矩、返回、写条目的字段见文件头。 */
-export async function annotateReferences(env, items, referenceIds, { concurrency, maxErrorRate, wait, nameLanguage }) {
+export async function annotateReferences(env, items, referenceIds, { concurrency, maxErrorRate, wait, nameLanguage, loudness }) {
   const byId = new Map(items.map((item) => [item.id, item]));
   const references = referenceIds.map((id) => byId.get(id)).filter((item) => item.previous === undefined);
   for (const item of references) if (!needsAnnotation(item)) item.annotation = { status: 'given' };
@@ -66,13 +67,13 @@ export async function annotateReferences(env, items, referenceIds, { concurrency
   }
   // 块并发转写；段也是并发的，这一段分到的是总数除以同时在标的段数，同时调转写的不超过 POINT_CONCURRENCY
   const chunkConcurrency = Math.max(1, Math.floor(POINT_CONCURRENCY / Math.min(concurrency, todo.length)));
-  const step = { status: 'done', capability: 'audio-text-to-text', calls: 0, chunks: 0, measured: 0, notMeasured: 0, given, annotated: 0, withoutCues: 0, voided: 0, blocked: 0, unusable: 0, unmatched: 0, notHeard: 0, retried: 0, droppedCues: 0, models: [] };
+  const step = { status: 'done', capability: 'audio-text-to-text', calls: 0, chunks: 0, measured: 0, notMeasured: 0, given, annotated: 0, withoutCues: 0, openingMismatched: 0, voided: 0, blocked: 0, unusable: 0, unmatched: 0, notHeard: 0, retried: 0, droppedCues: 0, models: [] };
   await pool(todo, concurrency, async (item) => {
     // 素材没给标签的段，同一次里顺带要一个名字（不另调）
     const naming = item.givenTag === undefined ? { nameLanguage } : {};
     // 量这段（和听同时，lib/segment-annotation.mjs）：语言知道才带（素材给的，或者转写报的），同 lib/make-pack-transcribe.mjs；
     const language = item.givenLanguage ?? (isLanguageTag(item.transcribedLanguage) ? item.transcribedLanguage : undefined);
-    const measure = () => measurePoints(env, { audio: item.audio, text: item.text, language }, { concurrency: chunkConcurrency, wait });
+    const measure = () => measurePoints(env, { audio: item.audio, text: item.text, language }, { concurrency: chunkConcurrency, wait, loudness });
     const result = await annotateSegment(env, { audio: item.audio, text: item.text }, { maxErrorRate, attempts: MAX_ATTEMPTS, wait, onRetry: () => { step.retried += 1; }, measure, ...naming });
     const { model, annotatedText, name, chunks, ...rest } = result;
     step.calls += 1;
@@ -80,6 +81,7 @@ export async function annotateReferences(env, items, referenceIds, { concurrency
     if (result.status === 'annotated' || result.status === 'no_cues') {
       if (result.measured) step.measured += 1;
       else step.notMeasured += 1;
+      if (result.openingErrorRate !== undefined) step.openingMismatched += 1;
     }
     if (name !== undefined) item.modelTag = name;
     if (model !== undefined && !step.models.includes(model)) step.models.push(model);

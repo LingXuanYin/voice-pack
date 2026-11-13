@@ -26,8 +26,8 @@ import { inspectTarget, checkSettings, CHECK_OPTIONS, CHECK_USAGE } from '../che
 import { parseOptions } from '../signing.mjs';
 import { formatReport } from '../report.mjs';
 
-export const summary = '检查一个分享文件（.voicepack.zip）或一个部分的目录：清单对得上文件、签名、互相校验、SKILL.md、音频、外部资源';
-export const usage = `check <分享文件或目录> ${CHECK_USAGE} [--json]`;
+export const summary = 'Check a share file (.voicepack.zip) or the directory of one part: the manifest matches the files, signature, mutual verification, SKILL.md, audio, external resources';
+export const usage = `check <share-file-or-dir> ${CHECK_USAGE} [--json]`;
 
 const MAX_NAMED = 10; // 提示里最多点名几个脚本，其余写个数
 
@@ -43,8 +43,8 @@ function scriptsWithoutFeature(files) {
 /** 提示那一行（以换行结尾）；没有这样的脚本就是空串。 */
 function scriptNotice(entries) {
   if (entries.length === 0) return '';
-  const named = entries.slice(0, MAX_NAMED).join('、') + (entries.length > MAX_NAMED ? `……等共 ${entries.length} 个` : '');
-  return `  提示：清单里有 ${entries.length} 个脚本没登记功能（没写 feature），不会被自动运行：${named}。脚本登记在某个功能名下，才会随那个功能运行；要让它们自动生效，在清单里给每个脚本写上 feature\n`;
+  const named = entries.slice(0, MAX_NAMED).join(', ') + (entries.length > MAX_NAMED ? `, ... (${entries.length} in total)` : '');
+  return `  Note: the manifest has ${entries.length} script(s) with no feature registered (no feature written), so they are not run automatically: ${named}. A script runs together with its feature only when it is registered under a feature name; to make them take effect automatically, write a feature for each script in the manifest\n`;
 }
 
 /** 角色部分的目录名不是包 ID 时的一行提示（以换行结尾）；分享文件、别的部分、对得上的，是空串。 */
@@ -54,15 +54,15 @@ function directoryNotice(target, files, cwd) {
   if (bytes === undefined || !fs.statSync(directory).isDirectory()) return '';
   const { manifest } = readManifest(bytes);
   if (manifest === null || manifest.part !== 'role' || path.basename(directory) === manifest.id) return '';
-  return `  提示：目录名 ${path.basename(directory)} 和包 ID ${manifest.id} 不一样。放进环境时目录名就是包 ID，要交出去、传给别人的，把目录改成它。\n`;
+  return `  Note: the directory name ${path.basename(directory)} differs from the pack ID ${manifest.id}. When the pack is put into an environment, the directory name is the pack ID; if you are handing the pack over to someone, rename the directory to it.\n`;
 }
 
 export async function run(args, ctx) {
   const options = parseOptions(args, CHECK_OPTIONS);
-  if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
+  if (options.problem !== undefined) { ctx.stderr(`Usage error: ${options.problem}\nUsage: ${usage}\n`); return 2; }
   const [target, ...extra] = options.positional;
-  if (target === undefined) { ctx.stderr(`用法错误：要指定检查什么\n用法：${usage}\n`); return 2; }
-  if (extra.length > 0) { ctx.stderr(`用法错误：一次只检查一个，多出来的是 ${extra.join(' ')}\n用法：${usage}\n`); return 2; }
+  if (target === undefined) { ctx.stderr(`Usage error: what to check is required\nUsage: ${usage}\n`); return 2; }
+  if (extra.length > 0) { ctx.stderr(`Usage error: check takes one target at a time, extra: ${extra.join(' ')}\nUsage: ${usage}\n`); return 2; }
 
   const { report, files } = await inspectTarget(target, ctx, checkSettings(options));
   ctx.stdout(ctx.json ? `${JSON.stringify(report)}\n` : formatReport(report, target) + scriptNotice(scriptsWithoutFeature(files)) + directoryNotice(target, files, ctx.cwd));

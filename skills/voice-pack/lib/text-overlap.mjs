@@ -107,7 +107,7 @@ function shingles(tokens, size) {
  * @returns {{ candidateTokens: number, sourceTokens: number, rougeL: { lcs: number, precision: number | null, recall: number | null, f1: number | null } | null, copied: { candidate: number, source: number, shared: number, ratio: number | null, sharedSource: number, coverage: number | null } }}
  */
 export function compareTexts(candidate, source, { maxCells = MAX_CELLS } = {}) {
-  if (typeof candidate !== 'string' || typeof source !== 'string') throw new TypeError('要比的两段文字都必须是字符串');
+  if (typeof candidate !== 'string' || typeof source !== 'string') throw new TypeError('both texts to compare must be strings');
   const a = tokenizeText(candidate);
   const b = tokenizeText(source);
 

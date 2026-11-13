@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 台本里几种写法的正则：只写在这里。核心层要认它们（spoken-words.mjs 去掉卡片那一句的台本标记，word-spacing.mjs 看接缝两边的字时隔着标签看），
-// 可核心层只能依赖核心层（protocol/README.md「模块约定」第 6 条），所以正则放在这一层；基础部分的 tools/markup.mjs、lib/line-hints.mjs 从这里引，不另写一份。
+// 台本里几种写法的正则：只写在这里。核心层要认它们（spoken-words.mjs 去掉试听句的台本标记，word-spacing.mjs 看接缝两边的字时隔着标签看），
+// 可核心层只能依赖核心层（protocol/README.md「Module conventions」第 6 条），所以正则放在这一层；基础部分的 tools/markup.mjs、lib/line-hints.mjs 从这里引，不另写一份。
 // 写法是什么、怎么读，正本不在这里，在：
 //   提示、尖括号标签（音素标记、竖线写的标签、成对的标签）   tools/markup.mjs 的文件头「提示」「尖括号标签」（标准用例 tools/cases/markup.json）
 //   舞台说明（括号、星号）和强调（加粗）                      lib/line-hints.mjs 的文件头「舞台提示的写法」

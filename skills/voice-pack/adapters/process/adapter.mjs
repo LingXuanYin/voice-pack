@@ -14,7 +14,7 @@
 //   cwd            程序的当前目录，默认是适配器自己的目录（dir）；相对的写法相对 dir
 //
 // 返回：{ capabilities }。能力名在 DECLARED_CAPABILITIES（只是声明的能力，例如 phoneme-in-text、phoneme-markers、scene-in-request、seed-in-request）里的，值是 true，不会发请求。
-// 这个文件在适配器的主人一侧运行：可以用 Node 专有的东西（node:path），规则见 ../README.md「Node 专有的东西放哪」。
+// 这个文件在适配器的主人一侧运行：可以用 Node 专有的东西（node:path），规则见 ../README.md「Where Node-specific things go」。
 //
 // 抛出的错误：process_option_invalid（选项不对，details.key）；别的 process_* 来自 cli/session.mjs，文件头写着。
 import path from 'node:path';
@@ -27,7 +27,7 @@ export const OPTION_KEYS = Object.freeze(['command', 'capabilities', 'timeout', 
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const DEFAULT_START_TIMEOUT_SECONDS = 300;
 
-const invalid = (key, message) => new VoicePackError('process_option_invalid', `进程适配器的选项 ${key} 不对：${message}`, { details: { key } });
+const invalid = (key, message) => new VoicePackError('process_option_invalid', `Process adapter option ${key} is invalid: ${message}`, { details: { key } });
 
 /** 一行命令 → 参数数组。按空白分开；"…" 和 '…' 里的空白不分开，引号本身不留；没有反斜杠转义（Windows 的路径）。 */
 export function splitCommand(text) {
@@ -51,16 +51,16 @@ export function splitCommand(text) {
       started = true;
     }
   }
-  if (quote !== null) throw invalid('command', `引号没有配对（${quote} 开了没关）`);
+  if (quote !== null) throw invalid('command', `unmatched quote (${quote} opened and never closed)`);
   if (started || current !== '') out.push(current);
   return out;
 }
 
 function commandOf(value) {
-  if (value === undefined) throw invalid('command', '要给：程序怎么起，例如 --command "python my_tts.py"');
+  if (value === undefined) throw invalid('command', 'the command that starts the program is required, for example --command "python my_tts.py"');
   const argv = typeof value === 'string' ? splitCommand(value) : value;
   if (!Array.isArray(argv) || argv.length === 0 || argv.some((part) => typeof part !== 'string') || argv[0] === '') {
-    throw invalid('command', '要是一个字符串，或者一个字符串数组，第一项是程序');
+    throw invalid('command', 'must be a string, or an array of strings whose first item is the program');
   }
   return argv;
 }
@@ -68,23 +68,23 @@ function commandOf(value) {
 function capabilitiesOf(value) {
   if (value === undefined) return undefined;
   const names = (typeof value === 'string' ? value.split(',') : value);
-  if (!Array.isArray(names) || names.some((name) => typeof name !== 'string')) throw invalid('capabilities', '要是逗号隔开的能力名，或者能力名的数组');
+  if (!Array.isArray(names) || names.some((name) => typeof name !== 'string')) throw invalid('capabilities', 'must be comma-separated capability names, or an array of capability names');
   const cleaned = [...new Set(names.map((name) => name.trim()).filter((name) => name !== ''))];
-  if (cleaned.length === 0) throw invalid('capabilities', '给了就要有能力名；要让程序自己说，就别给这个选项');
+  if (cleaned.length === 0) throw invalid('capabilities', 'if given, it must contain capability names; to let the program declare them itself, omit this option');
   return cleaned;
 }
 
 function secondsOf(value, key, fallback) {
   if (value === undefined) return fallback;
   const number = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(number) || number <= 0) throw invalid(key, `要是大于 0 的秒数，收到 ${JSON.stringify(value)}`);
+  if (!Number.isFinite(number) || number <= 0) throw invalid(key, `must be a number of seconds greater than 0, got ${JSON.stringify(value)}`);
   return number;
 }
 
 export default async function createProcessAdapter({ dir, options }) {
   const given = options ?? {};
   for (const key of Object.keys(given)) {
-    if (!OPTION_KEYS.includes(key)) throw invalid(key, `不认识这个选项（认：${OPTION_KEYS.join('、')}）`);
+    if (!OPTION_KEYS.includes(key)) throw invalid(key, `unknown option (known: ${OPTION_KEYS.join(', ')})`);
   }
   const argv = commandOf(given.command);
   const declared = capabilitiesOf(given.capabilities);

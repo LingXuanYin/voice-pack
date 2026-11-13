@@ -1,57 +1,57 @@
-# 协议核心
+# Protocol core
 
-每个部分（基础部分、角色部分）都带着的同一份内容：格式说明、公钥和官方地址、读写和校验音色包的程序（核心层）、做新包的步骤和空白模板。只有角色部分的包里只有这一层，所以这里的东西只依赖本目录里的文件。
+The same content that every part (base part, role part) carries: the format description, the public key and the official address, the programs that read, write and verify voice packs (the core layer), and the steps and blank template for making a new pack. A pack that has only a role part contains only this layer, so what is here depends only on files in this directory.
 
-## 目录
+## Directory layout
 
-| 路径 | 内容 |
+| Path | Contents |
 |---|---|
-| `lib/` | 核心层程序，`.mjs`，分组见下面「`lib/` 里的程序」。每个文件的文件头写明它做什么、抛哪些 `code` |
-| `cli.mjs`、`cli/` | 核心层的命令行，见「命令行」 |
-| `FORMAT.md` | 格式说明（中文，只有这一份）：第三方照着它就能读写音色包。目录、路径、哈希、清单、SKILL.md、包 ID、音频、分享文件、解包上限、检查、补全取哪个版本都在里面 |
-| `SIGNATURES.md` | 官方签名：签名文件格式（minisign 旧模式）、信任名单、库的入口必须选的验签策略（`signature_policy_missing`）和各调用方怎么传、命令行的 `--allow-unsigned`、互相校验的规则、`keygen`、`sign`、`verify` 命令 |
-| `RELEASES.md` | 官方发布：官方地址、目录里的四种文件、版本索引的格式、怎么取一个版本、app 怎么对应到一个版本、不可变 |
-| `schema/` | 清单的 JSON Schema |
-| `trust.json` | 信任名单：官方公钥（可以有多把）。官方地址（`official_url`）也放这里 |
-| `manifest-fields.json` | 协议核心自己的版本号（语义化版本号）。发布时 `seal --part protocol --fields` 读它。基础部分根上的 `manifest-fields.json` 同理，另外登记运行时 |
-| `new-pack/` | 做新包：`README.md`（抽象规格：流程、谁能看什么、每个字段怎么写、查重比什么，没有完整的示例角色）、`brief.md`（给净室里的做包 agent 的任务说明）、`template/`（空白模板）。基础部分的 `clean-room` 命令把它们和使用者说的属性装进一个目录，交给一个看不到来源包的新会话 |
+| `lib/` | The core layer programs, `.mjs`, grouped as in "Programs in `lib/`" below. The header of each file states what it does and which `code`s it throws |
+| `cli.mjs`, `cli/` | The command line of the core layer, see "Command line" |
+| `FORMAT.md` | The format description (the only copy): a third party can read and write voice packs from it alone. Directory, paths, hashes, manifest, SKILL.md, pack ID, audio, share file, unpack limits, check, and which version complete takes are all in it |
+| `SIGNATURES.md` | The official signature: the signature file format (minisign legacy mode), the trust list, the signature verification policy that the library entry points must choose (`signature_policy_missing`) and how each caller passes it, `--allow-unsigned` on the command line, the rules of mutual verification, the `keygen`, `sign`, `verify` commands |
+| `RELEASES.md` | Official releases: the official address, the four kinds of files in the directory, the format of the version index, how to fetch a version, how an app maps to a version, immutability |
+| `schema/` | The JSON Schema of the manifest |
+| `trust.json` | The trust list: the official public keys (there may be several). The official address (`official_url`) is also here |
+| `manifest-fields.json` | The protocol core's own version number (semantic version). `seal --part protocol --fields` reads it at release. The `manifest-fields.json` at the root of the base part works the same way, and also registers the runtimes |
+| `new-pack/` | Making a new pack: `README.md` (the abstract specification: the flow, who may see what, how to write each field, what the duplicate check compares; there is no complete example role), `brief.md` (the task description for the pack-making agent in the clean room), `template/` (the blank template). The `clean-room` command of the base part puts them, together with the attributes the user stated, into one directory and hands it to a new session that cannot see the source pack |
 
-### `lib/` 里的程序
+### Programs in `lib/`
 
-| 用途 | 文件 |
+| Purpose | Files |
 |---|---|
-| 共用的底子 | `errors.mjs`（统一的错误）、`env.mjs`（从运行环境取东西）、`bytes.mjs`（十六进制、Base64）、`hash.mjs`（SHA-256）、`version.mjs`（协议版本、语义化版本）、`names.mjs`（协议主版本对应的三个名字：基础部分的目录名、官方发布的 zip 文件名的前缀、分享文件的类型标识；3.x 和 2.x 同名，见 `FORMAT.md` 第 13、14 节）、`limits.mjs`（解包上限）、`paths.mjs`（路径的写法和检查）、`fileset.mjs`（文件集：`Map<路径, Uint8Array>`） |
-| 打码 | `scrub.mjs`（报出去之前的打码：原话里的令牌、刷新令牌、API key、密码、带签名的地址去掉；报错、模型的回答、程序和脚本的标准错误都从这里引；错误进另一个错误的 cause 之前用 `scrubbedCause`） |
-| zip | `zip.mjs`（入口，读和写）、`zip-format.mjs`、`zip-structure.mjs`、`zip-read.mjs`、`zip-write.mjs` |
-| 清单 | `schema.mjs`（JSON Schema 子集的校验器）、`manifest.mjs`（读、写、检查清单）、`seal.mjs`（给一个部分生成清单） |
-| 检查 | `check.mjs`（检查一个部分：`checkPart` 是信任边界上的入口，要选验签的策略；`selfCheckPart` 是库内部自检）、`mutual.mjs`（角色部分和基础部分互相校验）、`audio.mjs`（按内容判断音频格式）、`skill-md.mjs`（SKILL.md 的读和检查，生成角色部分的骨架）、`guidance-sections.mjs`（配音指引的五个小节；`guidanceForModel` 决定交给模型的那段，见 `FORMAT.md` 第 5 节） |
-| 做包和分享文件 | `pack.mjs`（包 ID，做一个角色部分）、`share.mjs`（打成、打开、检查分享文件：`checkShareFile`、`inspectShareFile` 同样要选验签的策略） |
-| 预览卡片 | `preview-card.mjs`（`buildPreviewCard`：分享文件里那张自包含的 `index.html`，打包时生成；页面上有什么、怎么保证不联网不跑脚本，只在它的文件头写一份）、`preview-audio.mjs`（卡片里内嵌的试听：WAV 和 MP3 按帧截短、不重新编码，上限和理由在文件头）、`voice-orb.mjs`（卡片的配图，由包 ID 画）、`spoken-words.mjs`（`spokenWords`：一句台词去掉台本标记以后念出来的字，卡片上卡片试听那一句显示它；认哪几种标记、怎么收拾标点，只在它的文件头写） |
-| 台本的写法 | `script-markup.mjs`（提示、尖括号标签、舞台说明和强调的正则，只写在这里；写法的说明在基础部分的 `tools/markup.mjs`、`lib/line-hints.mjs` 的文件头，它们从这里引）、`word-spacing.mjs`（两截文字接起来中间放不放空格，去掉一处提示以后留不留空格；基础部分做包、配音也用它） |
-| 签名 | `signature.mjs`（Ed25519 签名和验签）、`official.mjs`（把信任名单做成检查用的验签钩子：基础部分和协议核心只认官方签名） |
-| 官方发布 | `releases.mjs`（官方地址、官方版本的文件名、版本索引的读写、读已发布的文件，布局见 `RELEASES.md`） |
-| 补全 | `base-choice.mjs`（纯判断：环境里已有的一份基础部分能不能用，官方版本索引里挑哪一个版本）、`complete.mjs`（补全的流程：先用环境里可用的，没有才读版本索引、挑版本、取官方的基础部分，放进包里以后再检查整个包；规则和理由见 `FORMAT.md`「补全」。读索引、取 zip、核对验签用 `release-fetch.mjs`，不在这里重写） |
-| 其他 | `audio-clip.mjs`（音频片段：字节加 MIME 类型） |
+| Common foundation | `errors.mjs` (unified errors), `env.mjs` (getting things from the runtime environment), `bytes.mjs` (hex, Base64), `hash.mjs` (SHA-256), `version.mjs` (protocol version, semantic version), `names.mjs` (the three names that correspond to the protocol major version: the directory name of the base part, the prefix of the official release zip file name, the type identifier of the share file; 3.x and 2.x use the same names, see `FORMAT.md` sections 13 and 14), `limits.mjs` (unpack limits), `paths.mjs` (path form and checks), `fileset.mjs` (file set: `Map<path, Uint8Array>`) |
+| Masking | `scrub.mjs` (masking before anything is reported: tokens, refresh tokens, API keys, passwords and signed URLs in the original text are removed; errors, model answers, and the standard error of programs and scripts all go through it; use `scrubbedCause` before an error goes into the cause of another error) |
+| zip | `zip.mjs` (entry point, read and write), `zip-format.mjs`, `zip-structure.mjs`, `zip-read.mjs`, `zip-write.mjs` |
+| Manifest | `schema.mjs` (validator for a subset of JSON Schema), `manifest.mjs` (read, write, check the manifest), `seal.mjs` (generate the manifest for a part) |
+| Check | `check.mjs` (check a part: `checkPart` is the entry point at the trust boundary and must choose a signature verification policy; `selfCheckPart` is the library's internal self-check), `mutual.mjs` (mutual verification of the role part and the base part), `audio.mjs` (decide the audio format by content), `skill-md.mjs` (reading and checking SKILL.md, generating the skeleton of the role part), `guidance-sections.mjs` (the five subsections of the dubbing guidance; `guidanceForModel` decides the portion handed to the model, see `FORMAT.md` section 5) |
+| Making packs and share files | `pack.mjs` (pack ID, making a role part), `share.mjs` (build, open, check a share file: `checkShareFile` and `inspectShareFile` likewise must choose a signature verification policy) |
+| Preview card | `preview-card.mjs` (`buildPreviewCard`: the self-contained `index.html` in the share file, generated at packing time; what is on the page and how it is guaranteed not to go online or run scripts is written in one place only, its file header), `preview-audio.mjs` (the audition embedded in the card: WAV and MP3 are shortened by frames without re-encoding; the limit and the reason are in the file header), `voice-orb.mjs` (the card's picture, drawn from the pack ID), `spoken-words.mjs` (`spokenWords`: the words that are actually spoken from a line after the script markup is removed, which the card shows for the audition line; which kinds of markup it recognizes and how it tidies the punctuation is written only in its file header) |
+| Script notation | `script-markup.mjs` (the regular expressions for cues, angle-bracket tags, stage directions and emphasis, written only here; the description of the notation is in the file headers of `tools/markup.mjs` and `lib/line-hints.mjs` in the base part, and they quote from here), `word-spacing.mjs` (whether to put a space when two pieces of text are joined, and whether to leave a space after a cue is removed; making packs and dubbing in the base part use it too) |
+| Signature | `signature.mjs` (Ed25519 signing and verifying), `official.mjs` (turns the trust list into the signature verification hook used by checks: the base part and the protocol core accept only the official signature) |
+| Official releases | `releases.mjs` (the official address, the file names of official versions, reading and writing the version index, reading published files; layout in `RELEASES.md`) |
+| Complete | `base-choice.mjs` (pure decisions: whether a base part already in the environment can be used, and which version to pick from the official version index), `complete.mjs` (the flow of complete: first use one in the environment that is usable; only if there is none, read the version index, pick a version, fetch the official base part, put it into the pack, then check the whole pack; the rules and reasons are in `FORMAT.md`「Complete」. Reading the index, fetching the zip, and verifying the signature use `release-fetch.mjs` and are not rewritten here) |
+| Other | `audio-clip.mjs` (audio clip: bytes plus a MIME type) |
 
-## 模块约定
+## Module conventions
 
-库的程序（`protocol/lib/`、基础部分根上的 `lib/` 和 `tools/`、环境适配层 `adapters/` 里的 `.mjs`）都照这几条写。
+The library's programs (`protocol/lib/`, `lib/` and `tools/` at the root of the base part, and the `.mjs` files in the environment adapter layer `adapters/`) are all written by these rules.
 
-1. **文件格式**：ESM 的 `.mjs`，文件第一行写 `// SPDX-License-Identifier: Apache-2.0`。
-2. **不依赖第三方库**：`import` 只能指向相对路径，不装包。
-3. **只用平台自带的 API，浏览器和 Node 都能跑**。
-   - 可以用：`crypto.subtle`（哈希、Ed25519）、`TextEncoder`、`TextDecoder`、`CompressionStream`、`DecompressionStream`（只用 `deflate-raw`，浏览器没有 `brotli`）、`URL`、`Blob`、`Intl`、`btoa`、`atob`。
-   - 不能用 Node 专有的：`node:` 开头的模块、`Buffer`、`process`、`__dirname`、`require`。
-   - 不能用两边不齐的新方法。Node 24.14 没有 `Uint8Array.prototype.toHex`、`toBase64` 和 `Uint8Array.fromHex`、`fromBase64`（2026-10-14 实测），十六进制和 Base64 用 `lib/bytes.mjs`。
-4. **Node 专有的东西只出现在命令行层**：名为 `cli.mjs` 的文件和名为 `cli/` 的目录；还有适配器的工厂文件 `adapters/<名字>/adapter.mjs`（它在适配器的主人一侧运行，由命令行层的统一入口 `cli/adapters.mjs` 加载，app 和浏览器从不加载它；规则见 `adapters/README.md`「Node 专有的东西放哪」）。库的程序不碰文件系统（输入输出是 `Uint8Array`、字符串和普通对象，文件由命令行层读写），不直接联网，不直接起进程，不直接调模型：这几样都向注入的运行环境要，见下一节。
-5. **不 `import` 基础部分以外的文件，也不复制 AGPL-3.0-only 的代码**：基础部分是 Apache-2.0。可以照着行为重新写，不能复制。
-6. **依赖方向是单向的**：核心层（`protocol/lib/`）只依赖核心层；`tools/` 只用核心层；`lib/` 可以用核心层和 `tools/`，也可以读 `vocab/` 里的 JSON 词表（数据，不是程序）；`adapters/<名字>/` 只用核心层和自己的目录。
+1. **File format**: ESM `.mjs`, with `// SPDX-License-Identifier: Apache-2.0` on the first line of the file.
+2. **No third-party libraries**: `import` may only point to relative paths; do not install packages.
+3. **Use only the platform's built-in APIs; runs in browsers and Node**.
+   - Allowed: `crypto.subtle` (hash, Ed25519), `TextEncoder`, `TextDecoder`, `CompressionStream`, `DecompressionStream` (only `deflate-raw`; browsers have no `brotli`), `URL`, `Blob`, `Intl`, `btoa`, `atob`.
+   - Not allowed, because Node-specific: modules starting with `node:`, `Buffer`, `process`, `__dirname`, `require`.
+   - Do not use new methods that are not present on both sides. Node 24.14 has no `Uint8Array.prototype.toHex`, `toBase64`, `Uint8Array.fromHex`, `fromBase64` (measured on 2026-10-14); use `lib/bytes.mjs` for hex and Base64.
+4. **Node-specific things appear only in the command-line layer**: files named `cli.mjs` and the directory named `cli/`; also the adapter factory file `adapters/<name>/adapter.mjs` (it runs on the adapter owner's side and is loaded by the unified entry `cli/adapters.mjs` of the command-line layer; apps and browsers never load it; for the rules see `adapters/README.md`「Where Node-specific things go」). The library's programs do not touch the file system (input and output are `Uint8Array`, strings and plain objects, and files are read and written by the command-line layer), do not go online directly, do not start processes directly, and do not call models directly: all of these are requested from the injected runtime environment, see the next section.
+5. **Do not `import` files outside the base part and do not copy AGPL-3.0-only code**: the base part is Apache-2.0. You may rewrite from the behavior, but not copy.
+6. **Dependencies run one way**: the core layer (`protocol/lib/`) depends only on the core layer; `tools/` uses only the core layer; `lib/` may use the core layer and `tools/`, and may also read the JSON vocabularies in `vocab/` (data, not programs); `adapters/<name>/` uses only the core layer and its own directory.
 
-这几条只看代码：把每个 `.mjs` 切成记号再查，注释和字符串里的字眼不算；`protocol/new-pack/` 里的模板不受约束。
+These rules are checked on code only: each `.mjs` is cut into tokens and then checked, so words in comments and strings do not count; the templates in `protocol/new-pack/` are not bound by them.
 
-## 运行环境
+## Runtime environment
 
-库不绑定模型。要用模型、联网、起命令行工具，都向调用方注入的运行环境要。环境是一个对象，有三个容器：
+The library does not bind to a model. To use a model, go online, or start a command-line tool, it asks the runtime environment injected by the caller. The environment is an object with three containers:
 
 ```js
 const env = {
@@ -61,67 +61,67 @@ const env = {
 };
 ```
 
-| 容器 | 键 | 值 | 取用 | 缺了 |
+| Container | Key | Value | Access | If missing |
 |---|---|---|---|---|
-| `capabilities` | 能力词表（`vocab/capabilities.json`）里的名字 | 这项能力的实现 | `requireCapability(env, 名字)` | 抛 `capability_missing`，`details.capability` 是缺的那一项 |
-| `fetch` | 无 | 形同标准 `fetch(input, init)` 的函数；补全、核对外部资源等所有网络读取都走它 | `requireFetch(env)` | 抛 `fetch_missing` |
-| `runtimes` | 命令行工具名，例如 `ffmpeg` | 运行这个工具的实现 | `requireRuntime(env, 名字)` | 抛 `runtime_missing`，`details.runtime` 是缺的那一项 |
+| `capabilities` | A name in the capability vocabulary (`vocab/capabilities.json`) | The implementation of this capability | `requireCapability(env, name)` | Throws `capability_missing`; `details.capability` is the missing one |
+| `fetch` | none | A function like the standard `fetch(input, init)`; all network reads, such as complete and verifying external resources, go through it | `requireFetch(env)` | Throws `fetch_missing` |
+| `runtimes` | The name of a command-line tool, for example `ffmpeg` | The implementation that runs this tool | `requireRuntime(env, name)` | Throws `runtime_missing`; `details.runtime` is the missing one |
 
-三个取用函数都在 `lib/env.mjs`。
+All three access functions are in `lib/env.mjs`.
 
-- **用到才取**：功能在需要某项能力的那一刻才取它，不在启动时一次取齐。所以环境缺一项，只有用到它的功能报错，其他功能照常。
-- **环境可以什么都不提供**：`capabilities` 给 `{}` 就是一个合法的环境。环境把某项设成 `undefined`、`null`、`false`，也算没有这项。环境本身不是对象、没有 `capabilities` 容器，抛 `environment_invalid`。
-- **调用签名只在一处定义**。能力和运行时的实现是函数，库一律 `await` 它的返回值，所以同步、异步实现都行。所需能力的参数和返回值写在 `vocab/capability-signatures.md`（第一个用到一项新能力的功能，把它的签名加到那里）；用到它的模块在文件头 JSDoc 里加一行 `@capability <能力名>` 指过去，不重抄。运行时的签名写在第一个调用它的模块的文件头（`@runtime <名字>`）。找某项能力用在哪：`grep -rn "@capability text-to-speech" .`。参数名用能力词表第三层的 `ref_audio`、`ref_text`；音频一律用字节加 MIME 类型（`lib/audio-clip.mjs`），不收 URL。`fetch` 的用法（超时、重试、怎么读响应）由用到它的模块写在自己的文件头。
-- **适配器**（`adapters/<名字>/`，所有适配器合起来叫环境适配层）负责按这个形状组装环境：把能力词表里的名字对到这个环境里能用的具体模型。模型名能出现在哪，见基础部分的 `README.md`「规则」。适配器的约定（工厂怎么写、返回什么、出错怎么报）只写在 `adapters/README.md`。
+- **Fetch only when used**: a feature takes a capability only at the moment it needs it, not all at once at startup. So when the environment lacks one, only the feature that uses it reports an error, and other features work as usual.
+- **The environment may provide nothing**: giving `{}` for `capabilities` is a legal environment. If the environment sets an item to `undefined`, `null`, or `false`, that also counts as not having it. If the environment itself is not an object or has no `capabilities` container, it throws `environment_invalid`.
+- **Call signatures are defined in one place**. The implementations of capabilities and runtimes are functions, and the library always `await`s their return values, so both synchronous and asynchronous implementations work. The parameters and return values of the required capabilities are written in `vocab/capability-signatures.md` (the first feature that uses a new capability adds its signature there); a module that uses it adds a line `@capability <capability name>` in the header JSDoc pointing there, and does not copy it again. The runtime signature is written in the header of the first module that calls it (`@runtime <name>`). To find where a capability is used: `grep -rn "@capability text-to-speech" .`. Parameter names use `ref_audio` and `ref_text` from the third level of the capability vocabulary; audio is always bytes plus a MIME type (`lib/audio-clip.mjs`), and URLs are not accepted. How `fetch` is used (timeout, retry, how to read the response) is written by the module that uses it in its own file header.
+- **Adapter** (`adapters/<name>/`; all adapters together are called the environment adapter layer) assembles the environment in this shape: it maps the names in the capability vocabulary to concrete models usable in this environment. Where a model name may appear: see `README.md`「Rules」 of the base part. The adapter contract (how to write the factory, what it returns, how to report errors) is written only in `adapters/README.md`.
 
-## 错误
+## Errors
 
-库（`lib/` 里的代码）只抛两类错误，按出错的是谁来分：
+The library (the code in `lib/`) throws only two kinds of error, divided by who made the mistake:
 
-- **数据的错**：来自用户输入、命令行参数、文件、网络、能力返回的东西不对。抛 `VoicePackError`（`lib/errors.mjs`），带字符串形式的 `code`；调用方按 `code` 区分，不按 `message`。
-- **程序员的错**：调用方的代码用错了接口：参数的类型不对（要 `Uint8Array` 给了字符串），取值不合法（上限给了 0），前提没满足（给角色部分用的函数传了基础部分的清单）。抛 `TypeError`，`message` 点名是哪个参数、收到了什么。这是调用方代码的 bug，要改代码，不是报给用户的：命令行把它报成内部错误（`internal_error`）。取值不合法也用 `TypeError`，不用 `RangeError`、`Error`；`lib/` 里没有第三类。
+- **Mistakes in data**: something from user input, command-line arguments, files, the network, or a capability's return is wrong. Throw `VoicePackError` (`lib/errors.mjs`) with a string `code`; callers tell errors apart by `code`, not by `message`.
+- **Mistakes by the programmer**: the caller's code used the interface wrongly: a parameter has the wrong type (a string was given where a `Uint8Array` is required), a value is not legal (a limit of 0), a precondition is not met (a manifest of the base part was passed to a function meant for the role part). Throw `TypeError`, with a `message` that names the parameter and what was received. This is a bug in the caller's code that has to be fixed in the code and is not reported to the user: the command line reports it as an internal error (`internal_error`). An illegal value also uses `TypeError`, not `RangeError` or `Error`; there is no third kind in `lib/`.
 
-分不清是哪一类时：换一份别人给的数据，同一个调用会不会也出这个错？会，就是数据的错。外来的数据永远不该让库抛 `TypeError`：入口先查，把问题报成 `VoicePackError`，或者放进报告（`checkPart`、`inspectShareFile` 这类入口不抛错，问题都在报告里）。例：做包和 `seal` 读的描述是作者给的文件，字段的类型不对是 `manifest_invalid`，不是 `TypeError`。命令行自己的用法错误（未知命令、缺参数）是 `cli/runner.mjs` 的 `UsageError`，退出码 2，不是库的错误。
+When you cannot tell which kind it is: if you swapped in other data from someone else, would the same call also hit this error? If yes, it is a data error. Foreign data must never make the library throw `TypeError`: the entry point checks first and reports the problem as a `VoicePackError`, or puts it in a report (entry points such as `checkPart` and `inspectShareFile` do not throw, and the problems are all in the report). Example: the description read by making a pack and `seal` is a file given by the author, and a wrong field type is `manifest_invalid`, not `TypeError`. The command line's own usage errors (unknown command, missing argument) are `UsageError` of `cli/runner.mjs`, exit code 2, and are not library errors.
 
-`VoicePackError` 的字段：
-- `code`：小写字母、数字、下划线，例如 `capability_missing`、`member_too_large`。
-- `message`：给人看的说明，点名出了什么问题：缺的是哪项能力，哪个文件，哪个哈希对不上。
-- `details`：机器可读的上下文，用 JSON 能表示的值，例如 `{ capability: 'speaker-verification' }`。
-- `cause`：底层的原始错误。
-- 判断用 `isVoicePackError(错误, 'code')`，不用 `instanceof`：完整包里协议核心有两份副本，同一个进程可能把两份都加载进来，它们各有自己的类。
+The fields of `VoicePackError`:
+- `code`: lowercase letters, digits, underscores, for example `capability_missing`, `member_too_large`.
+- `message`: a description for people that names what went wrong: which capability is missing, which file, which hash does not match.
+- `details`: machine-readable context, values that JSON can represent, for example `{ capability: 'speaker-verification' }`.
+- `cause`: the underlying original error.
+- To test, use `isVoicePackError(error, 'code')`, not `instanceof`: in a full pack the protocol core has two copies, the same process may load both, and each has its own class.
 
-**code 不集中写成枚举**：谁抛谁定义，在抛出的地方用注释写明含义和 `details` 里放什么。新加之前先 `grep -rn "'<code>'" .` 确认没人用过。
+**Codes are not gathered into one enum**: whoever throws it defines it, and states the meaning and what goes in `details` in a comment at the place where it is thrown. Before adding one, run `grep -rn "'<code>'" .` to confirm nobody has used it.
 
-这一层已有的：`capability_missing`、`runtime_missing`、`fetch_missing`、`environment_invalid`（`lib/env.mjs`）；`invalid_hex`、`invalid_base64`（`lib/bytes.mjs`）；`command_load_failed`（`cli/runner.mjs`）；签名和验签的一组（`ed25519_unavailable`、`trust_list_empty`、`signature_invalid` 等，`lib/signature.mjs`，列表在 `SIGNATURES.md`）。
+The ones that already exist at this layer: `capability_missing`, `runtime_missing`, `fetch_missing`, `environment_invalid` (`lib/env.mjs`); `invalid_hex`, `invalid_base64` (`lib/bytes.mjs`); `command_load_failed` (`cli/runner.mjs`); the group for signing and verifying (`ed25519_unavailable`, `trust_list_empty`, `signature_invalid`, etc., `lib/signature.mjs`; the list is in `SIGNATURES.md`).
 
-格式和检查的 `code` 在这几处：检查报告里的问题（`file_modified`、`audio_disguised`、`external_unverifiable` 等）和入口没选验签策略抛的 `signature_policy_missing`、只选了 `allowUnsigned` 时的 `signature_unverifiable` 在 `lib/check.mjs` 的文件头；互相校验的（`protocol_incompatible`、`base_too_old`、`capability_unknown`、`capability_vocabulary_invalid`）在 `lib/mutual.mjs`；基础部分和协议核心的官方签名（`signature_missing`，以及验签抛的各种）在 `lib/official.mjs`；清单的（`manifest_invalid`、`protocol_unsupported` 等）在 `lib/manifest.mjs`；路径的（`path_unsafe`、`path_conflict`）在 `lib/paths.mjs`；zip 的（`zip_malformed`、`symlink_not_allowed`、`too_many_members` 等）在 `lib/zip-structure.mjs`、`zip-read.mjs`、`limits.mjs`；分享文件的（`share_not_voicepack`、`share_layout_invalid`）在 `lib/share.mjs`；做包的（`pack_invalid`、`crypto_unavailable`、`random_invalid`）在 `lib/pack.mjs`；官方发布的（`official_url_invalid`、`index_invalid`、`release_conflict`、`published_unreadable` 等）在 `lib/releases.mjs`；补全的（`base_version_unavailable`、`completed_pack_invalid`、`in_pack_base_unusable`、`complete_not_role_part`）在 `lib/complete.mjs`，补全读官方版本时抛的别的 `code`（`official_unpublished`、`release_invalid` 等）原样来自 `lib/release-fetch.mjs`，补全只给它们加上 `details.stage`；命令行读写磁盘的（`file_exists`、`file_unwritable`、`file_unreadable`）在 `cli/disk.mjs`；`seal` 读描述文件的（`fields_invalid`）在 `cli/commands/seal.mjs`。
+The `code`s for format and checks are in these places: the problems in the check report (`file_modified`, `audio_disguised`, `external_unverifiable`, etc.), the `signature_policy_missing` thrown when an entry point has not chosen a signature verification policy, and the `signature_unverifiable` when only `allowUnsigned` is chosen, are in the file header of `lib/check.mjs`; those of mutual verification (`protocol_incompatible`, `base_too_old`, `capability_unknown`, `capability_vocabulary_invalid`) are in `lib/mutual.mjs`; the official signature of the base part and the protocol core (`signature_missing`, and the various ones thrown by verification) are in `lib/official.mjs`; those of the manifest (`manifest_invalid`, `protocol_unsupported`, etc.) are in `lib/manifest.mjs`; those of paths (`path_unsafe`, `path_conflict`) are in `lib/paths.mjs`; those of zip (`zip_malformed`, `symlink_not_allowed`, `too_many_members`, etc.) are in `lib/zip-structure.mjs`, `zip-read.mjs`, `limits.mjs`; those of share files (`share_not_voicepack`, `share_layout_invalid`) are in `lib/share.mjs`; those of making packs (`pack_invalid`, `crypto_unavailable`, `random_invalid`) are in `lib/pack.mjs`; those of official releases (`official_url_invalid`, `index_invalid`, `release_conflict`, `published_unreadable`, etc.) are in `lib/releases.mjs`; those of complete (`base_version_unavailable`, `completed_pack_invalid`, `in_pack_base_unusable`, `complete_not_role_part`) are in `lib/complete.mjs`; the other `code`s thrown when complete reads an official version (`official_unpublished`, `release_invalid`, etc.) come as they are from `lib/release-fetch.mjs`, and complete only adds `details.stage` to them; those of the command line reading and writing the disk (`file_exists`, `file_unwritable`, `file_unreadable`) are in `cli/disk.mjs`; that of `seal` reading the description file (`fields_invalid`) is in `cli/commands/seal.mjs`.
 
-## 命令行
+## Command line
 
-只有协议核心时也能跑：在这个部分的根目录里运行 `node protocol/cli.mjs <命令> [参数...]`。基础部分根上的 `node cli.mjs <命令>` 在核心层的命令之外再带流程层的命令。完整包里有两份协议核心，用基础部分里那一份。
+It also runs with only the protocol core: run `node protocol/cli.mjs <command> [arguments...]` in the root directory of this part. The `node cli.mjs <command>` at the root of the base part carries the flow layer's commands in addition to the core layer's commands. A full pack has two copies of the protocol core; use the one in the base part.
 
-一个命令就是 `cli/commands/<名字>.mjs`，加命令只加文件。命令的写法、拿到的上下文、退出码和错误的报告方式，都写在 `cli/runner.mjs` 的文件头，这里不重复。
+A command is `cli/commands/<name>.mjs`, and adding a command adds only a file. How to write a command, the context it receives, the exit codes, and how errors are reported are all written in the file header of `cli/runner.mjs` and not repeated here.
 
-核心层的命令（每个命令的参数、退出码和输出，写在它自己文件的文件头，也可以 `node protocol/cli.mjs help <命令>`）：
+The commands of the core layer (the parameters, exit codes and output of each command are written in the file header of its own file, and you can also run `node protocol/cli.mjs help <command>`):
 
-| 命令 | 做什么 |
+| Command | What it does |
 |---|---|
-| `seal` | 给一个部分的目录生成清单 `manifest.json`；角色部分没有 `SKILL.md` 时生成骨架。不验签、不做互相校验（被封的部分此时还没签名） |
-| `pack` | 把一个部分的目录打成分享文件（`.voicepack.zip`）。先检查，含验签和互相校验 |
-| `unpack` | 把分享文件解成包目录。先检查，含验签和互相校验 |
-| `check` | 检查一个分享文件或一个部分的目录，含验签和互相校验 |
-| `keygen`、`sign`、`verify` | 签名和验签，见 `SIGNATURES.md` |
-| `complete` | 补全只有角色部分的包：环境里没有可用的基础部分时，取官方基础部分，验签，放进包里的 `voice-pack/`，再检查整个包。规则见 `FORMAT.md`「补全」 |
+| `seal` | Generates the manifest `manifest.json` for the directory of a part; generates the skeleton when a role part has no `SKILL.md`. It does not verify signatures and does no mutual verification (the part being sealed has no signature yet) |
+| `pack` | Packs the directory of a part into a share file (`.voicepack.zip`). It checks first, including signature verification and mutual verification |
+| `unpack` | Unpacks a share file into a pack directory. It checks first, including signature verification and mutual verification |
+| `check` | Checks a share file or the directory of a part, including signature verification and mutual verification |
+| `keygen`, `sign`, `verify` | Signing and verifying, see `SIGNATURES.md` |
+| `complete` | Completes a pack that has only a role part: when there is no usable base part in the environment, it fetches the official base part, verifies the signature, puts it into `voice-pack/` in the pack, then checks the whole pack. For the rules see `FORMAT.md`「Complete」 |
 
-`complete` 和上面几个不一样：它联网（读官方地址，走注入的 `env.fetch`），永远验签，没有 `--allow-unsigned`；`--trust <信任名单.json>` 同样只给测试和第三方用，官方的补全不传。它读写目录、找环境里已有的基础部分的那部分在 `cli/completing.mjs`：先在包目录里的临时目录写好，最后一步才改名成 `voice-pack/`，任何一步失败都不留下半个目录。
+`complete` differs from the ones above: it goes online (reads the official address, through the injected `env.fetch`), always verifies signatures, and has no `--allow-unsigned`; `--trust <trust list.json>` likewise is only for tests and third parties, and the official complete does not pass it. The part that reads and writes directories and finds a base part already in the environment is in `cli/completing.mjs`: it is first written into a temporary directory inside the pack directory and renamed to `voice-pack/` only in the last step, and a failure at any step leaves no half-built directory.
 
-`seal`、`pack`、`unpack`、`check` 共同的做法：先检查，通过了才写；目录里有符号链接、特殊文件，或者超过解包上限，就拒绝。写盘的规矩各有各的：`pack` 和 `unpack` 不覆盖已有的文件和目录；`seal` 的作用就是换掉目录里的 `manifest.json`（连同清单变了以后作废的签名），所以覆盖它，别的文件不动，已有的 `SKILL.md` 原样留着；`check` 什么都不写。它们共用 `cli/` 里的这几个文件：`disk.mjs`（读写目录和文件）、`checking.mjs`（读进来、检查；`check`、`pack`、`unpack` 在这里接上验签和互相校验）、`report.mjs`（检查报告的文字版）。格式本身的规则在 `FORMAT.md`，不在这里重复。
+What `seal`, `pack`, `unpack`, `check` have in common: check first, and write only if it passes; if the directory has symbolic links, special files, or exceeds the unpack limits, it refuses. Each has its own rule for writing to disk: `pack` and `unpack` do not overwrite existing files and directories; the purpose of `seal` is to replace the `manifest.json` in the directory (together with the signature that becomes void once the manifest changes), so it overwrites that, leaves other files alone, and leaves an existing `SKILL.md` as it is; `check` writes nothing. They share these files in `cli/`: `disk.mjs` (reading and writing directories and files), `checking.mjs` (reading in, checking; `check`, `pack`, `unpack` hook up signature verification and mutual verification here), `report.mjs` (the text form of the check report). The rules of the format itself are in `FORMAT.md` and are not repeated here.
 
-**`check`、`pack`、`unpack` 默认验签、做互相校验**，选项一样（写在这三个命令各自的 `help` 里）：
+**`check`, `pack` and `unpack` verify signatures and run mutual verification by default**, with the same options (written in the `help` of each of the three commands):
 
-- 基础部分和协议核心必须带官方签名；信任名单是**正在运行的这份协议核心**自带的 `protocol/trust.json`，不是被检查的包里带的那份。`--trust <信任名单.json>` 换一份名单（测试和第三方用）。
-- `--allow-unsigned` 只放过「没有签名文件」的部分，报告里写明没验；有签名文件的照验。本地开发用。
-- 角色部分和它带着的基础部分对一对：协议主版本、基础部分的版本、所需能力。只有角色部分的包做不了，报告里写明。
-- 规则和理由见 `SIGNATURES.md` 的「接进检查」「互相校验」两节。
+- The base part and the protocol core must carry the official signature; the trust list is the `protocol/trust.json` that comes with **the protocol core that is currently running**, not the one carried by the pack being checked. `--trust <trust list.json>` swaps in another list (for tests and third parties).
+- `--allow-unsigned` lets through only a part that has "no signature file", and the report states that it was not verified; one that has a signature file is still verified. For local development.
+- The role part and the base part it carries are matched against each other: protocol major version, base part version, required capabilities. A pack with only a role part cannot do this, and the report states it.
+- For the rules and reasons see `SIGNATURES.md`「Wiring into the check」「Mutual verification of the pack」 (two sections).
 
-**库里的入口也一样要选**：处理从外面来的东西的 `checkPart`、`checkShareFile`、`inspectShareFile`，调用方必须明确给验签函数（`createSignatureVerifier(信任名单)`），或者明确写 `allowUnsigned: true`；两样都不给就抛 `signature_policy_missing`，在读任何输入之前。互相校验在这些入口上默认打开（`mutual: false` 才关）。库内部检查自己刚封好的部分用 `selfCheckPart`，不要策略。各调用方怎么传，见 `SIGNATURES.md` 的「调用方必须选验签的策略」。
+**Entry points in the library must be chosen the same way**: for `checkPart`, `checkShareFile`, `inspectShareFile`, which handle things from outside, the caller must explicitly give a signature verification function (`createSignatureVerifier(trust list)`), or explicitly write `allowUnsigned: true`; giving neither throws `signature_policy_missing`, before any input is read. Mutual verification is on by default at these entry points (only `mutual: false` turns it off). To check a part the library has just sealed itself, use `selfCheckPart`, which needs no policy. For how each caller passes it, see `SIGNATURES.md`「The caller must choose a signature verification policy」.

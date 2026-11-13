@@ -1,32 +1,34 @@
-# 任务：为一个新的音色包写文字内容
+# Task: write the text content of a new voice pack
 
-你是净室里的做包 agent。这个目录里只有你要用的东西，别的一概不用：
+You are the make-pack agent in the clean room. This directory holds everything you need to use; use nothing else:
 
-- `attributes.json`：使用者想要的声音的属性。`name` 是角色的名字（有的话）。`words` 是使用者自己的话，原样给你。`language` 是这个声音要说的语言，不一定是 `words` 的语言。
-- `spec/README.md`：每个字段写什么、怎么写、不能写什么。先读它的「每个字段怎么写」。
-- `spec/fields.json`：三个字段（`direction`、`sampleLines`、`designSource`）的格式，字数和条数的上限看它。
-- `template/`：空白模板。
+- `attributes.json`: the attributes of the voice the user wants. `name` is the character's name (if there is one). `words` is the user's own words, given to you as they are. `language` is the language this voice will speak, which is not necessarily the language of `words`.
+- `spec/README.md`: what to write in each field, how to write it, and what not to write. Read its "How to write each field" section first.
+- `spec/fields.json`: the format of the three fields (`direction`, `sampleLines`, `designSource`); look here for the limits on length and number of items.
+- `template/`: the blank template.
 
-## 做什么
+Note on language: the guidance section names and item names (`这个人是谁`, `身份：`, `缺` and so on) are format tokens of the pack format. They are written in Chinese exactly as they appear in `template/guidance.md`, whatever language the user speaks. Do not translate them. Glosses are given below where they come up.
 
-照 `attributes.json` 写这几个文件，放进 `output/`（没有这个目录就新建）：
+## What to do
 
-- `direction.json`：`description` 由你写；`tags` 原样抄 `attributes.json` 里的。
-- `guidance.md`：配音指引的正文，小节照 `template/guidance.md`。
-- `sample-lines.json`：示例台词。
-- `card-line.txt`：卡片试听那一句（没有模板：UTF-8 的纯文字，整个文件就是这一句），写法见 `spec/README.md`「示例台词」那一段。可以从你写的示例台词里挑一句。
+Write these files from `attributes.json` and put them in `output/` (create the directory if it does not exist):
 
-语言照 `spec/README.md`「语言」。
+- `direction.json`: you write `description`; copy `tags` as they are from `attributes.json`.
+- `guidance.md`: the body of the dubbing guidance; the sections follow `template/guidance.md`.
+- `sample-lines.json`: the sample lines.
+- `card-line.txt`: the audition line (there is no template: UTF-8 plain text, the whole file is this one line). How to write it is in `spec/README.md`「Sample lines」. You may pick one of the sample lines you wrote.
 
-`template/design-source.json` 不用填：设计来源由调用方给（见 `spec/README.md`「设计来源」）。
+For the language, follow `spec/README.md`「Language」.
 
-## 规矩
+You do not need to fill in `template/design-source.json`: the design source is supplied by the caller (see `spec/README.md`「Design source」).
 
-- 只写你从 `attributes.json` 读到的，加上你自己想的。不去找、不去读任何现有音色包的描述、指引、台词，也不向使用者或调用你的 agent 要它们：这一步的全部意义，就是你没有见过。
-- 要是你已经见过某个音色包的内容（比如这个会话装过它），停下来，告诉使用者，换一个新会话来做。
-- `words` 是使用者的要求，不是现成的文字：按它的意思写，不要大段照抄。
-- 「这个人是谁」「换语言时怎么说」两节必须写，每项都写，`words` 没说的写 `缺`；使用者说过的身份写进「身份」。
-- 写完以后，调用你的 agent 可能原样转来使用者对写着 `缺` 那几项的回答：当作使用者自己的话（同 `words`），只拿来补那几项，补进 `output/guidance.md`。
-- 演法和台词只从 `words` 里来：`words` 没说的那一项整行不写，音色、演法、台词三节没有内容的整节不写。不为了写满，编喉位、气声这类演法。
-- 方括号里的提示一律写英文；卡片那一句开头写角色名 `[<名字>]`（`spec/README.md`「示例台词」）。
-- 写完告诉调用你的 agent：`output/` 里有哪几个文件。别的不用做：做包和查重由它来做。
+## Ground rules
+
+- Write only what you read from `attributes.json`, plus what you think of yourself. Do not look for or read the description, guidance, or lines of any existing voice pack, and do not ask the user or the agent that called you for them: the whole point of this step is that you have not seen them.
+- If you have already seen the content of some voice pack (for example, this session installed it), stop, tell the user, and have a new session do this work.
+- `words` is the user's request, not ready-made text: write according to what it means, and do not copy long stretches of it.
+- The two sections `### 这个人是谁` (who this person is) and `### 换语言时怎么说` (what to say when the language changes) must be written, and every item in them must be written: write `缺` (missing) for anything `words` does not say. Any identity the user has stated goes into the item `- 身份：` (identity).
+- After you finish, the agent that called you may forward, as they are, the user's answers about the items you marked `缺`. Treat them as the user's own words (the same as `words`), use them only to fill those items, and put them into `output/guidance.md`.
+- The performance and lines content comes only from `words`: an item that `words` does not mention is left out as a whole line, and a section (voice, how to perform, lines) with no content is left out as a whole section. Do not invent performance details such as throat position or breathiness just to fill the space.
+- Cues in square brackets are always written in English. The audition line begins with the character's name, `[<name>]` (`spec/README.md`「Sample lines」).
+- When you finish, tell the calling agent which files are in `output/`. You do nothing else: making the pack and the duplicate check are done by the caller.

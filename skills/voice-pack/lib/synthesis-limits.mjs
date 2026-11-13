@@ -2,13 +2,13 @@
 //
 // 合成请求的上限，基础部分自己定的那几条（流程层）。
 // 环境声明的 maxChars（合成能力一次最多多少个字，适配器的 limits.maxChars，app 的 contract）最少是多少：配音按 maxChars 切请求、往请求开头补提示（lib/dub.mjs 第 5、7a 步），
-// 切出来的一个请求至少要留得下这么多字；做包把它交给配音配卡片试听那一句（lib/make-pack-input.mjs），适配器检查核适配器声明的 limits（lib/adapter-check.mjs）：都按这一个数查，不各写一份。
+// 切出来的一个请求至少要留得下这么多字；做包把它交给配音配试听句（lib/make-pack-input.mjs），适配器检查核适配器声明的 limits（lib/adapter-check.mjs）：都按这一个数查，不各写一份。
 // 配音默认一个请求要念多少字（软上限）、这个字怎么数，也只写在这里：配音切请求（lib/dub.mjs 第 5、5a、5b、5c 步）和 dub --dry-run 汇总里的字数（cli/commands/dub.mjs）都用 spokenLength。
 //
 //   MIN_MAX_CHARS             maxChars 的下限（整数，含）
 //   DEFAULT_MAX_SPOKEN_CHARS  配音默认一个请求最多多少个要念的字（1000 个字符，英文约 170 个词）。不是适配器报错的硬上限，是配音自己默认的切法：超过了就在段落、换人、句子的边界切开，
 //                             每个请求里照旧并。旁白和一场戏都适用。调用方给了自己的上限（命令行 --max-chars）就照给的，这个默认不再管。
-//                             出处：要求，不是实测，见 models/scene3.md「一个请求的上限」。
+//                             出处：要求，不是实测，见 models/scene3.md「Limits of one request」。
 //   spokenLength(text)        要念的字有几个（按字符数，一个汉字、一个字母、一个标点各算一个）：方括号的提示不算，尖括号标签的名字不算（成对的标签包住的字照算，
 //                             语言标签包住的另一种语言的字也照算），一个音素标签算一个字；连着的空白（空格、换行）算一个，两头的不算。
 //                             所以英文词和词之间的空格算，一个请求里行与行之间的换行也算一个。

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 清单（manifest.json）：读、写、检查。三个部分（角色部分、基础部分、协议核心）每个目录里各有一份，
-// 列出这个部分的每一个文件和它的 SHA-256；格式见 protocol/FORMAT.md「清单」，结构的 schema 在 protocol/schema/manifest.schema.json。
+// 列出这个部分的每一个文件和它的 SHA-256；格式见 protocol/FORMAT.md「4. Manifest (manifest.json)」，结构的 schema 在 protocol/schema/manifest.schema.json。
 //
 // 检查分两层：
 //   1 结构：协议核心里的 schema 文件，由 schema.mjs 校验（字段有没有、写法对不对）。
@@ -18,7 +18,7 @@
 //     path_conflict        重复、只差大小写、既是文件又是目录（文件列表和外部资源合起来查）。details: { kind, path, other }
 //     listed_self          列了清单自己或它的签名
 //     listed_delegated     列了交给子部分的清单管的目录里的文件。details: { directory }
-//     reference_unresolved 参考音频、留出录音、增强件、脚本入口、卡片试听那一句的音频（cardLine.audio）指向的路径，不在文件列表（也不是外部资源；脚本和 cardLine.audio 只能在文件列表）里
+//     reference_unresolved 参考音频、留出录音、增强件、脚本入口、试听句的音频（cardLine.audio）指向的路径，不在文件列表（也不是外部资源；脚本和 cardLine.audio 只能在文件列表）里
 //     default_segment_unknown 默认参考段（defaultSegment，或 languageDefaults 的某一项）不是参考集里的一段（留出录音不算）。details: { pointer, id }
 //     duplicate_language_default  一种语言有了两段默认段：languageDefaults 的某一项和主默认段（defaultSegment）、或者和前面的一项同一种语言（按 languageKey 比）。
 //                          details: { pointer, id, language, other }：pointer 指到后出现的那一项，other 是先有的那一段默认段的 pointer
@@ -33,8 +33,8 @@
 //     duplicate_runtime    基础部分的 runtimes 里，同一个运行时登记了两次。details: { pointer, runtime }
 //     holdout_is_reference 一个音频文件既当参考又当留出录音
 //     feature_unknown      脚本指向的功能不在 features 里
-//     text_blank           参考段的文本、提示标注（annotatedText）或音色基底标签（tag）、示例台词的某一条、卡片试听那一句（cardLine.text）、设计来源里试听台词的某一项只有空白或看不见的字符（空串由 schema 的 minLength 管）。
-//                          details: { pointer, id }（参考段，id 是段的名字，pointer 指到 text、annotatedText 或 tag）或 { pointer }（示例台词，pointer 是 /sampleLines/<序号>；卡片试听那一句，pointer 是 /cardLine/text；试听台词，pointer 是 /designSource/auditionLines/<序号>；序号从 0 起）
+//     text_blank           参考段的文本、提示标注（annotatedText）或音色基底标签（tag）、示例台词的某一条、试听句（cardLine.text）、设计来源里试听台词的某一项只有空白或看不见的字符（空串由 schema 的 minLength 管）。
+//                          details: { pointer, id }（参考段，id 是段的名字，pointer 指到 text、annotatedText 或 tag）或 { pointer }（示例台词，pointer 是 /sampleLines/<序号>；试听句，pointer 是 /cardLine/text；试听台词，pointer 是 /designSource/auditionLines/<序号>；序号从 0 起）
 //     truncated            问题太多，只列了前面的
 //     too_deep             写清单时嵌套深到调用栈放不下（serializeManifest、assertDraftManifest；描述是作者给的 JSON 文件，能嵌得很深）。只有这一个问题，没有 pointer
 //
@@ -63,10 +63,10 @@ export const SIGNATURE_FILE = `${MANIFEST_FILE}.minisig`;
 
 export const PART_KINDS = Object.freeze(['role', 'base', 'protocol']);
 /**
- * 每种部分写给人看的名字，用的就是 protocol/FORMAT.md「术语」里的叫法。要把部分的种类说成中文的地方，都从这张表取（partName），不各写一份：
+ * 每种部分写给人看的名字，用的就是 protocol/FORMAT.md「Terms」里的叫法。要把部分的种类说成中文的地方，都从这张表取（partName），不各写一份：
  * 检查报告、签名问题的说明、补全的原因、seal 和 unpack 的输出。
  */
-export const PART_NAMES = Object.freeze({ role: '角色部分', base: '基础部分', protocol: '协议核心' });
+export const PART_NAMES = Object.freeze({ role: 'role part', base: 'base part', protocol: 'protocol core' });
 /** 部分的种类的名字。不认识的种类（报告里、别人传来的值）原样返回，不抛错；对象原型上的名字（constructor……）也不算种类。 */
 export const partName = (kind) => (Object.hasOwn(PART_NAMES, kind) ? PART_NAMES[kind] : kind);
 /** 每个部分里，协议核心放在这个子目录里。 */
@@ -119,7 +119,7 @@ const STATIC_DELEGATED = { role: [PROTOCOL_DIRECTORY], base: [PROTOCOL_DIRECTORY
  * （拿旧版本的文件做新版本这类不知道包是哪一套名字的地方，两套都躲开）。
  */
 export function delegatedDirectories(part, protocol) {
-  if (!Object.hasOwn(STATIC_DELEGATED, part)) throw new TypeError(`part 要是 role、base、protocol 之一，收到 ${JSON.stringify(part)}`);
+  if (!Object.hasOwn(STATIC_DELEGATED, part)) throw new TypeError(`part must be one of role, base, protocol, got ${JSON.stringify(part)}`);
   if (part !== 'role') return STATIC_DELEGATED[part];
   return protocol === undefined ? [PROTOCOL_DIRECTORY, ...KNOWN_BASE_DIRECTORIES] : [PROTOCOL_DIRECTORY, baseDirectoryOf(protocol)];
 }
@@ -200,15 +200,15 @@ function semanticProblems(manifest) {
     entries.forEach((entry, i) => {
       const at = `/${field}/${i}/path`;
       const found = pathProblem(entry.path);
-      if (found) add('path_unsafe', `${field}[${i}] 的路径不能要（${found.message}）：${JSON.stringify(entry.path)}`, { pointer: at, path: entry.path, pathReason: found.reason });
+      if (found) add('path_unsafe', `${field}[${i}] has a path that is not allowed (${found.message}): ${JSON.stringify(entry.path)}`, { pointer: at, path: entry.path, pathReason: found.reason });
       if (entry.path === MANIFEST_FILE || entry.path === SIGNATURE_FILE) {
-        add('listed_self', `清单不列自己和自己的签名：${entry.path}`, { pointer: at, path: entry.path });
+        add('listed_self', `the manifest does not list itself or its own signature: ${entry.path}`, { pointer: at, path: entry.path });
       }
       const directory = delegated.find((name) => entry.path.startsWith(`${name}/`));
-      if (directory) add('listed_delegated', `${entry.path} 在 ${directory}/ 里，那个目录有自己的清单管，不列进这份清单`, { pointer: at, path: entry.path, directory });
+      if (directory) add('listed_delegated', `${entry.path} is inside ${directory}/, which has its own manifest, so it is not listed in this one`, { pointer: at, path: entry.path, directory });
       if (!unsorted && i > 0 && compareUtf8(entries[i - 1].path, entry.path) > 0) {
         unsorted = true;
-        add(unsortedReason, `${field} 没按路径的 UTF-8 字节序排列：${JSON.stringify(entries[i - 1].path)} 排在 ${JSON.stringify(entry.path)} 前面`, { pointer: at, path: entry.path, other: entries[i - 1].path });
+        add(unsortedReason, `${field} is not sorted by the UTF-8 bytes of the path: ${JSON.stringify(entries[i - 1].path)} comes before ${JSON.stringify(entry.path)}`, { pointer: at, path: entry.path, other: entries[i - 1].path });
       }
     });
   };
@@ -216,12 +216,12 @@ function semanticProblems(manifest) {
   checkPaths(externals, 'externals', 'externals_unsorted');
 
   const conflict = findPathConflict([...manifest.files.map((f) => f.path), ...externals.map((e) => e.path)]);
-  if (conflict) add('path_conflict', `路径 ${JSON.stringify(conflict.path)} 和 ${JSON.stringify(conflict.other)} 冲突（${conflict.kind}）：解到磁盘上会互相覆盖`, { ...conflict });
+  if (conflict) add('path_conflict', `path ${JSON.stringify(conflict.path)} conflicts with ${JSON.stringify(conflict.other)} (${conflict.kind}): extracted to disk they would overwrite each other`, { ...conflict });
 
   if (manifest.part === 'base' && Array.isArray(manifest.runtimes)) {
     const registered = new Map(); // 运行时名字 -> 第一次登记的位置
     manifest.runtimes.forEach((entry, i) => {
-      if (registered.has(entry.runtime)) add('duplicate_runtime', `运行时 ${JSON.stringify(entry.runtime)} 登记了两次（已经在 ${registered.get(entry.runtime)} 登记过）`, { pointer: `/runtimes/${i}/runtime`, runtime: entry.runtime });
+      if (registered.has(entry.runtime)) add('duplicate_runtime', `runtime ${JSON.stringify(entry.runtime)} is registered twice (already registered at ${registered.get(entry.runtime)})`, { pointer: `/runtimes/${i}/runtime`, runtime: entry.runtime });
       else registered.set(entry.runtime, `/runtimes/${i}`);
     });
   }
@@ -231,7 +231,7 @@ function semanticProblems(manifest) {
   const inFiles = new Set(manifest.files.map((f) => f.path));
   const inExternals = new Set(externals.map((e) => e.path));
   const resolvable = (path) => inFiles.has(path) || inExternals.has(path);
-  const unresolved = (pointer, path, what, where) => add('reference_unresolved', `${what}指向 ${JSON.stringify(path)}，它不在${where}里`, { pointer, path });
+  const unresolved = (pointer, path, what, where) => add('reference_unresolved', `${what} points to ${JSON.stringify(path)}, which is not in ${where}`, { pointer, path });
   const segments = manifest.reference.segments;
   // 协议 1.x、2.x 的角色部分：段是老写法，3.0 才有的段上的东西（音色基底标签、提示标注）不查（文件头）
   const legacy = hasLegacySegments(manifest);
@@ -239,36 +239,36 @@ function semanticProblems(manifest) {
   const enhancers = manifest.enhancers ?? [];
   const scripts = manifest.scripts ?? [];
 
-  segments.forEach((s, i) => { if (!resolvable(s.audio)) unresolved(`/reference/segments/${i}/audio`, s.audio, '参考音频', '文件列表和外部资源'); });
-  holdout.forEach((s, i) => { if (!resolvable(s.audio)) unresolved(`/holdout/${i}/audio`, s.audio, '留出录音', '文件列表和外部资源'); });
-  enhancers.forEach((e, i) => { if (!resolvable(e.path)) unresolved(`/enhancers/${i}/path`, e.path, '增强件', '文件列表和外部资源'); });
-  scripts.forEach((s, i) => { if (!inFiles.has(s.entry)) unresolved(`/scripts/${i}/entry`, s.entry, '脚本入口', '文件列表（脚本必须放进包里）'); });
-  // 卡片试听那一句的音频：要放进包里（卡片把它内嵌进去，外部资源的字节不在分享文件里）
-  if (isObject(manifest.cardLine) && !inFiles.has(manifest.cardLine.audio)) unresolved('/cardLine/audio', manifest.cardLine.audio, '卡片试听那一句的音频', '文件列表（它必须放进包里）');
+  segments.forEach((s, i) => { if (!resolvable(s.audio)) unresolved(`/reference/segments/${i}/audio`, s.audio, 'reference audio', 'the file list or the external resources'); });
+  holdout.forEach((s, i) => { if (!resolvable(s.audio)) unresolved(`/holdout/${i}/audio`, s.audio, 'held-out recording', 'the file list or the external resources'); });
+  enhancers.forEach((e, i) => { if (!resolvable(e.path)) unresolved(`/enhancers/${i}/path`, e.path, 'enhancer', 'the file list or the external resources'); });
+  scripts.forEach((s, i) => { if (!inFiles.has(s.entry)) unresolved(`/scripts/${i}/entry`, s.entry, 'script entry', 'the file list (scripts must be inside the pack)'); });
+  // 试听句的音频：要放进包里（卡片把它内嵌进去，外部资源的字节不在分享文件里）
+  if (isObject(manifest.cardLine) && !inFiles.has(manifest.cardLine.audio)) unresolved('/cardLine/audio', manifest.cardLine.audio, 'audio of the audition line', 'the file list (it must be inside the pack)');
 
   const seen = new Map();
-  const duplicate = (pointer, id, what) => add('duplicate_id', `${what}的 id ${JSON.stringify(id)} 重复了（已经在 ${seen.get(id)} 用过）`, { pointer, id });
+  const duplicate = (pointer, id, what) => add('duplicate_id', `${what} id ${JSON.stringify(id)} is duplicated (already used at ${seen.get(id)})`, { pointer, id });
   // 几套设定（setups）：名字在同一个包里不重名，最多一套带 default: true（别的字段由 schema 管）
   const setupNames = new Map();
   let defaultSetup = null;
   (manifest.setups ?? []).forEach((setup, i) => {
-    if (setupNames.has(setup.name)) add('duplicate_setup', `设定的名字 ${JSON.stringify(setup.name)} 重复了（已经在 ${setupNames.get(setup.name)} 用过）：同一个包里设定不能重名`, { pointer: `/setups/${i}/name`, name: setup.name });
+    if (setupNames.has(setup.name)) add('duplicate_setup', `setup name ${JSON.stringify(setup.name)} is duplicated (already used at ${setupNames.get(setup.name)}): setup names must be unique within a pack`, { pointer: `/setups/${i}/name`, name: setup.name });
     else setupNames.set(setup.name, `/setups/${i}`);
     if (setup.default !== true) return;
     if (defaultSetup === null) defaultSetup = { name: setup.name, pointer: `/setups/${i}` };
-    else add('duplicate_default_setup', `设定 ${JSON.stringify(setup.name)} 也写了 default: true，已经有 ${JSON.stringify(defaultSetup.name)}（${defaultSetup.pointer}）：最多一套设定带 default`, { pointer: `/setups/${i}/default`, name: setup.name, other: defaultSetup.name });
+    else add('duplicate_default_setup', `setup ${JSON.stringify(setup.name)} also sets default: true, but ${JSON.stringify(defaultSetup.name)} (${defaultSetup.pointer}) already has it: at most one setup may be the default`, { pointer: `/setups/${i}/default`, name: setup.name, other: defaultSetup.name });
   });
-  segments.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/reference/segments/${i}/id`, s.id, '参考段'); else seen.set(s.id, `/reference/segments/${i}`); });
-  holdout.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/holdout/${i}/id`, s.id, '留出录音'); else seen.set(s.id, `/holdout/${i}`); });
+  segments.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/reference/segments/${i}/id`, s.id, 'reference segment'); else seen.set(s.id, `/reference/segments/${i}`); });
+  holdout.forEach((s, i) => { if (seen.has(s.id)) duplicate(`/holdout/${i}/id`, s.id, 'held-out recording'); else seen.set(s.id, `/holdout/${i}`); });
   const enhancerIds = new Map();
   enhancers.forEach((e, i) => {
-    if (enhancerIds.has(e.id)) add('duplicate_id', `增强件的 id ${JSON.stringify(e.id)} 重复了（已经在 ${enhancerIds.get(e.id)} 用过）`, { pointer: `/enhancers/${i}/id`, id: e.id });
+    if (enhancerIds.has(e.id)) add('duplicate_id', `enhancer id ${JSON.stringify(e.id)} is duplicated (already used at ${enhancerIds.get(e.id)})`, { pointer: `/enhancers/${i}/id`, id: e.id });
     else enhancerIds.set(e.id, `/enhancers/${i}`);
   });
 
   const mainDefault = segments.find((s) => s.id === manifest.reference.defaultSegment);
   if (mainDefault === undefined) {
-    add('default_segment_unknown', `默认参考段 ${JSON.stringify(manifest.reference.defaultSegment)} 不是参考集里的一段（留出录音不能当参考）`, { pointer: '/reference/defaultSegment', id: manifest.reference.defaultSegment });
+    add('default_segment_unknown', `default reference segment ${JSON.stringify(manifest.reference.defaultSegment)} is not a segment of the reference set (a held-out recording cannot be a reference)`, { pointer: '/reference/defaultSegment', id: manifest.reference.defaultSegment });
   }
   // 别的语言各自的默认段（languageDefaults）：每一项是参考集里的一段；一种语言（按 languageKey 比）最多一段默认段，主默认段的语言也算在里面
   const defaultOf = new Map(mainDefault === undefined ? [] : [[languageKey(segmentLanguage(mainDefault)), '/reference/defaultSegment']]);
@@ -276,55 +276,55 @@ function semanticProblems(manifest) {
     const pointer = `/reference/languageDefaults/${i}`;
     const segment = segments.find((s) => s.id === id);
     if (segment === undefined) {
-      add('default_segment_unknown', `languageDefaults 里的 ${JSON.stringify(id)} 不是参考集里的一段（留出录音不能当参考）`, { pointer, id });
+      add('default_segment_unknown', `${JSON.stringify(id)} in languageDefaults is not a segment of the reference set (a held-out recording cannot be a reference)`, { pointer, id });
       return;
     }
     const language = segmentLanguage(segment);
     const key = languageKey(language);
-    if (defaultOf.has(key)) add('duplicate_language_default', `${JSON.stringify(id)} 的语言 ${JSON.stringify(language)} 已经有默认段了（${defaultOf.get(key)}）：一种语言最多一段默认段`, { pointer, id, language, other: defaultOf.get(key) });
+    if (defaultOf.has(key)) add('duplicate_language_default', `language ${JSON.stringify(language)} of ${JSON.stringify(id)} already has a default segment (${defaultOf.get(key)}): each language has at most one default segment`, { pointer, id, language, other: defaultOf.get(key) });
     else defaultOf.set(key, pointer);
   });
   const referenceAudio = new Set(segments.map((s) => s.audio));
   holdout.forEach((s, i) => {
-    if (referenceAudio.has(s.audio)) add('holdout_is_reference', `留出录音 ${JSON.stringify(s.id)} 用的音频 ${JSON.stringify(s.audio)} 同时是参考段：留出录音从不当参考`, { pointer: `/holdout/${i}/audio`, path: s.audio });
+    if (referenceAudio.has(s.audio)) add('holdout_is_reference', `held-out recording ${JSON.stringify(s.id)} uses audio ${JSON.stringify(s.audio)} that is also a reference segment: a held-out recording is never used as a reference`, { pointer: `/holdout/${i}/audio`, path: s.audio });
   });
   scripts.forEach((s, i) => {
-    if (s.feature !== undefined && !Object.prototype.hasOwnProperty.call(manifest.features, s.feature)) add('feature_unknown', `脚本 ${JSON.stringify(s.entry)} 指向的功能 ${JSON.stringify(s.feature)} 不在 features 里`, { pointer: `/scripts/${i}/feature`, feature: s.feature });
+    if (s.feature !== undefined && !Object.prototype.hasOwnProperty.call(manifest.features, s.feature)) add('feature_unknown', `script ${JSON.stringify(s.entry)} points to feature ${JSON.stringify(s.feature)}, which is not in features`, { pointer: `/scripts/${i}/feature`, feature: s.feature });
   });
-  // 「至少有一段参考音频和对应的文本」（protocol/FORMAT.md「语义规则」第 10 条）：至少一段由 schema 的 minItems 管，文本不能是空串由 minLength 管，
+  // 「至少有一段参考音频和对应的文本」（protocol/FORMAT.md「4.5 Semantic rules」第 10 条）：至少一段由 schema 的 minItems 管，文本不能是空串由 minLength 管，
   // 这里补上 schema 表达不了的一半：文本不能只有空白和看不见的字符（空格、换行、零宽空格、控制字符……）。
   // 互相校验（mutual.mjs）不再查这一条，同一条规则只在这里报一次。
   segments.forEach((s, i) => {
-    if (BLANK_TEXT.test(s.text)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的文本是空的（只有空白或看不见的字符）：每段参考音频都要有对应的逐字文本`, { pointer: `/reference/segments/${i}/text`, id: s.id });
+    if (BLANK_TEXT.test(s.text)) add('text_blank', `reference segment ${JSON.stringify(s.id)} has empty text (only whitespace or invisible characters): every reference audio needs its verbatim transcript`, { pointer: `/reference/segments/${i}/text`, id: s.id });
     if (legacy) return; // 老写法的段没有提示标注和音色基底标签（文件头）
     // 提示标注是可选的：写了就要有看得见的字（没有提示标注就不写这个键）
-    if (typeof s.annotatedText === 'string' && BLANK_TEXT.test(s.annotatedText)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的提示标注是空的（只有空白或看不见的字符）：没有提示标注就不写 annotatedText`, { pointer: `/reference/segments/${i}/annotatedText`, id: s.id });
+    if (typeof s.annotatedText === 'string' && BLANK_TEXT.test(s.annotatedText)) add('text_blank', `reference segment ${JSON.stringify(s.id)} has an empty cue annotation (only whitespace or invisible characters): without a cue annotation, leave annotatedText out`, { pointer: `/reference/segments/${i}/annotatedText`, id: s.id });
     // 音色基底标签同一条规则：只有空白和看不见的字符的标签，列出来、切换时都看不出是哪一段
-    if (typeof s.tag === 'string' && BLANK_TEXT.test(s.tag)) add('text_blank', `参考段 ${JSON.stringify(s.id)} 的音色基底标签是空的（只有空白或看不见的字符）：每段参考要有一个看得见的标签`, { pointer: `/reference/segments/${i}/tag`, id: s.id });
+    if (typeof s.tag === 'string' && BLANK_TEXT.test(s.tag)) add('text_blank', `reference segment ${JSON.stringify(s.id)} has an empty reference tag (only whitespace or invisible characters): every reference segment needs a visible tag`, { pointer: `/reference/segments/${i}/tag`, id: s.id });
   });
   // 音色基底标签（协议 3.x，老写法的包没有）：同一种语言里不重名（语言按 languageKey 比，标签逐字比），设定的 referenceTag 要是参考集里某段的标签
   if (!legacy) {
     const tagged = new Map(); // 规范化以后的语言 + 标签 -> 先有这个标签的那一段的 pointer
     segments.forEach((s, i) => {
       const key = JSON.stringify([languageKey(s.language), s.tag]);
-      if (tagged.has(key)) add('duplicate_reference_tag', `参考段 ${JSON.stringify(s.id)} 的音色基底标签 ${JSON.stringify(s.tag)} 在 ${s.language} 里已经有了（${tagged.get(key)}）：同一种语言里两段参考不能同一个标签`, { pointer: `/reference/segments/${i}/tag`, id: s.id, language: s.language, tag: s.tag, other: tagged.get(key) });
+      if (tagged.has(key)) add('duplicate_reference_tag', `reference segment ${JSON.stringify(s.id)} has the reference tag ${JSON.stringify(s.tag)}, which is already used in ${s.language} (${tagged.get(key)}): two reference segments of one language cannot share a tag`, { pointer: `/reference/segments/${i}/tag`, id: s.id, language: s.language, tag: s.tag, other: tagged.get(key) });
       else tagged.set(key, `/reference/segments/${i}/tag`);
     });
     const known = new Set(segments.map((s) => s.tag));
     (manifest.setups ?? []).forEach((setup, i) => {
       if (setup.referenceTag === undefined || known.has(setup.referenceTag)) return;
-      add('reference_tag_unknown', `设定 ${JSON.stringify(setup.name)} 的默认参考 ${JSON.stringify(setup.referenceTag)} 不是参考集里任何一段的音色基底标签`, { pointer: `/setups/${i}/referenceTag`, name: setup.name, referenceTag: setup.referenceTag, tags: referenceTagsByLanguage(segments) });
+      add('reference_tag_unknown', `setup ${JSON.stringify(setup.name)} has the default reference ${JSON.stringify(setup.referenceTag)}, which is not the reference tag of any segment in the reference set`, { pointer: `/setups/${i}/referenceTag`, name: setup.name, referenceTag: setup.referenceTag, tags: referenceTagsByLanguage(segments) });
     });
   }
   // 示例台词同一条规则：一条只有空白和看不见的字符的台词，念出来是一片安静，等于没写。（空串、太长、不是字符串，由 schema 管）
   (manifest.sampleLines ?? []).forEach((line, i) => {
-    if (BLANK_TEXT.test(line)) add('text_blank', `示例台词第 ${i + 1} 条是空的（只有空白或看不见的字符）：每条示例台词都要有看得见的字`, { pointer: `/sampleLines/${i}` });
+    if (BLANK_TEXT.test(line)) add('text_blank', `sample line ${i + 1} is empty (only whitespace or invisible characters): every sample line needs visible text`, { pointer: `/sampleLines/${i}` });
   });
-  // 卡片试听那一句同一条规则：只有空白和看不见的字符的一句，卡片上旁边写的是一片空白。（空串、太长、不是字符串，由 schema 管）
-  if (isObject(manifest.cardLine) && typeof manifest.cardLine.text === 'string' && BLANK_TEXT.test(manifest.cardLine.text)) add('text_blank', '卡片试听那一句是空的（只有空白或看不见的字符）：要有看得见的字', { pointer: '/cardLine/text' });
+  // 试听句同一条规则：只有空白和看不见的字符的一句，卡片上旁边写的是一片空白。（空串、太长、不是字符串，由 schema 管）
+  if (isObject(manifest.cardLine) && typeof manifest.cardLine.text === 'string' && BLANK_TEXT.test(manifest.cardLine.text)) add('text_blank', 'the audition line is empty (only whitespace or invisible characters): it needs visible text', { pointer: '/cardLine/text' });
   // 设计来源里的试听台词同一条规则：试听用的原文，一项只有空白和看不见的字符，等于没写。（空串、太长、不是字符串、项数超了，由 schema 管）
   (manifest.designSource?.auditionLines ?? []).forEach((line, i) => {
-    if (BLANK_TEXT.test(line)) add('text_blank', `设计来源的试听台词第 ${i + 1} 项是空的（只有空白或看不见的字符）：每项试听台词都要有看得见的字`, { pointer: `/designSource/auditionLines/${i}` });
+    if (BLANK_TEXT.test(line)) add('text_blank', `item ${i + 1} of the design source's audition text is empty (only whitespace or invisible characters): every item needs visible text`, { pointer: `/designSource/auditionLines/${i}` });
   });
   return out;
 }
@@ -339,11 +339,11 @@ export function validateManifest(value, options = {}) {
   const protocol = isObject(value) ? value.protocol : undefined;
   if (typeof protocol === 'string' && isProtocolVersion(protocol) && !isReadableProtocol(protocol)) {
     // 别的主版本的字段不一定还是这个样子，不去猜，也不报它的字段问题
-    return { ok: false, problems: [problem('protocol_unsupported', `清单按协议 ${protocol} 写，这一版库只认主版本 ${READABLE_PROTOCOLS_TEXT}`, { protocol, supported: READABLE_PROTOCOLS_TEXT })] };
+    return { ok: false, problems: [problem('protocol_unsupported', `the manifest is written for protocol ${protocol}; this version of the library only reads major version ${READABLE_PROTOCOLS_TEXT}`, { protocol, supported: READABLE_PROTOCOLS_TEXT })] };
   }
   const result = validateSchema(hasLegacySegments(value) ? LEGACY_SEGMENT_SCHEMA : MANIFEST_SCHEMA, value, { maxProblems: MAX_SCHEMA_PROBLEMS });
-  const problems = result.problems.map((p) => problem('manifest_invalid', `清单 ${p.pointer || '/'}：${p.message}`, { pointer: p.pointer, keyword: p.keyword }));
-  if (result.truncated) problems.push(problem('manifest_invalid', `清单的问题太多，只列出前 ${MAX_SCHEMA_PROBLEMS} 条`, { reason: 'truncated' }));
+  const problems = result.problems.map((p) => problem('manifest_invalid', `manifest ${p.pointer || '/'}: ${p.message}`, { pointer: p.pointer, keyword: p.keyword }));
+  if (result.truncated) problems.push(problem('manifest_invalid', `the manifest has too many problems; only the first ${MAX_SCHEMA_PROBLEMS} are listed`, { reason: 'truncated' }));
   if (problems.length === 0 && options.schemaOnly !== true) problems.push(...semanticProblems(value));
   return { ok: problems.length === 0, problems };
 }
@@ -357,20 +357,20 @@ export function validateManifest(value, options = {}) {
  * @returns {{ manifest: object | null, problems: { code: string, message: string, details: object }[] }}
  */
 export function readManifest(bytes, options = {}) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('清单必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('the manifest must be a Uint8Array');
   const limits = resolveLimits(options.limits);
-  const notJson = (reason, message, cause) => ({ manifest: null, problems: [problem('manifest_not_json', `${MANIFEST_FILE} 不是合法的 JSON：${message}${cause ? `（${cause}）` : ''}`, { reason })] });
+  const notJson = (reason, message, cause) => ({ manifest: null, problems: [problem('manifest_not_json', `${MANIFEST_FILE} is not valid JSON: ${message}${cause ? ` (${cause})` : ''}`, { reason })] });
   if (bytes.length > limits.maxJsonBytes) {
     return { manifest: null, problems: [jsonSizeProblem(MANIFEST_FILE, bytes.length, limits)] };
   }
   let text;
-  try { text = decoder.decode(bytes); } catch { return notJson('utf8', '不是合法的 UTF-8'); }
-  if (text.charCodeAt(0) === 0xfeff) return notJson('bom', '开头有字节序标记（BOM），清单不带 BOM');
+  try { text = decoder.decode(bytes); } catch { return notJson('utf8', 'invalid UTF-8'); }
+  if (text.charCodeAt(0) === 0xfeff) return notJson('bom', 'starts with a byte order mark (BOM); a manifest has no BOM');
   let value;
   try {
     value = JSON.parse(text);
   } catch (error) {
-    return error instanceof RangeError ? notJson('too_deep', '嵌套深得不正常') : notJson('syntax', '语法不对', error instanceof Error ? error.message : undefined);
+    return error instanceof RangeError ? notJson('too_deep', 'abnormally deep nesting') : notJson('syntax', 'syntax error', error instanceof Error ? error.message : undefined);
   }
   const { problems } = validateManifest(value);
   const structural = problems.some((p) => p.code !== 'manifest_invalid' || p.details.reason === undefined);
@@ -380,7 +380,7 @@ export function readManifest(bytes, options = {}) {
 /** 抛成一个错误：code 取第一个问题的，details.problems 是全部问题。 */
 function raise(problems) {
   const first = problems[0];
-  throw new VoicePackError(first.code, problems.length === 1 ? first.message : `${first.message}（共 ${problems.length} 处问题）`, { details: { ...first.details, problems } });
+  throw new VoicePackError(first.code, problems.length === 1 ? first.message : `${first.message} (${problems.length} problems in total)`, { details: { ...first.details, problems } });
 }
 
 /**
@@ -402,10 +402,10 @@ function stringify(value, indent) {
   try {
     json = JSON.stringify(value, null, indent);
   } catch (error) {
-    if (error instanceof RangeError) raise([problem('manifest_invalid', '清单嵌套得太深，写不出来', { reason: 'too_deep' })]);
+    if (error instanceof RangeError) raise([problem('manifest_invalid', 'the manifest is nested too deeply to be written', { reason: 'too_deep' })]);
     throw error;
   }
-  if (json === undefined) throw new TypeError('这个值写不成 JSON');
+  if (json === undefined) throw new TypeError('this value cannot be written as JSON');
   return json;
 }
 

@@ -10,7 +10,7 @@
 //   音色标签   设计词表 categories 里每个分类的取值（性别、年龄、音高、风格、英语口音、中文方言；「Auto」不算标签），
 //             加上 extra 里的音色、节奏、情绪标签；这些的中文名（zh 里的 male -> 男声，extra 里的 温暖 -> warm）也认；
 //             再加上别名（aliases 里每一项 [写法, 规范写法]：明亮 -> bright，British -> british accent）。规范写法：英文名（中文方言是它自己）
-// 换成规范写法以后重复的只留第一个；标签最多 32 个（protocol/FORMAT.md「角色部分的清单」）。
+// 换成规范写法以后重复的只留第一个；标签最多 32 个（protocol/FORMAT.md「4.4 Manifest of the role part」）。
 // 配音指引里没有场景标签（「这个声音适合用在哪」）：场景是配音所在的情境，怎么配写在各场景的子 skill 里，不标在包上。写了 scenes 的，当不认识的字段报。
 //
 // 规范写法和别名（vocab/design.json）：规范写法是一个音色标签唯一的写法（一个概念一个），清单的 direction.tags 里存的就是它；
@@ -62,30 +62,30 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 /** 一个列表：每一项换成规范写法，重复的去掉，不在词表里的记成问题。 */
 function normalizeList(list, name, lookup, { limit, vocabulary }) {
   const problems = [];
-  if (!Array.isArray(list)) return { list: undefined, problems: [{ field: name, message: `必须是数组（${vocabulary}里的名字）` }] };
+  if (!Array.isArray(list)) return { list: undefined, problems: [{ field: name, message: `must be an array of names from the ${vocabulary}` }] };
   const out = [];
   list.forEach((entry, index) => {
     const canonical = lookup(entry);
-    if (canonical === null) problems.push({ field: `${name}[${index}]`, message: `${JSON.stringify(entry)} 不在${vocabulary}里` });
+    if (canonical === null) problems.push({ field: `${name}[${index}]`, message: `${JSON.stringify(entry)} is not in the ${vocabulary}` });
     else if (!out.includes(canonical)) out.push(canonical);
   });
-  if (out.length > limit) problems.push({ field: name, message: `最多 ${limit} 个，换成规范写法去重以后还有 ${out.length} 个` });
+  if (out.length > limit) problems.push({ field: name, message: `at most ${limit} allowed, but ${out.length} remain after replacing names with their canonical form and removing duplicates` });
   return { list: out, problems };
 }
 
 export function normalizeDirection(direction) {
-  if (!isPlainObject(direction)) return { direction: undefined, problems: [{ field: '', message: '必须是对象 { description?, tags? }' }] };
+  if (!isPlainObject(direction)) return { direction: undefined, problems: [{ field: '', message: 'must be an object { description?, tags? }' }] };
   const problems = [];
   const out = {};
   for (const key of Object.keys(direction)) {
-    if (!['description', 'tags'].includes(key)) problems.push({ field: key, message: `不认识的字段（只有 description、tags）` });
+    if (!['description', 'tags'].includes(key)) problems.push({ field: key, message: `unknown field (only description and tags are allowed)` });
   }
   if (direction.description !== undefined) {
-    if (typeof direction.description !== 'string' || direction.description.trim() === '' || [...direction.description].length > MAX_DESCRIPTION) problems.push({ field: 'description', message: `必须是 1–${MAX_DESCRIPTION} 个字符的一句音色描述` });
+    if (typeof direction.description !== 'string' || direction.description.trim() === '' || [...direction.description].length > MAX_DESCRIPTION) problems.push({ field: 'description', message: `must be a one-sentence voice description of 1–${MAX_DESCRIPTION} characters` });
     else out.description = direction.description.trim();
   }
   if (direction.tags !== undefined) {
-    const result = normalizeList(direction.tags, 'tags', lookupDesignTag, { limit: MAX_TAGS, vocabulary: '设计词表（vocab/design.json：性别、年龄、音高、风格、口音、方言的取值，加上音色、节奏、情绪标签）' });
+    const result = normalizeList(direction.tags, 'tags', lookupDesignTag, { limit: MAX_TAGS, vocabulary: 'design vocabulary (vocab/design.json: the values for gender, age, pitch, style, accent and dialect, plus timbre, rhythm and emotion tags)' });
     problems.push(...result.problems);
     if (result.list !== undefined) out.tags = result.list;
   }

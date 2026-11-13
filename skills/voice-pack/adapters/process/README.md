@@ -1,60 +1,60 @@
-# 进程适配器
+# Process adapter
 
-官方适配器 `process`：把每次能力调用变成对**你自己的程序**的一次请求，经程序的标准输入输出，一行一个 JSON。模型是现成的 Python 之类的程序时用它：不用写适配器的代码，只写（或改）那个程序。适配器是什么、工厂怎么写、出错怎么报，约定只写在 `../README.md`；这里写进程适配器自己的：**怎么用、进程协议、出错、程序怎么被收掉**。进程协议只在这一份里写，适配器的实现（`wire.mjs`、`cli/session.mjs`）和生成的程序骨架都指向这里。
+The official adapter `process`: turns each capability call into one request to **your own program**, through the program's standard input and output, one JSON per line. Use it when the model is an existing program such as a Python one: you do not write adapter code, you only write (or change) that program. What an adapter is, how to write a factory, and how to report errors are written only in `../README.md`; this file covers what belongs to the process adapter: **how to use it, the process protocol, errors, and how the program is cleaned up**. The process protocol is written only in this file; the adapter implementation (`wire.mjs`, `cli/session.mjs`) and the generated program skeleton both point here.
 
-## 怎么用
+## How to use it
 
-| 想做什么 | 命令 |
+| What you want to do | Command |
 |---|---|
-| 程序已经写好 | `node cli.mjs dub <包目录> <台本> --out <目录> --adapter process --command "python my_tts.py"`（`--command` 是进程适配器的参数，等于 `--adapter-option command="python my_tts.py"`） |
-| 还没有程序，要一个骨架 | `node cli.mjs adapter new <目录> --kind process --capabilities text-to-speech,voice-cloning`：生成 `adapter.mjs` 和 `program.py`，填写 `program.py`，再 `--adapter <目录>`（见 `../README.md`「做自己的适配器」） |
-| 在自己的适配器里用 | `export default ({ use }) => use('process', { command: ['python', 'my_tts.py'], capabilities: ['text-to-speech'] })` |
+| The program is already written | `node cli.mjs dub <pack directory> <script> --out <directory> --adapter process --command "python my_tts.py"` (`--command` is a parameter of the process adapter, equal to `--adapter-option command="python my_tts.py"`) |
+| No program yet, you need a skeleton | `node cli.mjs adapter new <directory> --kind process --capabilities text-to-speech,voice-cloning`: generates `adapter.mjs` and `program.py`; fill in `program.py`, then use `--adapter <directory>` (see `../README.md`「Making your own adapter」) |
+| Use it inside your own adapter | `export default ({ use }) => use('process', { command: ['python', 'my_tts.py'], capabilities: ['text-to-speech'] })` |
 
-程序可以是任何语言写的，只要照下面的进程协议读标准输入、写标准输出。生成的骨架是 Python 的，并且自带了协议的那一半（读请求、写回应、把标准输出让给协议）。
+The program can be written in any language, as long as it reads standard input and writes standard output following the process protocol below. The generated skeleton is in Python, and already includes the protocol half (reading requests, writing responses, handing standard output over to the protocol).
 
-## 选项
+## Options
 
-命令行上用 `--adapter-option 键=值`（`command` 还有简写 `--command`）；在自己的适配器里 `use('process', { … })` 给对象，值可以是数和数组。键写错报 `process_option_invalid`。
+On the command line use `--adapter-option key=value` (`command` also has the shorthand `--command`); in your own adapter, `use('process', { … })` takes an object, and values may be numbers and arrays. A wrongly written key reports `process_option_invalid`.
 
-| 选项 | 意思 | 默认 |
+| Option | Meaning | Default |
 |---|---|---|
-| `command` | 必给。程序怎么起：一个字符串（按空白分开；`"…"` 和 `'…'` 里的空白不分开，引号本身不留；没有别的转义，Windows 路径里的反斜杠照原样），或一个字符串数组（只能在 `use()` 里给，每项就是一个参数）。**不经 shell**：`.cmd`、`.bat` 起不来，写 `python`、`node` 或程序的完整路径 | |
-| `capabilities` | 这个适配器提供哪些能力，逗号隔开或数组。给了：加载时**不起程序**（结构检查看到的就是它），程序在第一次调用时才起，起来以后核对它在 `ready` 里有没有说有这些；没给：加载时就起程序，它在 `ready` 里说它有什么，就有什么 | 不给 |
-| `timeout` | 一个请求最多等多少秒，超时就结束程序 | 300 |
-| `startTimeout` | 等程序说 `ready` 最多多少秒（载入模型可能很慢） | 300 |
-| `cwd` | 程序的当前目录。相对的写法相对适配器自己的目录 | 适配器自己的目录（命令行上直接给 `--adapter process` 时，是命令的当前目录） |
+| `command` | Required. How to start the program: a string (split on whitespace; whitespace inside `"…"` and `'…'` is not split and the quotes themselves are dropped; there is no other escaping, and backslashes in Windows paths are kept as they are), or an array of strings (can only be given in `use()`; each item is one argument). **Not through a shell**: `.cmd` and `.bat` cannot be started; write `python`, `node`, or the full path of the program | |
+| `capabilities` | Which capabilities this adapter provides, comma-separated or an array. If given: the **program is not started** at load time (the structure check sees exactly this), the program is started at the first call, and after it starts, the adapter checks that it says in `ready` that it has these; if not given: the program is started at load time, and what it says it has in `ready` is what it has | not given |
+| `timeout` | The longest to wait for one request, in seconds; on timeout the program is ended | 300 |
+| `startTimeout` | The longest to wait for the program to say `ready`, in seconds (loading a model can be slow) | 300 |
+| `cwd` | The program's current directory. A relative value is relative to the adapter's own directory | The adapter's own directory (when `--adapter process` is given directly on the command line, the command's current directory) |
 
-程序继承命令的环境变量，另外加上 `PYTHONUNBUFFERED=1` 和 `PYTHONIOENCODING=utf-8`（Python 的标准输入输出不缓冲、用 UTF-8）。
+The program inherits the command's environment variables, with `PYTHONUNBUFFERED=1` and `PYTHONIOENCODING=utf-8` added (Python's standard input and output are unbuffered and use UTF-8).
 
-**没有单独的配置文件**：选项写在命令行上；要固定下来，用 `adapter new … --kind process` 生成的 `adapter.mjs`（里面的 `command`、`capabilities` 就是上面的选项），命令行上再给 `--adapter-option` 就盖过里面的同名项。
+**There is no separate configuration file**: options are written on the command line; to fix them, use the `adapter.mjs` generated by `adapter new … --kind process` (the `command` and `capabilities` in it are the options above), and giving `--adapter-option` on the command line again overrides the item of the same name in it.
 
-名字在 `DECLARED_CAPABILITIES`（只是声明的能力，目前有 `phoneme-in-text`、`phoneme-markers`、`scene-in-request`、`seed-in-request`，见 `../README.md`）里的，适配器返回 `true`，不发请求；程序在 `ready` 里仍然要说有它：这是程序对「合成认文字里的这种写法」的承诺。
+A name in `DECLARED_CAPABILITIES` (capabilities that are only declared; currently `phoneme-in-text`, `phoneme-markers`, `scene-in-request`, `seed-in-request`, see `../README.md`): the adapter returns `true` and sends no request; the program still has to say in `ready` that it has it: this is the program's promise that "synthesis accepts this form in the text".
 
-## 进程协议（版本 1）
+## Process protocol (version 1)
 
-**传输**：程序的标准输入和标准输出，UTF-8，**一行一个 JSON 对象**，换行结尾（`\r\n` 也认）。适配器写程序的标准输入，读程序的标准输出。标准错误不属于协议：程序的日志写在那里，出错时适配器会把全文带给使用者看（打过码）。
+**Transport**: the program's standard input and standard output, UTF-8, **one JSON object per line**, ending with a newline (`\r\n` is accepted too). The adapter writes the program's standard input and reads the program's standard output. Standard error is not part of the protocol: the program writes its logs there, and on an error the adapter gives the full text to the user (with sensitive strings masked).
 
-**三种消息**：
+**Three kinds of message**:
 
-1. 程序写 `ready`：程序载入完模型以后写**一次**，在这之前适配器不发任何请求。
+1. The program writes `ready`: the program writes it **once** after it has finished loading the model; until then the adapter sends no request.
 
    ```json
    {"event":"ready","protocol":1,"capabilities":["text-to-speech","phoneme-in-text"],"info":{"program":"my_tts","device":"cuda"}}
    ```
 
-   `protocol` 必须是 `1`；`capabilities` 是能力名的数组（非空字符串，重复的合并），包括只是声明的能力；`info` 可选，写什么都行（程序名、版本、设备），适配器不看。
+   `protocol` must be `1`; `capabilities` is an array of capability names (non-empty strings; duplicates are merged), including capabilities that are only declared; `info` is optional and may hold anything (program name, version, device); the adapter does not look at it.
 
-2. 适配器写请求：
+2. The adapter writes a request:
 
    ```json
    {"id":1,"capability":"voice-cloning","params":{"text":"Hello.","ref_audio":{"bytes":"UklGRg==","mimeType":"audio/wav"},"ref_text":"Hello."}}
    ```
 
-   `id` 是适配器给的整数（从 1 起，每个请求加 1），程序原样放在回应里。`params` 是这项能力的参数，字段名就是 `vocab/capability-signatures.md` 里每项能力的调用写法里的那几个；**音频**是 `{ "bytes": <Base64 字符串>, "mimeType": "audio/wav" }`，参考音频的数组（融合）就是这样的对象的数组。`enhancers`（增强件是要 `load()` 才读得到内容的函数）不传。整行只含 ASCII（非 ASCII 的字符写成 JSON 的 `\uXXXX`），所以程序的标准输入不管默认是什么编码都读得对，按标准 JSON 解码就行。
+   `id` is an integer given by the adapter (starting from 1, plus 1 for each request), and the program puts it back unchanged in the response. `params` are the parameters of this capability; the field names are the ones in the call form of each capability in `vocab/capability-signatures.md`; **audio** is `{ "bytes": <Base64 string>, "mimeType": "audio/wav" }`, and an array of reference audio (blend) is an array of such objects. `enhancers` (an enhancer is a function whose content is only readable after `load()`) is not passed. The whole line contains only ASCII (non-ASCII characters are written as JSON `\uXXXX`), so the program reads it correctly whatever the default encoding of its standard input is; standard JSON decoding is enough.
 
-   **一次只有一个请求在途**：回应（或程序死了）以后才发下一个，别的调用排队，按调用的先后。
+   **Only one request in flight at a time**: the next is sent only after the response (or the death of the program); other calls queue, in the order of the calls.
 
-3. 程序写回应，每个请求一个：
+3. The program writes a response, one per request:
 
    ```json
    {"id":1,"ok":true,"result":{"bytes":"UklGRg==","mimeType":"audio/wav","model":"my-tts-v1"}}
@@ -64,57 +64,57 @@
    {"id":1,"ok":false,"error":{"code":"gpu_busy","message":"the device is busy","transient":true,"details":{"device":0}}}
    ```
 
-   - `ok` 必给，是 `true` 或 `false`。`ok` 为 `true` 时 `result` 必须是对象，字段就是这项能力的返回值（音频同样是 Base64 加 `mimeType`；`model` 愿意报就报，见 `../README.md`「验证记录里的模型名从哪来」；程序这一次换了模型，`model` 写实际用的那个，另写 `"modelChange":{"from":"原来要用的模型","reason":"为什么换"}`，见 `../README.md`「换了模型」）。`result` 里的字段适配器原样传过来，只把音频的 Base64 换回字节。
-   - `ok` 为 `false` 时 `error.code` 必给（非空字符串）。`code` 是小写字母、数字、下划线、字母开头，就原样成为这个错误的 code；不是这个写法（例如 `"Out Of Memory"`），错误的 code 是 `process_program_error`，原来的放在 `details.programCode`。`message` 可选。`transient: true` 表示服务暂时出错、稍后重来也许就成（含义见 `../README.md`「出错的约定」）：**只认 `error.transient`**，`error.details` 里夹带的 `transient` 不算。`details` 可选，是对象，并进错误的 `details`（适配器再加上 `capability`）。
-   - 请求的是程序没有的能力：回一个 `error`（骨架里的 `code` 是 `capability_unsupported`）。
+   - `ok` is required and is `true` or `false`. When `ok` is `true`, `result` must be an object whose fields are the return value of this capability (audio is likewise Base64 plus `mimeType`; report `model` if you are willing to, see `../README.md`「Where the model name in the verification record comes from」; if the program switched the model this time, `model` is the one actually used, and also write `"modelChange":{"from":"原来要用的模型","reason":"为什么换"}` (the Chinese strings are placeholders: `from` is the model originally to be used, `reason` is why it was switched), see `../README.md`「When the model changes」). The adapter passes the fields in `result` through as they are, and only turns the Base64 of audio back into bytes.
+   - When `ok` is `false`, `error.code` is required (a non-empty string). If `code` is lowercase letters, digits, underscores, starting with a letter, it becomes the code of this error as it is; if it is not written that way (for example `"Out Of Memory"`), the error's code is `process_program_error` and the original goes in `details.programCode`. `message` is optional. `transient: true` means a transient service error that may succeed on a later retry (meaning in `../README.md`「Error conventions」): **only `error.transient` is recognized**, and a `transient` tucked inside `error.details` does not count. `details` is optional, an object, and is merged into the error's `details` (the adapter adds `capability`).
+   - If a capability the program does not have is requested: reply with an `error` (the `code` in the skeleton is `capability_unsupported`).
 
-**不是协议的行**：程序标准输出里不是协议消息的行（不是 JSON 对象、没有 `id` 也没有 `event` 的 JSON、不认识的 `event`）当作日志忽略，全部放进出错的 `details.output`（打过码）。所以多一两行 `print` 不会弄坏协议，但别指望它：生成的骨架把 `sys.stdout` 换成了标准错误，标准输出只给协议用。不认识的 `event` 也忽略，以后可以加新的事件。
+**Lines that are not protocol**: lines in the program's standard output that are not protocol messages (not a JSON object, JSON with neither `id` nor `event`, an unknown `event`) are ignored as logs, and all of them are put into `details.output` of an error (with sensitive strings masked). So an extra `print` or two will not break the protocol, but do not rely on it: the generated skeleton replaces `sys.stdout` with standard error, and standard output is for the protocol only. An unknown `event` is also ignored, so new events can be added later.
 
-**结束**：命令结束时适配器**关掉程序的标准输入**，程序读到输入结束就应该退出；3 秒内不退出，就被结束。程序自己的清理（保存状态、释放显卡）在读到输入结束之后做。
+**End of input**: when the command ends, the adapter **closes the program's standard input**, and the program should exit when it reads the end of input; if it does not exit within 3 seconds, it is ended. The program's own cleanup (saving state, releasing the GPU) is done after it reads the end of input.
 
-## 出错
+## Errors
 
-下面都是 `VoicePackError`（`code` 在表里；`details` 里有什么在表里写明）。程序自己报的错（`error`）见上，code 由程序定。
+Everything below is a `VoicePackError` (the `code` is in the table; what is in `details` is stated in the table). The errors the program reports itself (`error`) are above, and their code is set by the program.
 
-| code | 什么时候 | details |
+| code | When | details |
 |---|---|---|
-| `process_option_invalid` | 选项写错（没给 `command`、引号没配对、不认识的选项、`timeout` 不是正数……），在加载时报，不起程序 | `key` |
-| `process_spawn_failed` | 程序起不来：找不到（检查 PATH，或把完整路径写进命令）、`cwd` 不存在、没有权限 | `command`、`reason`（系统给的原因，例如 `ENOENT`） |
-| `process_start_timeout` | 超过 `startTimeout` 秒还没说 `ready`，已结束程序 | `seconds`、`stderr`、`output` |
-| `process_exited` | 程序退出了，而 `ready` 或回应还没有来 | `stage`（`start` 或 `request`）、`exitCode`、`signal`、`capability`（`stage` 是 `request` 时）、`stderr`、`output` |
-| `process_timeout` | 一个请求超过 `timeout` 秒没有回应，已结束程序 | `capability`、`seconds`、`stderr`、`output` |
-| `process_not_running` | 程序已经不在了（此前起不来、退出了、超时被结束、违反了协议，或会话关了），这个调用没有发出去 | `capability`、`reason`（当初出的那个错的 code；会话被关了是 `closed`） |
-| `process_protocol_error` | 程序违反了协议：`ready` 写得不对（`protocol` 不是 1、`capabilities` 不是名字的数组），或回应的 `id` 不是在途的请求（回了两次、回了没发过的 `id`）。已结束程序 | `reason`（`ready_invalid` 或 `unknown_id`）、`id`（`unknown_id` 时）、`stderr`、`output` |
-| `process_capability_unsupported` | 选项 `capabilities` 里写了的能力，程序在 `ready` 里没说有。已结束程序 | `missing`、`announced` |
-| `process_response_invalid` | 回应是协议的消息，但内容不对：没有 `ok`、`ok` 为 `true` 而 `result` 不是对象、`ok` 为 `false` 而 `error` 里没有 `code`、音频的 Base64 写得不对。**只这一个请求报错，程序不动**，后面的请求照常 | `capability`、`problem` |
-| `process_request_invalid` | 请求编不出来：参数里有裸的字节（音频要写成 `{ bytes, mimeType }`）、循环引用。在发之前报，程序不动 | `capability`、`problem`（`bare_bytes` 或 `not_json`）、`field` |
-| `process_program_error` | 程序报的 `error.code` 不合 code 的写法 | 程序给的 `details`、`capability`、`programCode`、`transient`（程序标了才有） |
+| `process_option_invalid` | An option is written wrongly (no `command` given, unpaired quotes, an unknown option, `timeout` is not a positive number, …); reported at load time, and the program is not started | `key` |
+| `process_spawn_failed` | The program cannot be started: not found (check PATH, or write the full path into the command), `cwd` does not exist, no permission | `command`, `reason` (the reason the system gave, for example `ENOENT`) |
+| `process_start_timeout` | It has not said `ready` after more than `startTimeout` seconds, and the program has been ended | `seconds`, `stderr`, `output` |
+| `process_exited` | The program exited while `ready` or a response had not yet come | `stage` (`start` or `request`), `exitCode`, `signal`, `capability` (when `stage` is `request`), `stderr`, `output` |
+| `process_timeout` | A request got no response after more than `timeout` seconds, and the program has been ended | `capability`, `seconds`, `stderr`, `output` |
+| `process_not_running` | The program is no longer there (it could not be started earlier, exited, was ended after a timeout, violated the protocol, or the session was closed), and this call was not sent | `capability`, `reason` (the code of the error that happened at that time; `closed` if the session was closed) |
+| `process_protocol_error` | The program violated the protocol: `ready` is written wrongly (`protocol` is not 1, `capabilities` is not an array of names), or the `id` of a response is not a request in flight (answered twice, answered an `id` that was never sent). The program has been ended | `reason` (`ready_invalid` or `unknown_id`), `id` (when `unknown_id`), `stderr`, `output` |
+| `process_capability_unsupported` | A capability written in the option `capabilities` was not said to exist by the program in `ready`. The program has been ended | `missing`, `announced` |
+| `process_response_invalid` | The response is a protocol message but its content is wrong: no `ok`, `ok` is `true` and `result` is not an object, `ok` is `false` and `error` has no `code`, the Base64 of the audio is written wrongly. **Only this one request reports an error; the program is left alone**, and later requests go on as usual | `capability`, `problem` |
+| `process_request_invalid` | The request cannot be encoded: the parameters contain bare bytes (audio must be written as `{ bytes, mimeType }`), or a circular reference. Reported before sending; the program is left alone | `capability`, `problem` (`bare_bytes` or `not_json`), `field` |
+| `process_program_error` | The `error.code` the program reported does not fit the code format | The `details` the program gave, `capability`, `programCode`, `transient` (only if the program marked it) |
 
-`stderr` 是程序写在标准错误里的全文，`output` 是它写在标准输出里的、不是协议消息的全部行（两者都打过码：令牌形状的串和签名地址去掉，别的字不动），帮人找原因（例如 Python 的栈追踪在 `stderr` 里）。
+`stderr` is the full text the program wrote to standard error, and `output` is all the lines it wrote to standard output that are not protocol messages (both are masked: token-shaped strings and signed URLs are removed, nothing else is changed), to help people find the cause (for example a Python stack trace is in `stderr`).
 
-**超时和退出不标 `details.transient`**：适配器分不清一个卡住的程序和一个必现的 bug，宁可马上停下来让人看。程序知道自己的某个失败是暂时的，就在自己的 `error` 里写 `transient: true`。
+**Timeouts and exits are not marked `details.transient`**: the adapter cannot tell a stuck program from a reproducible bug, and would rather stop at once for someone to look. If the program knows that one of its failures is transient, it writes `transient: true` in its own `error`.
 
-## 生命周期
+## Lifecycle
 
-- **一个会话只起一次程序**。起不来、退出了、超时被结束、违反协议以后，会话就死了，后面的调用马上报 `process_not_running`，**不重起**：重起会让一个卡死的输入拖着后面的每个输入各等一次启动。要接着做，重新运行命令，它会起一个新的程序。
-- **谁来收程序**：命令正常结束（事件循环空了）时，关程序的标准输入，请它退出，3 秒内不退就结束它；命令调了 `process.exit()` 或抛了没接住的异常时，同步地结束它；宿主被信号杀死、断电这类连退出事件都没有的情况：Windows 上 Node 把子进程放进一个宿主退出就关掉的作业对象，系统会收掉它，别的系统靠程序读到标准输入结束就退出（上面「结束」那一条）。超时、违反协议这类「宿主还活着、程序不行了」的结束，Windows 上用 `taskkill /T` 连它起的子进程一起结束（虚拟环境里的 `python.exe` 是个启动器，会再起真正的解释器，只结束启动器会留下解释器），别的系统只结束程序本身。**程序自己起的子进程（多进程的推理、数据加载）归程序管**：它们要在标准输入结束时自己退出。
-- 程序是在本机、以你自己的权限、按你给的命令起的，和包里的脚本一样不隔离（见 `../README.md`「信任」）：只给自己信得过的命令。
+- **One session starts the program only once**. After it cannot be started, exited, was ended after a timeout, or violated the protocol, the session is dead, and later calls report `process_not_running` at once and **do not restart**: a restart would let one stuck input drag every later input into waiting for a start each. To go on, run the command again, and it starts a new program.
+- **Who cleans up the program**: when the command ends normally (the event loop is empty), the program's standard input is closed to ask it to exit, and if it does not exit within 3 seconds it is ended; when the command calls `process.exit()` or throws an uncaught exception, it is ended synchronously; when the host is killed by a signal, loses power, or the like, where there is not even an exit event: on Windows, Node puts the child process into a job object that is closed when the host exits, and the system collects it; on other systems it relies on the program exiting when it reads the end of standard input (the "End of input" item above). For endings where "the host is still alive but the program is not working" such as a timeout or a protocol violation, on Windows `taskkill /T` is used to end it together with the child processes it started (the `python.exe` in a virtual environment is a launcher that starts the real interpreter, and ending only the launcher would leave the interpreter behind); on other systems only the program itself is ended. **Child processes the program starts itself (multi-process inference, data loading) are the program's responsibility**: they must exit by themselves when standard input ends.
+- The program is started on this machine, with your own permissions, with the command you gave, and like the scripts in a pack it is not isolated (see `../README.md`「Trust」): give only commands you trust.
 
-## 费用说明和字数上限
+## Cost notice and character limit
 
-进程适配器只返回 `capabilities`：它不知道你的程序花不花钱、一个请求最多多少字、用的是哪个模型。要告诉命令（花钱之前说明费用；`dub` 按上限并、切请求；`dub --dry-run` 的汇总写模型名），在自己的适配器里加上 `billing`、`limits`（`maxChars`、`minChars`、`maxPauseInRequestMs`；程序声明了 `scene-in-request` 的再加 `maxSpeakers`）和 `models`：
+The process adapter returns only `capabilities`: it does not know whether your program costs money, how many characters one request may have at most, or which model is used. To tell the command (so it states the cost before spending money; `dub` merges and splits requests by the limit; the summary of `dub --dry-run` writes the model name), add `billing`, `limits` (`maxChars`, `minChars`, `maxPauseInRequestMs`; plus `maxSpeakers` if the program declares `scene-in-request`) and `models` in your own adapter:
 
 ```js
 export default async ({ use }) => ({
   ...(await use('process', { command: ['python', 'my_tts.py'] })),
-  billing: '在我自己的服务器上调用，费用记在我自己的账户上',
+  billing: 'a call to my own server, and the cost is charged to my own account',
   limits: { maxChars: 200 },
   models: { 'voice-cloning': 'my-tts-v1' },
 });
 ```
 
-这几个键的意思和不给的后果见 `../README.md`「返回的形状」。
+What these keys mean and what happens if they are not given: see `../README.md`「Shape of the return value」.
 
-## 写程序
+## Writing the program
 
-用 `adapter new … --kind process` 生成的 `program.py` 已经把协议那一半写好了（读请求、分发、写回应、`ready`、把标准输出让给协议、异常变成 `error`），你只填每项能力的函数和 `load_models()`。用别的语言写，照上面的协议就行：先载入模型，写 `ready`，然后一行一行地读标准输入，每个请求写一个回应，读到输入结束就退出。写完用 `node cli.mjs adapter check <适配器> --live` 把每项能力真调一次，核对返回的音频能解码、长度大于 0、`mimeType` 对得上字节。
+The `program.py` generated by `adapter new … --kind process` already has the protocol half written (reading requests, dispatching, writing responses, `ready`, handing standard output over to the protocol, turning exceptions into `error`), and you only fill in the function for each capability and `load_models()`. If you write it in another language, follow the protocol above: load the model first, write `ready`, then read standard input line by line, write one response for each request, and exit when you read the end of input. When it is written, use `node cli.mjs adapter check <adapter> --live` to call each capability once for real, and check that the returned audio can be decoded, has length greater than 0, and that `mimeType` matches the bytes.

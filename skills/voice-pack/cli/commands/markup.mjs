@@ -6,8 +6,8 @@
 import { parseScript } from '../../tools/markup.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 
-export const summary = '解析台本标记：章节、声音切换、停顿（别的方括号是提示，原样留着）';
-export const usage = 'markup <台本文件|-> [--default-voice <声音名>] [--json]';
+export const summary = 'Parse script markup: chapters, voice switches, pauses (other square brackets are cues and are left as they are)';
+export const usage = 'markup <script file|-> [--default-voice <voice name>] [--json]';
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = { 'default-voice': 'string' };
@@ -23,15 +23,15 @@ export async function run(args, ctx) {
     return 0;
   }
   const spanCount = chapters.reduce((n, c) => n + c.spans.length, 0);
-  ctx.stdout(`${chapters.length} 章，${spanCount} 段\n`);
+  ctx.stdout(`${chapters.length} ${chapters.length === 1 ? 'chapter' : 'chapters'}, ${spanCount} ${spanCount === 1 ? 'span' : 'spans'}\n`);
   chapters.forEach((chapter, i) => {
-    ctx.stdout(`\n第 ${i + 1} 章：${chapter.title}（${chapter.spans.length} 段）\n`);
+    ctx.stdout(`\nChapter ${i + 1}: ${chapter.title} (${chapter.spans.length} ${chapter.spans.length === 1 ? 'span' : 'spans'})\n`);
     chapter.spans.forEach((span, j) => {
       const fields = [
-        span.voice_id !== null && `声音=${span.voice_id}`,
-        span.pause_ms_after > 0 && `停=${span.pause_ms_after}ms`,
+        span.voice_id !== null && `voice=${span.voice_id}`,
+        span.pause_ms_after > 0 && `pause=${span.pause_ms_after}ms`,
       ].filter(Boolean);
-      ctx.stdout(`  ${j + 1}. ${fields.length ? `[${fields.join(' ')}] ` : ''}${span.text === '' ? '（只有停顿）' : span.text}\n`);
+      ctx.stdout(`  ${j + 1}. ${fields.length ? `[${fields.join(' ')}] ` : ''}${span.text === '' ? '(pause only)' : span.text}\n`);
     });
   });
   return 0;

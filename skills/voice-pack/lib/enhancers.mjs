@@ -27,12 +27,12 @@ export const summarizeOffer = ({ id, model, modelVersion, capability, referenceV
  * @returns {string[]} 用上的增强件 id
  */
 export function readAudioResult(capability, result, offers) {
-  if (!isAudioClip(result)) throw badResult(capability, 'audio_missing', '要 { bytes: Uint8Array（非空）, mimeType: audio/…, model? }');
+  if (!isAudioClip(result)) throw badResult(capability, 'audio_missing', 'Expected { bytes: Uint8Array (non-empty), mimeType: audio/…, model? }');
   const used = result.enhancers_used ?? [];
   const offered = new Set(offers.map((offer) => offer.id));
   const unknown = Array.isArray(used) ? used.filter((id) => !offered.has(id)) : null;
   if (unknown === null || unknown.length > 0) {
-    throw new VoicePackError('capability_result_invalid', `所需能力 ${capability} 报了没有递给它的增强件：enhancers_used 要是递给它的增强件的 id（${[...offered].join('、') || '这次没有递'}）`, { details: { capability, problem: 'enhancers_used_invalid', unknown: unknown ?? used } });
+    throw new VoicePackError('capability_result_invalid', `Required capability ${capability} reported enhancers that were not offered to it: enhancers_used must be ids of the enhancers offered to it (${[...offered].join(', ') || 'none were offered this time'})`, { details: { capability, problem: 'enhancers_used_invalid', unknown: unknown ?? used } });
   }
   return used;
 }

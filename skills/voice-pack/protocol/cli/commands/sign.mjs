@@ -13,20 +13,20 @@ import { SIGNATURE_SUFFIX, signMessage } from '../../lib/signature.mjs';
 import { writeNewFile } from '../disk.mjs';
 import { parseOptions, readFileBytes, readPrivateKeyFile } from '../signing.mjs';
 
-export const summary = '给一份文件签名，写出 minisign 格式的签名文件（放在被签文件旁边）';
-export const usage = 'sign <文件> --key <私钥文件> [--sig <签名文件>] [--trusted-comment <一行>]';
+export const summary = 'Sign a file and write a signature file in minisign format (next to the signed file)';
+export const usage = 'sign <file> --key <private key file> [--sig <signature file>] [--trusted-comment <one line>]';
 
 export async function run(args, ctx) {
   const options = parseOptions(args, { values: ['key', 'sig', 'trusted-comment'] });
-  if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
+  if (options.problem !== undefined) { ctx.stderr(`Usage error: ${options.problem}\nUsage: ${usage}\n`); return 2; }
   const [target, ...extra] = options.positional;
   const keyFile = options.values.key;
-  if (target === undefined) { ctx.stderr(`用法错误：要指定被签的文件\n用法：${usage}\n`); return 2; }
-  if (extra.length > 0) { ctx.stderr(`用法错误：一次只签一个文件，多出来的是 ${extra.join(' ')}\n`); return 2; }
-  if (keyFile === undefined) { ctx.stderr(`用法错误：要用 --key 指定私钥文件\n用法：${usage}\n`); return 2; }
+  if (target === undefined) { ctx.stderr(`Usage error: give the file to sign\nUsage: ${usage}\n`); return 2; }
+  if (extra.length > 0) { ctx.stderr(`Usage error: sign takes one file at a time, extra: ${extra.join(' ')}\n`); return 2; }
+  if (keyFile === undefined) { ctx.stderr(`Usage error: give the private key file with --key\nUsage: ${usage}\n`); return 2; }
 
   const file = path.resolve(ctx.cwd, target);
-  const message = readFileBytes(file, '被签的文件');
+  const message = readFileBytes(file, 'file to sign');
   const privateKey = readPrivateKeyFile(path.resolve(ctx.cwd, keyFile));
   const signatureFile = path.resolve(ctx.cwd, options.values.sig ?? `${target}${SIGNATURE_SUFFIX}`);
   const trustedComment = options.values['trusted-comment'] ?? `file:${path.basename(target)}`;
@@ -36,7 +36,7 @@ export async function run(args, ctx) {
   if (ctx.json) {
     ctx.stdout(JSON.stringify({ file, signatureFile, bytes: message.length, trustedComment }) + '\n');
   } else {
-    ctx.stdout(`签好了：${signatureFile}（${message.length} 字节，trusted comment：${trustedComment}）\n`);
+    ctx.stdout(`Signed: ${signatureFile} (${message.length} bytes, trusted comment: ${trustedComment})\n`);
   }
   return 0;
 }

@@ -151,7 +151,7 @@ const maxFramesOf = (channels) => Math.floor((RIFF_SIZE_MAX + 8 - wavFileBytes(0
 /** 接上以后的总帧数装得下一份 WAV 吗（和 encodeWav 查的是同一条）。 */
 const fitsWav = (frames, channels) => frames <= maxFramesOf(channels);
 /** 秒数的读法：毫秒换成秒；超出浮点数能表示的范围（解析器已经挡住，这里是直接递进来的）就照实说。 */
-const secondsOf = (ms) => (Number.isFinite(ms) ? Math.round(ms) / 1000 : '超出能表示的范围');
+const secondsOf = (ms) => (Number.isFinite(ms) ? Math.round(ms) / 1000 : 'an unrepresentable number of');
 
 /**
  * 放不下：piece（一处停顿，或一句的声音）接在 framesBefore 帧后面，成品超过一份 WAV。按长度查出来的，不分配。
@@ -161,11 +161,11 @@ const secondsOf = (ms) => (Number.isFinite(ms) ? Math.round(ms) / 1000 : '超出
 function tooLongError(piece, framesBefore, channels, sampleRate) {
   const maxFrames = maxFramesOf(channels);
   const limit = Math.floor(maxFrames / sampleRate);
-  const before = framesBefore >= sampleRate ? `前面已经有 ${Math.floor(framesBefore / sampleRate)} 秒，` : '';
+  const before = framesBefore >= sampleRate ? `${Math.floor(framesBefore / sampleRate)} s of audio already precede it; ` : '';
   const what = piece.pause
-    ? `第 ${piece.number} 句${piece.pause.side === 'before' ? '前面' : '后面'}的停顿（${secondsOf(piece.pause.ms)} 秒）放不下`
-    : `第 ${piece.number} 句放不下`;
-  const message = `${what}：${before}接上它以后，成品超过一份 WAV 能装的长度（${sampleRate} Hz、${channels} 声道时最长 ${limit} 秒）。请把停顿写短，或者把稿子分成几份出（每份装得下）。`;
+    ? `The pause ${piece.pause.side === 'before' ? 'before' : 'after'} line ${piece.number} (${secondsOf(piece.pause.ms)} s) does not fit`
+    : `Line ${piece.number} does not fit`;
+  const message = `${what}: ${before}once it is joined on, the result is longer than one WAV can hold (at most ${limit} s at ${sampleRate} Hz with ${channels} ${channels === 1 ? 'channel' : 'channels'}). Shorten the pauses, or split the script into several outputs (each one must fit).`;
   const details = {
     number: piece.number,
     side: piece.pause ? piece.pause.side : null,
@@ -187,8 +187,8 @@ function outOfMemoryError(pieces, frames, channels, sampleRate, cause) {
   for (const piece of pieces) {
     if (piece.pause && (longest === null || piece.pause.ms > longest.pause.ms)) longest = piece;
   }
-  const where = longest ? `最长的一处停顿是第 ${longest.number} 句${longest.pause.side === 'before' ? '前面' : '后面'}的 ${secondsOf(longest.pause.ms)} 秒。` : '';
-  const message = `成品有 ${Math.round(frames / sampleRate)} 秒，长度上装得下一份 WAV，可是这台机器的内存放不下它（${cause.message}）。${where}请把停顿写短，或者把稿子分成几份出（每份装得下）。`;
+  const where = longest ? `The longest pause is the one ${longest.pause.side === 'before' ? 'before' : 'after'} line ${longest.number}, ${secondsOf(longest.pause.ms)} s. ` : '';
+  const message = `The result is ${Math.round(frames / sampleRate)} s long, which fits in one WAV, but this machine does not have the memory for it (${cause.message}). ${where}Shorten the pauses, or split the script into several outputs (each one must fit).`;
   const details = {
     reason: 'memory',
     number: longest ? longest.number : null,
@@ -247,7 +247,7 @@ function trimTurnEdges(audio, { head, tail }) {
  * @returns {Promise<{ wav: Uint8Array, report: object }>}
  */
 export async function mixParts(env, parts) {
-  if (parts.length === 0) throw new VoicePackError('mix_input_invalid', '没有可接的句子（dub.json 里一句都没有）');
+  if (parts.length === 0) throw new VoicePackError('mix_input_invalid', 'There are no lines to join (dub.json has no lines)');
   const ffmpeg = env?.runtimes?.ffmpeg;
   const notes = [];
   const speedChanged = [];
@@ -268,7 +268,7 @@ export async function mixParts(env, parts) {
     decoded.push({ ...part, audio });
   }
   if (unapplied.length > 0) {
-    notes.push({ code: 'speed_not_applied', message: `没有 ffmpeg，语速没有用上：第 ${unapplied.join('、')} 句照原速接上（dub.json 的 speed 记着要的语速：调用方或设定给的，dub 合成时没变成的）`, details: { units: unapplied } });
+    notes.push({ code: 'speed_not_applied', message: `ffmpeg is missing, so the speed was not applied: ${unapplied.length === 1 ? 'line' : 'lines'} ${unapplied.join(', ')} joined at the original speed (the speed in dub.json records the speed that was asked for, by the caller or a setup, and that dub did not achieve when synthesizing)`, details: { units: unapplied } });
   }
   // 换人处（规则 7）：相邻两句的包不同。第 i 句的头削的是它和第 i-1 句之间的那一处，尾削的是它和第 i+1 句之间的那一处
   // 一场戏的头是 pack，尾是 lastSpeakerPack（别的句子没有 lastSpeakerPack，头尾都是 pack）：换人处看「前一个的尾」和「后一个的头」
@@ -297,7 +297,7 @@ export async function mixParts(env, parts) {
     item.audio = { ...item.audio, samples: cut.samples, frames: cut.samples[0].length };
   });
   if (silentTurnUnits.length > 0) {
-    notes.push({ code: 'silent_unit', message: `第 ${silentTurnUnits.join('、')} 句整句低于 ${SILENCE_DBFS} dBFS（是静音），换人处不削它的静音，照原样接上`, details: { units: silentTurnUnits } });
+    notes.push({ code: 'silent_unit', message: `${silentTurnUnits.length === 1 ? 'Line' : 'Lines'} ${silentTurnUnits.join(', ')} ${silentTurnUnits.length === 1 ? 'is' : 'are'} entirely below ${SILENCE_DBFS} dBFS (silent): the silence is not trimmed at a speaker change, joined as is`, details: { units: silentTurnUnits } });
   }
   // 成品的格式：第一句的采样率和声道。别的句子统一过去（记下是哪几句）
   const sampleRate = decoded[0].audio.sampleRate;

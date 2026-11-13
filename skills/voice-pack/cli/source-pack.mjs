@@ -29,18 +29,18 @@ export async function readSourcePack(ctx, argument) {
     inspected = await inspectTarget(argument, ctx, { allowUnsigned: true });
   } catch (error) {
     if (isVoicePackError(error, 'file_unreadable')) {
-      throw new VoicePackError('duplicate_check_source_invalid', '来源包读不了：--source-pack 给的路径不存在，或者没有权限读', { details: { reason: 'unreadable' } });
+      throw new VoicePackError('duplicate_check_source_invalid', 'The source pack cannot be read: the path given to --source-pack does not exist, or there is no permission to read it', { details: { reason: 'unreadable' } });
     }
     throw error;
   }
   if (inspected.files === null) {
     const codes = [...new Set(inspected.report.problems.map((problem) => problem.code))];
-    throw new VoicePackError('duplicate_check_source_invalid', `来源包打不开：不是合法的分享文件，或者目录里有问题（${codes.join('、') || '原因不明'}）`, { details: { reason: 'unopenable', codes } });
+    throw new VoicePackError('duplicate_check_source_invalid', `The source pack cannot be opened: it is not a valid share file, or something in the directory is wrong (${codes.join(', ') || 'reason unknown'})`, { details: { reason: 'unopenable', codes } });
   }
   return inspected.files;
 }
 
-const MEASURE = { rougeLF1: 'ROUGE-L F1', copiedRatio: '抄用比例', copiedCoverage: '来源被带走的比例' };
+const MEASURE = { rougeLF1: 'ROUGE-L F1', copiedRatio: 'copied ratio', copiedCoverage: 'share of the source taken away' };
 
 /** 查重通过时给人看的几行。 */
 export function describeDuplicateCheck(report) {
@@ -48,21 +48,22 @@ export function describeDuplicateCheck(report) {
   const { text, audio, thresholds } = report;
   const highestText = text.highest === null
     ? ''
-    : `，离阈值最近的是 ${text.highest.item}（${Object.entries(MEASURE).map(([key, name]) => `${name} ${text.highest[key]}`).join('，')}；阈值 ${thresholds.text.rougeLF1}、${thresholds.text.copiedShare}）`;
+    : `, the closest to the threshold is ${text.highest.item} (${Object.entries(MEASURE).map(([key, name]) => `${name} ${text.highest[key]}`).join(', ')}; thresholds ${thresholds.text.rougeLF1}, ${thresholds.text.copiedShare})`;
+  const comparedText = `${text.compared} text ${text.compared === 1 ? 'item' : 'items'}`;
   // 录音有没比的（新包的解不开，或者来源包里的没法比）：结论不写「通过」，只说文字过了（lib/duplicate-check.mjs：解不了的记在 unchecked 里，不假装查过了）
   const audioPartial = audio.unchecked.length > 0 || Object.keys(audio.sourceUnchecked).length > 0;
   lines.push(audioPartial
-    ? `查重：文字通过；录音没比全（哪几段、为什么，见下面），录音这一半不算查过。文字比了 ${text.compared} 项${highestText}`
-    : `查重：通过。文字比了 ${text.compared} 项${highestText}`);
+    ? `Duplicate check: text passed; audio was not fully compared (which segments and why are listed below), so the audio half does not count as checked. ${comparedText} compared${highestText}`
+    : `Duplicate check: passed. ${comparedText} compared${highestText}`);
   const tooShort = text.skipped.filter((item) => item.reason === 'too_short');
-  if (tooShort.length > 0) lines.push(`  没比的文字：${tooShort.map((item) => item.item).join('、')}（不到 ${thresholds.text.minTokens} 个词，太短，各写各的也容易撞）`);
-  const highestAudio = audio.highest === null ? '' : `，复用最多的是 ${audio.highest.item}（${audio.highest.reusedSeconds} 秒，一共 ${audio.highest.totalSeconds} 秒；阈值 ${thresholds.audio.reusedSeconds} 秒）`;
-  lines.push(`  录音查了 ${audio.checked} 段（来源包里有 ${audio.sourceClips} 段能比）${highestAudio}`);
+  if (tooShort.length > 0) lines.push(`  Text not compared: ${tooShort.map((item) => item.item).join(', ')} (under ${thresholds.text.minTokens} words, too short: even independently written texts easily coincide)`);
+  const highestAudio = audio.highest === null ? '' : `, the most reuse is in ${audio.highest.item} (${audio.highest.reusedSeconds} s of ${audio.highest.totalSeconds} s; threshold ${thresholds.audio.reusedSeconds} s)`;
+  lines.push(`  Recordings checked: ${audio.checked} ${audio.checked === 1 ? 'segment' : 'segments'} (${audio.sourceClips} in the source pack can be compared)${highestAudio}`);
   if (audio.unchecked.length > 0) {
     const needsFfmpeg = audio.unchecked.some((clip) => clip.reason === 'decode_unavailable');
-    lines.push(`  没查到的录音：${audio.unchecked.map((clip) => `${clip.item}（${clip.reason === 'decode_unavailable' ? '要 ffmpeg 才解得开，这里没有' : '解不开'}）`).join('、')}${needsFfmpeg ? `；装上 ffmpeg 再做一次才比得上（${FFMPEG_INSTALL}）` : ''}`);
+    lines.push(`  Recordings not checked: ${audio.unchecked.map((clip) => `${clip.item} (${clip.reason === 'decode_unavailable' ? 'ffmpeg is needed to decode it, and it is not available here' : 'cannot be decoded'})`).join(', ')}${needsFfmpeg ? `; install ffmpeg and run again to compare them (${FFMPEG_INSTALL})` : ''}`);
   }
-  const missing = Object.entries(audio.sourceUnchecked).map(([reason, count]) => `${count} 段${{ external: '在包外面（外部资源）', decode_unavailable: '要 ffmpeg 才解得开，这里没有', decode_failed: '解不开' }[reason] ?? reason}`);
-  if (missing.length > 0) lines.push(`  来源包里没法比的录音：${missing.join('；')}`);
+  const missing = Object.entries(audio.sourceUnchecked).map(([reason, count]) => `${count} ${count === 1 ? 'segment' : 'segments'}: ${{ external: 'outside the pack (external resources)', decode_unavailable: 'ffmpeg is needed to decode, and it is not available here', decode_failed: 'cannot be decoded' }[reason] ?? reason}`);
+  if (missing.length > 0) lines.push(`  Recordings in the source pack that cannot be compared: ${missing.join('; ')}`);
   return lines;
 }

@@ -105,7 +105,7 @@ export const referencedTagsOf = (setups) => [...new Set((setups ?? []).filter((s
 const referencesOf = (setups) => (setups ?? []).flatMap((setup, index) => (isPlainObject(setup) && setup.referenceTag !== undefined ? [{ index, name: setup.name, tag: setup.referenceTag }] : []));
 
 /** 标签列成给人看的样子：「平常」「愤怒」，没有就是「没有」。 */
-const listed = (tags) => (tags.length === 0 ? '没有' : tags.map((tag) => `「${tag}」`).join(''));
+const listed = (tags) => (tags.length === 0 ? 'none' : tags.map((tag) => `"${tag}"`).join(', '));
 
 /**
  * 花钱之前：设定的 referenceTag 必须是素材给的标签，或者上一版参考的标签（见文件头）。
@@ -117,7 +117,7 @@ export function assertReferenceTagsKnown(items, setups) {
   const known = [...new Set(items.filter((item) => item.unused === undefined && groupTagOf(item) !== undefined).map(groupTagOf))];
   for (const { index, name, tag } of referencesOf(setups)) {
     if (typeof tag === 'string' && known.includes(tag)) continue;
-    throw invalid(`setups[${index}].referenceTag`, `设定 ${JSON.stringify(name)} 的默认参考 ${JSON.stringify(tag)} 不是素材给的音色基底标签，也不是上一版参考的标签（这次用得上的有：${listed(known)}；段的名字不算，去掉的段不算）`);
+    throw invalid(`setups[${index}].referenceTag`, `The default reference ${JSON.stringify(tag)} of setup ${JSON.stringify(name)} is neither a reference tag given in the material nor a tag of the previous version's references (the ones usable this time: ${listed(known)}; segment names do not count, and removed segments do not count)`);
   }
 }
 
@@ -132,8 +132,8 @@ export function assertReferenceTagsPlaced(items, setups, { referenceIds } = {}) 
     const holders = items.filter((item) => groupTagOf(item) === tag);
     const placed = holders.some((item) => item.unused === undefined && (inSet === null || inSet.has(item.id)));
     if (placed) continue;
-    const why = holders.map((item) => `${item.id}：${item.unused?.reason ?? '没进参考集'}`).join('、');
-    throw invalid(`setups[${index}].referenceTag`, `设定 ${JSON.stringify(name)} 的默认参考 ${JSON.stringify(tag)} 这次没有一段参考带着它（带这个标签的段：${why || '没有'}），包里的设定就会指到不存在的参考，做包停下`);
+    const why = holders.map((item) => `${item.id}: ${item.unused?.reason ?? 'not in the reference set'}`).join(', ');
+    throw invalid(`setups[${index}].referenceTag`, `The default reference ${JSON.stringify(tag)} of setup ${JSON.stringify(name)} has no reference segment carrying it this time (segments with this tag: ${why || 'none'}), so the setup in the pack would point to a reference that does not exist, and making the pack stops`);
   }
 }
 

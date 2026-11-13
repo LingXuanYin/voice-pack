@@ -43,7 +43,7 @@ const HEX_ESCAPES = { x: 2, u: 4, U: 8 };
 
 /** 抛 skill_md_invalid，不返回：调用的地方不用再 throw（别的模块里的 fail 是造出一个错误、由调用的地方 throw，所以这个不叫 fail）。 */
 const throwInvalid = (reason, message, line) => {
-  throw new VoicePackError('skill_md_invalid', `SKILL.md ${message}${line === undefined ? '' : `（第 ${line} 行）`}`, { details: line === undefined ? { reason } : { reason, line } });
+  throw new VoicePackError('skill_md_invalid', `SKILL.md ${message}${line === undefined ? '' : ` (line ${line})`}`, { details: line === undefined ? { reason } : { reason, line } });
 };
 
 /** 折叠行：相邻的文字行用一个空格连起来，k 个空行变成 k 个换行。 */
@@ -77,7 +77,7 @@ function readQuoted(lines, at, col, quote, base) {
     if (i >= text.length) {
       // 行尾：丢掉行尾空白，进入折叠
       pending = '';
-      if (line + 1 >= lines.length) throwInvalid('syntax', '里有一个引号没有闭合', base + at + 1);
+      if (line + 1 >= lines.length) throwInvalid('syntax', 'has a quote that is never closed', base + at + 1);
       line++;
       i = 0;
       if (folding) blanks++;
@@ -97,14 +97,14 @@ function readQuoted(lines, at, col, quote, base) {
     if (ch === quote) {
       if (quote === "'" && text[i + 1] === "'") { out += "'"; i += 2; continue; }
       const tail = text.slice(i + 1);
-      if (!/^[ ]*$/.test(tail) && !/^[ ]+#/.test(tail)) throwInvalid('syntax', '的引号后面还有别的字', base + line + 1);
+      if (!/^[ ]*$/.test(tail) && !/^[ ]+#/.test(tail)) throwInvalid('syntax', 'has extra text after a closing quote', base + line + 1);
       return { value: out, endLine: line };
     }
     if (quote === '"' && ch === '\\') {
       const next = text[i + 1];
       if (next === undefined) { // 行尾的反斜杠：折行，不留空格
         out += pending;
-        if (line + 1 >= lines.length) throwInvalid('syntax', '里有一个引号没有闭合', base + at + 1);
+        if (line + 1 >= lines.length) throwInvalid('syntax', 'has a quote that is never closed', base + at + 1);
         line++;
         i = 0;
         while (lines[line][i] === ' ' || lines[line][i] === '\t') i++;
@@ -114,12 +114,12 @@ function readQuoted(lines, at, col, quote, base) {
         const digits = HEX_ESCAPES[next];
         const hex = text.slice(i + 2, i + 2 + digits);
         const code = Number.parseInt(hex, 16);
-        if (hex.length !== digits || !/^[0-9a-fA-F]+$/.test(hex) || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) throwInvalid('syntax', `的转义 \\${next}${hex} 不合法`, base + line + 1);
+        if (hex.length !== digits || !/^[0-9a-fA-F]+$/.test(hex) || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) throwInvalid('syntax', `has an invalid escape \\${next}${hex}`, base + line + 1);
         out += String.fromCodePoint(code);
         i += 2 + digits;
         continue;
       }
-      if (!Object.hasOwn(ESCAPES, next)) throwInvalid('syntax', `的双引号里有不认识的转义 \\${next}`, base + line + 1);
+      if (!Object.hasOwn(ESCAPES, next)) throwInvalid('syntax', `has an unknown escape \\${next} in a double-quoted value`, base + line + 1);
       out += ESCAPES[next];
       i += 2;
       continue;
@@ -143,9 +143,9 @@ function readBlock(lines, at, style, chomp, base) {
       blockIndent = indent;
     }
     if (indent === 0) break;
-    if (indent < blockIndent) throwInvalid('syntax', '的块标量缩进不一致', base + next + 1);
-    if (/^\t/.test(line.slice(blockIndent - 0)) && style === '>') throwInvalid('unsupported_syntax', '的折叠块（>）里有 Tab 缩进', base + next + 1);
-    if (style === '>' && /^[ \t]/.test(line.slice(blockIndent))) throwInvalid('unsupported_syntax', '的折叠块（>）里有比正文缩进更深的行（YAML 里要保留换行，这里不认）', base + next + 1);
+    if (indent < blockIndent) throwInvalid('syntax', 'has a block scalar with inconsistent indentation', base + next + 1);
+    if (/^\t/.test(line.slice(blockIndent - 0)) && style === '>') throwInvalid('unsupported_syntax', 'has a Tab in the indentation of a folded block (>)', base + next + 1);
+    if (style === '>' && /^[ \t]/.test(line.slice(blockIndent))) throwInvalid('unsupported_syntax', 'has a folded block (>) with a line indented deeper than the body (YAML keeps the line break there, and this reader does not support that)', base + next + 1);
     content.push(line.slice(blockIndent));
   }
   let trailing = 0;
@@ -174,7 +174,7 @@ function readValue(lines, at, rest, base) {
   const head = first[0];
   if (head === '|' || head === '>') {
     const m = /^([|>])([+-]?)[ ]*(?:#.*)?$/.exec(first);
-    if (!m) throwInvalid('unsupported_syntax', '的块标量带了缩进指示符或别的写法，只认 | 和 > 加 - 或 +', base + at + 1);
+    if (!m) throwInvalid('unsupported_syntax', 'has a block scalar with an indentation indicator or another form; only | and > with - or + are supported', base + at + 1);
     const { value, endLine } = readBlock(lines, at, m[1], m[2], base);
     return { value, endLine, style: 'block' };
   }
@@ -182,7 +182,7 @@ function readValue(lines, at, rest, base) {
     const { value, endLine } = readQuoted(lines, at, col, head, base);
     return { value, endLine, style: head === '"' ? 'double' : 'single' };
   }
-  if (UNSUPPORTED_START.test(first)) throwInvalid('unsupported_syntax', `的这种写法（${first.slice(0, 12)}…）不认：流式的 {…} 和 […]、块序列、锚点、别名、标签都不支持`, base + at + 1);
+  if (UNSUPPORTED_START.test(first)) throwInvalid('unsupported_syntax', `uses a form (${first.slice(0, 12)}…) that is not supported: flow {…} and […], block sequences, anchors, aliases and tags are all unsupported`, base + at + 1);
   return readPlain(lines, at, first, base);
 }
 
@@ -191,7 +191,7 @@ function readPlain(lines, at, first, base) {
   let end = at;
   let current = stripPlain(first);
   for (;;) {
-    if (/(?::[ ]|:$)/.test(current.text)) throwInvalid('syntax', '里有「冒号加空格」：含冒号的值要加引号', base + end + 1);
+    if (/(?::[ ]|:$)/.test(current.text)) throwInvalid('syntax', 'has a colon followed by a space: a value that contains a colon must be quoted', base + end + 1);
     parts.push(current.text);
     if (current.commented) break;
     // 续行：缩进的行，空行可以夹在中间
@@ -210,10 +210,10 @@ function readIndented(lines, at, base) {
   let probe = at + 1;
   while (probe < lines.length && (isBlank(lines[probe]) || isComment(lines[probe]))) probe++;
   if (probe >= lines.length || !/^[ ]/.test(lines[probe])) return { value: null, endLine: at, style: 'plain' };
-  if (/^\t/.test(lines[probe])) throwInvalid('syntax', '里用了 Tab 缩进（YAML 不允许）', base + probe + 1);
+  if (/^\t/.test(lines[probe])) throwInvalid('syntax', 'uses a Tab for indentation (YAML does not allow it)', base + probe + 1);
   const firstChild = CHILD_RE.exec(lines[probe]);
   if (!firstChild) {
-    if (/^[ ]+(?:-[ ]|[{[])/.test(lines[probe])) throwInvalid('unsupported_syntax', '的缩进内容是列表或流式写法，不认', base + probe + 1);
+    if (/^[ ]+(?:-[ ]|[{[])/.test(lines[probe])) throwInvalid('unsupported_syntax', 'has indented content that is a list or flow syntax, which is not supported', base + probe + 1);
     const plain = readPlain(lines, probe, lines[probe].trim(), base);
     return plain;
   }
@@ -225,16 +225,16 @@ function readIndented(lines, at, base) {
     const line = lines[k];
     if (isBlank(line) || isComment(line)) continue;
     if (!/^[ ]/.test(line)) break;
-    if (/^\t/.test(line)) throwInvalid('syntax', '里用了 Tab 缩进（YAML 不允许）', base + k + 1);
+    if (/^\t/.test(line)) throwInvalid('syntax', 'uses a Tab for indentation (YAML does not allow it)', base + k + 1);
     const m = CHILD_RE.exec(line);
-    if (!m) throwInvalid('syntax', '的缩进行不是「键: 值」', base + k + 1);
-    if (m[1].length > indent) throwInvalid('unsupported_syntax', '里嵌套了第二层映射，只认一层', base + k + 1);
-    if (m[1].length < indent) throwInvalid('syntax', '的缩进不一致', base + k + 1);
-    if (Object.hasOwn(children, m[2])) throwInvalid('duplicate_key', `里 ${JSON.stringify(m[2])} 写了两次`, base + k + 1);
+    if (!m) throwInvalid('syntax', 'has an indented line that is not "key: value"', base + k + 1);
+    if (m[1].length > indent) throwInvalid('unsupported_syntax', 'nests a second level of mapping; only one level is supported', base + k + 1);
+    if (m[1].length < indent) throwInvalid('syntax', 'has inconsistent indentation', base + k + 1);
+    if (Object.hasOwn(children, m[2])) throwInvalid('duplicate_key', `has ${JSON.stringify(m[2])} twice`, base + k + 1);
     const restValue = m[3];
     if (restValue === undefined || restValue.trim() === '' || restValue.trimStart().startsWith('#')) {
       const nested = lines[k + 1];
-      if (nested !== undefined && /^[ ]+\S/.test(nested) && !isComment(nested) && nested.length - nested.trimStart().length > indent) throwInvalid('unsupported_syntax', '里嵌套了第二层映射，只认一层', base + k + 2);
+      if (nested !== undefined && /^[ ]+\S/.test(nested) && !isComment(nested) && nested.length - nested.trimStart().length > indent) throwInvalid('unsupported_syntax', 'nests a second level of mapping; only one level is supported', base + k + 2);
       children[m[2]] = null;
       childStyles[m[2]] = 'plain';
     } else {
@@ -245,12 +245,12 @@ function readIndented(lines, at, base) {
         result = readQuoted([line], 0, col + (restValue.length - restValue.trimStart().length), head, base + k);
         result = { value: result.value, style: head === '"' ? 'double' : 'single' };
       } else if (head === '|' || head === '>') {
-        throwInvalid('unsupported_syntax', '的映射值里不认块标量', base + k + 1);
+        throwInvalid('unsupported_syntax', 'has a block scalar as a mapping value, which is not supported', base + k + 1);
       } else if (UNSUPPORTED_START.test(restValue.trimStart())) {
-        throwInvalid('unsupported_syntax', `的映射值（${restValue.trim().slice(0, 12)}…）是流式、列表、锚点或标签的写法，不认`, base + k + 1);
+        throwInvalid('unsupported_syntax', `has a mapping value (${restValue.trim().slice(0, 12)}…) written as flow syntax, a list, an anchor or a tag, which is not supported`, base + k + 1);
       } else {
         const plain = stripPlain(restValue);
-        if (/(?::[ ]|:$)/.test(plain.text)) throwInvalid('syntax', '里有「冒号加空格」：含冒号的值要加引号', base + k + 1);
+        if (/(?::[ ]|:$)/.test(plain.text)) throwInvalid('syntax', 'has a colon followed by a space: a value that contains a colon must be quoted', base + k + 1);
         result = { value: plain.text, style: 'plain' };
       }
       children[m[2]] = result.value;
@@ -269,8 +269,8 @@ function readIndented(lines, at, base) {
  * @throws {VoicePackError} skill_md_invalid
  */
 export function parseSkillMd(text) {
-  if (typeof text !== 'string') throw new TypeError('SKILL.md 的内容必须是字符串');
-  if (text.charCodeAt(0) === 0xfeff) throwInvalid('bom', '开头有字节序标记（BOM），frontmatter 前面不能有任何字符');
+  if (typeof text !== 'string') throw new TypeError('SKILL.md content must be a string');
+  if (text.charCodeAt(0) === 0xfeff) throwInvalid('bom', 'starts with a byte order mark (BOM); nothing may come before the frontmatter');
   // 按行扫：第一行必须是 ---，然后一直读到下一个单独的 ---（最多看 MAX_FRONTMATTER 个字符）
   const lineBreak = /\r\n|\r|\n/g;
   const nextLine = (from) => {
@@ -279,7 +279,7 @@ export function parseSkillMd(text) {
     return { line: text.slice(from, m ? m.index : text.length), next: m ? m.index + m[0].length : text.length + 1 };
   };
   const opening = nextLine(0);
-  if (!/^---[ ]*$/.test(opening.line)) throwInvalid('no_frontmatter', '要以 --- 开头的 frontmatter 开始');
+  if (!/^---[ ]*$/.test(opening.line)) throwInvalid('no_frontmatter', 'must start with a frontmatter that begins with ---');
   const frontLines = [];
   let bodyAt = -1;
   for (let at = opening.next; at <= text.length && at - opening.next <= MAX_FRONTMATTER; ) {
@@ -288,18 +288,18 @@ export function parseSkillMd(text) {
     frontLines.push(line);
     at = next;
   }
-  if (bodyAt < 0) throwInvalid('unterminated', `的 frontmatter 没有结束的 ---（只往下找 ${MAX_FRONTMATTER} 个字符）`);
+  if (bodyAt < 0) throwInvalid('unterminated', `has a frontmatter with no closing --- (searched only ${MAX_FRONTMATTER} characters)`);
   const base = 1; // frontmatter 的第一行是 SKILL.md 的第 2 行
   const fields = {};
   const styles = {};
   for (let at = 0; at < frontLines.length; at++) {
     const line = frontLines[at];
     if (isBlank(line) || isComment(line)) continue;
-    if (/^[ \t]/.test(line)) throwInvalid('syntax', '里有缩进的行，它不属于任何字段', base + at + 1);
+    if (/^[ \t]/.test(line)) throwInvalid('syntax', 'has an indented line that does not belong to any field', base + at + 1);
     const m = KEY_RE.exec(line);
-    if (!m) throwInvalid('syntax', '里这一行不是「字段名: 值」', base + at + 1);
+    if (!m) throwInvalid('syntax', 'has a line that is not "field: value"', base + at + 1);
     const key = m[1];
-    if (Object.hasOwn(fields, key)) throwInvalid('duplicate_key', `里字段 ${key} 写了两次`, base + at + 1);
+    if (Object.hasOwn(fields, key)) throwInvalid('duplicate_key', `has the field ${key} twice`, base + at + 1);
     const read = readValue(frontLines, at, m[2], base);
     fields[key] = read.value;
     styles[key] = read.style;
@@ -343,18 +343,18 @@ export function skillMdProblems(text, options = {}) {
   const stringField = (key, { min = 1, max, lengthReason } = {}) => {
     const value = fields[key];
     if (value === undefined) return null;
-    if (typeof value !== 'string') { out.push(problem('type', `的 ${key} 要是一段文字`, { field: key })); return null; }
-    if (styles[key] === 'plain' && !yamlReadsAsString(value)) out.push(problem('scalar_not_string', `的 ${key}: ${value} 会被 YAML 读成数字、布尔、空值或日期，要加引号`, { field: key }));
-    if (lengthReason && (length(value) < min || length(value) > max)) out.push(problem(lengthReason, `的 ${key} 要 ${min}-${max} 个字符，这里有 ${length(value)} 个`, { field: key, length: length(value), min, max }));
+    if (typeof value !== 'string') { out.push(problem('type', `${key} must be a string`, { field: key })); return null; }
+    if (styles[key] === 'plain' && !yamlReadsAsString(value)) out.push(problem('scalar_not_string', `${key}: ${value} would be read by YAML as a number, boolean, null or date; add quotes`, { field: key }));
+    if (lengthReason && (length(value) < min || length(value) > max)) out.push(problem(lengthReason, `${key} must be ${min}-${max} characters; it has ${length(value)}`, { field: key, length: length(value), min, max }));
     return value;
   };
-  for (const key of Object.keys(fields)) if (!SKILL_FIELDS.includes(key)) out.push(problem('unknown_field', `的 frontmatter 只能用这几个字段：${SKILL_FIELDS.join('、')}；${key} 不在其中（版本号、所需能力写进清单）`, { field: key }));
-  for (const key of ['name', 'description']) if (fields[key] === undefined) out.push(problem('missing_field', `的 frontmatter 缺必填的 ${key}`, { field: key }));
+  for (const key of Object.keys(fields)) if (!SKILL_FIELDS.includes(key)) out.push(problem('unknown_field', `frontmatter may only use these fields: ${SKILL_FIELDS.join(', ')}; ${key} is not one of them (version and required capabilities go in the manifest)`, { field: key }));
+  for (const key of ['name', 'description']) if (fields[key] === undefined) out.push(problem('missing_field', `frontmatter is missing the required field ${key}`, { field: key }));
 
   const name = stringField('name');
   if (name !== null) {
-    if (length(name) < 1 || length(name) > 64 || !NAME_RE.test(name)) out.push(problem('name_invalid', `的 name ${JSON.stringify(name)} 不合规：1-64 个字符，只用小写字母、数字和连字符，不以连字符开头或结尾，不连用连字符`, { field: 'name', name }));
-    else if (options.expectedName !== undefined && name !== options.expectedName) out.push(problem('name_mismatch', `的 name ${JSON.stringify(name)} 和目录名 ${JSON.stringify(options.expectedName)} 不一致`, { field: 'name', name, expected: options.expectedName }));
+    if (length(name) < 1 || length(name) > 64 || !NAME_RE.test(name)) out.push(problem('name_invalid', `name ${JSON.stringify(name)} is not valid: 1-64 characters, only lowercase letters, digits and hyphens, no leading or trailing hyphen, no consecutive hyphens`, { field: 'name', name }));
+    else if (options.expectedName !== undefined && name !== options.expectedName) out.push(problem('name_mismatch', `name ${JSON.stringify(name)} does not match the directory name ${JSON.stringify(options.expectedName)}`, { field: 'name', name, expected: options.expectedName }));
   }
   stringField('description', { max: 1024, lengthReason: 'description_length' });
   stringField('license');
@@ -362,11 +362,11 @@ export function skillMdProblems(text, options = {}) {
   stringField('allowed-tools');
   const metadata = fields.metadata;
   if (metadata !== undefined) {
-    if (metadata === null || typeof metadata !== 'object') out.push(problem('type', '的 metadata 要是「键: 值」的映射，值都是字符串', { field: 'metadata' }));
+    if (metadata === null || typeof metadata !== 'object') out.push(problem('type', 'metadata must be a "key: value" mapping with string values', { field: 'metadata' }));
     else {
       for (const [key, value] of Object.entries(metadata)) {
-        if (typeof value !== 'string') out.push(problem('type', `的 metadata.${key} 要是字符串`, { field: `metadata.${key}` }));
-        else if (styles[`metadata.${key}`] === 'plain' && !yamlReadsAsString(value)) out.push(problem('scalar_not_string', `的 metadata.${key}: ${value} 会被 YAML 读成数字、布尔、空值或日期，要加引号`, { field: `metadata.${key}` }));
+        if (typeof value !== 'string') out.push(problem('type', `metadata.${key} must be a string`, { field: `metadata.${key}` }));
+        else if (styles[`metadata.${key}`] === 'plain' && !yamlReadsAsString(value)) out.push(problem('scalar_not_string', `metadata.${key}: ${value} would be read by YAML as a number, boolean, null or date; add quotes`, { field: `metadata.${key}` }));
       }
     }
   }
@@ -394,7 +394,7 @@ export const TEXT_LANGUAGES = Object.freeze(['zh', 'en']);
  */
 export function resolveTextLanguage(value) {
   if (value === undefined) return 'zh';
-  if (!TEXT_LANGUAGES.includes(value)) throw new TypeError(`textLanguage 必须是 ${TEXT_LANGUAGES.map((name) => `'${name}'`).join(' 或 ')}（骨架的语言），收到 ${JSON.stringify(value)}`);
+  if (!TEXT_LANGUAGES.includes(value)) throw new TypeError(`textLanguage must be ${TEXT_LANGUAGES.map((name) => `'${name}'`).join(' or ')} (the language of the skeleton), got ${JSON.stringify(value)}`);
   return value;
 }
 
@@ -411,11 +411,11 @@ const REFERENCE_TAG_FLAG = '--reference-tag';
 
 /**
  * 「能拿来做什么」里的步骤：放进环境、配音、写台本（提示怎么写指到基础部分的 references/dub.md），参考段带音色基底标签的再加标签那一条，（这个包有的话）增强件、脚本、变声。
- * 命令、选项和报告怎么读，只在基础部分的 SKILL.md「用音色包配音和变声」一节写一份（正本在那里），这里不写命令和选项，只指到那一节：
+ * 命令、选项和报告怎么读，只在基础部分的 SKILL.md「6. Dubbing and changing a voice with a pack」一节写一份（正本在那里），这里不写命令和选项，只指到那一节：
  * 命令行是基础部分的，它一改选项，写在协议核心里的用法就错了，协议核心还得跟着发版本。
  * 只有一个破例：音色基底标签那一条写配音的 --reference-tag（REFERENCE_TAG_FLAG）。骨架按语言列出这个包的标签，读骨架的 agent 得知道拿标签做什么：
  * 换参考就用这个选项，台本里的提示不换参考。只指到基础部分的 SKILL.md 说不清这一点，它就会以为写个提示就换了参考（3.0 以前的骨架就是这么教的）。
- * 这个选项和音色基底标签一起出现在协议 3.0，基础部分要改它就得跟着改这里（FORMAT.md 第 5 节「骨架里不写基础部分命令行的命令和选项」）。
+ * 这个选项和音色基底标签一起出现在协议 3.0，基础部分要改它就得跟着改这里（FORMAT.md 第 5 节「The skeleton does not write base-part command-line commands and options」）。
  * 这里只写和这个包有关的几条；没有增强件、没有脚本、没有变声功能的包，就不提它们。
  */
 function playSteps(manifest, t) {
@@ -433,8 +433,8 @@ function playSteps(manifest, t) {
       `**Put it into the environment**: put the whole pack directory (its name is the pack ID ${code(manifest.id)}) into the project's ${code('.agents/skills/')} (read by Codex, Gemini CLI, Cursor, OpenCode and others) and copy it into ${code('.claude/skills/')} (read by Claude Code). The base part has a command that does both steps in one go, and it checks first (the official signature included).`,
     ),
     t(
-      '**配音**：用基础部分的配音命令给台本配音，包就是这个目录。要用模型，先接上适配器：官方的给名字，自己的给模块文件，见基础部分 SKILL.md 的「接自己的模型」一节。真配音之前先预演一遍：看每一句会挑哪段参考、读音词表换了什么，不合成，不花钱。',
-      `**Dub**: use the base part's dub command on a dubbing script; the pack is this directory. To use a model, connect an adapter first (an official one by name, your own by module file): see the section "接自己的模型" (connecting your own model) of the base part's SKILL.md. Before a real dub, rehearse it: it shows which reference segment each line will pick and what the pronunciation lexicon changes, and it synthesizes nothing and costs nothing.`,
+      '**配音**：用基础部分的配音命令给台本配音，包就是这个目录。要用模型，先接上适配器：官方的给名字，自己的给模块文件，见基础部分 SKILL.md 的「Connecting your own model」一节。真配音之前先预演一遍：看每一句会挑哪段参考、读音词表换了什么，不合成，不花钱。',
+      `**Dub**: use the base part's dub command on a dubbing script; the pack is this directory. To use a model, connect an adapter first (an official one by name, your own by module file): see the section "Connecting your own model" of the base part's SKILL.md. Before a real dub, rehearse it: it shows which reference segment each line will pick and what the pronunciation lexicon changes, and it synthesizes nothing and costs nothing.`,
     ),
     t(
       `**写台本**：照最后一节「配音指引」写，指引里的语气、节奏、口头禅落在台本上；情绪和风格写成方括号的提示，放在它管的字前面，例如 ${code('[耳语]')}、${code('[生气]')}。提示怎么写、模型认哪种写法，由运行环境定，见基础部分 ${code('references/dub.md')} 的「一句话是怎么变成合成的」第 2 步。`,
@@ -470,15 +470,15 @@ function playSteps(manifest, t) {
     ));
   }
   const intro = t(
-    `命令怎么写、有哪些选项、报告怎么读，见基础部分 ${code('voice-pack/SKILL.md')} 的「用音色包配音和变声」一节。这个包的要点：`,
-    `How to write the commands, which options there are and how to read the reports: see the section "用音色包配音和变声" (dubbing and voice conversion with a voice pack) of the base part's ${code('voice-pack/SKILL.md')}; that file is written in Chinese. What matters for this pack:`,
+    `命令怎么写、有哪些选项、报告怎么读，见基础部分 ${code('voice-pack/SKILL.md')} 的「Dubbing and changing a voice with a pack」一节。这个包的要点：`,
+    `How to write the commands, which options there are and how to read the reports: see the section "Dubbing and changing a voice with a pack" of the base part's ${code('voice-pack/SKILL.md')}. What matters for this pack:`,
   );
   return [intro, '', ...steps.map((step, index) => `${index + 1}. ${step}`)].join('\n');
 }
 
 /**
  * 「没有基础部分时怎么补全」一节：做实了的步骤，命令是 protocol/cli.mjs 的 complete（protocol/cli/commands/complete.mjs）。
- * 规则和理由的正本是 protocol/FORMAT.md 的「补全」一节，这里只写 agent 要照着做的，不重抄。
+ * 规则和理由的正本是 protocol/FORMAT.md 的「Complete」一节，这里只写 agent 要照着做的，不重抄。
  * 不提 --trust：它是测试和第三方换信任名单用的，官方的补全不传；agent 看见它，遇到验签不过可能顺手去换名单（理由同不提 allow-unsigned）。
  */
 function completeSteps(manifest, t) {
@@ -542,7 +542,7 @@ function completeSteps(manifest, t) {
 
 /**
  * 「怎么做新包」一节的步骤：做实了的流程，四步的次序和每一步为什么这样（净室、查重）。
- * 每一步的命令和选项只在基础部分的 SKILL.md「做音色包」一节写一份，这里不写，只指到那一节（理由同 playSteps）。
+ * 每一步的命令和选项只在基础部分的 SKILL.md「Making a pack」一节写一份，这里不写，只指到那一节（理由同 playSteps）。
  * 流程、每个字段怎么写、查重比什么的正本是 protocol/new-pack/README.md，查重的规则和阈值的正本是基础部分的 lib/duplicate-check.mjs，这里只写 agent 要照着做的，不重抄。
  * 这一节要堵的是「读过来源包的 agent 自己去写新包」：它读到的会漏进新写的文字里，所以第 2 步明说当前这个 agent 不写，要交给一个看不到来源包的新会话或子 agent；
  * 这个环境里装着的 skill，说明文字（里面有音色描述）会自动载入会话，所以还要说新会话得开在读不到这个包的地方。查重是最后一道关，不是净室的替代。
@@ -558,7 +558,7 @@ function makeSteps(t) {
       '1. **First generate the clean-room input** (this step does not read the role content of this pack): use the base part\'s clean-room command to put the labels from the design vocabulary and the user\'s own words into a new directory. Put the user\'s words in as they are: do not rewrite them, and do not paste the description, guidance or lines of this pack into it. Create the clean-room input directory outside this directory.',
     ),
     t(
-      `2. **把净室输入目录交给一个新会话或子 agent，由它写新包的文字内容**（净室的意思：写新包文字的 agent 没见过来源包，也就是这个包，这样新包才是新的）：只给它净室输入目录，它照里面的 ${code('BRIEF.md')} 把描述、配音指引、示例台词和卡片试听那一句写进 ${code('output/')}。**当前这个 agent 不写**：你读过这个包（它的清单、指引、台词），读到的会漏进新写的文字里。你的环境能开子 agent 的，自己开一个，不用问使用者：只给它这个目录的路径和一句「读 ${code('BRIEF.md')}，照它写」，不把这个包的内容放进给它的话里。不能开的，告诉使用者：这一步要一个没看过这个包的新会话来写，新包才是新的；请新开一个会话或聊天窗口，工作目录设成净室输入目录（或者把这个目录传上去），第一句话发「读 ${code('BRIEF.md')}，照它写，写到 ${code('output/')}」，写完回来说一声。新会话和子 agent 都要开在读不到这个包的地方：这个包装在 ${code('.agents/skills/')} 或 ${code('.claude/skills/')} 里（项目的，或用户级的）时，它的说明文字（里面有音色描述）会自动载入读到它的会话，那就不是净室，先告诉使用者，不要说成是净室做的。写完，看 ${code('output/guidance.md')} 里写着「缺」的项：使用者在场就问，回答原样交回写作的会话补，你不自己改；问不到的留着「缺」，不编，交包时告诉使用者还缺哪几项。`,
+      `2. **把净室输入目录交给一个新会话或子 agent，由它写新包的文字内容**（净室的意思：写新包文字的 agent 没见过来源包，也就是这个包，这样新包才是新的）：只给它净室输入目录，它照里面的 ${code('BRIEF.md')} 把描述、配音指引、示例台词和试听句写进 ${code('output/')}。**当前这个 agent 不写**：你读过这个包（它的清单、指引、台词），读到的会漏进新写的文字里。你的环境能开子 agent 的，自己开一个，不用问使用者：只给它这个目录的路径和一句「读 ${code('BRIEF.md')}，照它写」，不把这个包的内容放进给它的话里。不能开的，告诉使用者：这一步要一个没看过这个包的新会话来写，新包才是新的；请新开一个会话或聊天窗口，工作目录设成净室输入目录（或者把这个目录传上去），第一句话发「读 ${code('BRIEF.md')}，照它写，写到 ${code('output/')}」，写完回来说一声。新会话和子 agent 都要开在读不到这个包的地方：这个包装在 ${code('.agents/skills/')} 或 ${code('.claude/skills/')} 里（项目的，或用户级的）时，它的说明文字（里面有音色描述）会自动载入读到它的会话，那就不是净室，先告诉使用者，不要说成是净室做的。写完，看 ${code('output/guidance.md')} 里写着「缺」的项：使用者在场就问，回答原样交回写作的会话补，你不自己改；问不到的留着「缺」，不编，交包时告诉使用者还缺哪几项。`,
       `2. **Hand the clean-room input directory to a new session or a sub-agent, which writes the text of the new pack** (a clean room means the agent writing the new text has never seen the source pack, which is this pack, so that the new pack really is new): give it only the clean-room input directory; following the ${code('BRIEF.md')} in it, it writes the description, the voice guidance, the sample lines and the card preview line into ${code('output/')}. **The current agent does not write them**: you have read this pack (its manifest, guidance and lines), and what you read would leak into the new text. If your environment can start a sub-agent, start one yourself without asking the user: give it only the path of this directory and one sentence, "Read ${code('BRIEF.md')} and do what it says", and put nothing from this pack into what you tell it. If it cannot, tell the user: this step needs a new session that has never seen this pack, so that the new pack really is new; please open a new session or chat window, set its working directory to the clean-room input directory (or upload that directory), send "Read ${code('BRIEF.md')}, follow it, and write into ${code('output/')}" as the first message, and come back when it is done. Open the new session or sub-agent where this pack cannot be read: when this pack is installed in ${code('.agents/skills/')} or ${code('.claude/skills/')} (the project's or the user's), its description text (which holds the voice description) is loaded automatically into any session that reads it, so that is not a clean room; tell the user first, and do not describe it as made in a clean room. When it is done, look at the items marked as missing in ${code('output/guidance.md')}: if the user is present, ask about them and hand the answers, word for word, back to the writing session to fill in; do not fill them in yourself. Items you cannot ask about stay marked as missing, with nothing made up; when you hand over the pack, tell the user which items are still missing.`,
     ),
     t(
@@ -566,13 +566,13 @@ function makeSteps(t) {
       `3. **Prepare the material**: the user's own recordings, or design a voice; do not use the recordings in this pack. Design a designed voice and lock its audition yourself: write the design description from the user's words, not from this pack's voice description. Do not write the audition text yourself: pick one or two of the sample lines written into ${code('output/')} in step 2, and drop the cues in square brackets. The audition is raw material only, and the material is an acted passage dubbed from it; do not write that passage yourself either: put it together from a few of the same sample lines. You have read this pack, and an audition text or a passage you write would carry its traces. Keep the description, the model, the date and the audition lines used in the design, and give them to the make-pack command in step 4 (the design source).`,
     ),
     t(
-      `4. **做包，同时查重**：用基础部分的做包命令，交给它素材和第 2 步写进 ${code('output/')} 的文件，并把这个包（本目录）交给它当来源包。来源包只在这一步读：在花钱的几步之前，把新包的文字和录音同它比一遍，重合太多报 ${code('duplicate_detected')}，说明是哪一项，改成自己的话或换掉录音再做。要转写、试合成，先接上适配器（见基础部分 SKILL.md 的「接自己的模型」一节）；设计出来的声音再交设计来源。`,
-      `4. **Make the pack, with the duplicate check**: use the base part's make-pack command; give it the material and the files written into ${code('output/')} in step 2, and give it this pack (this directory) as the source pack. The source pack is read in this step only: before the steps that cost money, the text and recordings of the new pack are compared with it, and when they overlap too much it reports ${code('duplicate_detected')} and says which item; put that in your own words or replace the recordings, then make it again. For transcription and trial synthesis, connect an adapter first (see the section "接自己的模型" (connecting your own model) of the base part's SKILL.md); for a designed voice, also give the design source.`,
+      `4. **做包，同时查重**：用基础部分的做包命令，交给它素材和第 2 步写进 ${code('output/')} 的文件，并把这个包（本目录）交给它当来源包。来源包只在这一步读：在花钱的几步之前，把新包的文字和录音同它比一遍，重合太多报 ${code('duplicate_detected')}，说明是哪一项，改成自己的话或换掉录音再做。要转写、试合成，先接上适配器（见基础部分 SKILL.md 的「Connecting your own model」一节）；设计出来的声音再交设计来源。`,
+      `4. **Make the pack, with the duplicate check**: use the base part's make-pack command; give it the material and the files written into ${code('output/')} in step 2, and give it this pack (this directory) as the source pack. The source pack is read in this step only: before the steps that cost money, the text and recordings of the new pack are compared with it, and when they overlap too much it reports ${code('duplicate_detected')} and says which item; put that in your own words or replace the recordings, then make it again. For transcription and trial synthesis, connect an adapter first (see the section "Connecting your own model" of the base part's SKILL.md); for a designed voice, also give the design source.`,
     ),
     '',
     t(
-      `新包用新的包 ID；清单只记做包用的基础部分的版本，没有这个包的记录，查重也不把这个包的名字、包 ID、路径写进新包、日志和报告。每一步的命令和选项见基础部分 ${code('voice-pack/SKILL.md')} 的「做音色包」一节；流程、每个字段怎么写、查重比什么，见 ${code('protocol/new-pack/README.md')}。`,
-      `The new pack gets a new pack ID; its manifest records only the version of the base part used to make it and has no record of this pack, and the duplicate check does not write the name, pack ID or path of this pack into the new pack, the logs or the reports. The command and options of every step are in the section "做音色包" (making a voice pack) of the base part's ${code('voice-pack/SKILL.md')}; the flow, how to write each field and what the duplicate check compares are in ${code('protocol/new-pack/README.md')}.`,
+      `新包用新的包 ID；清单只记做包用的基础部分的版本，没有这个包的记录，查重也不把这个包的名字、包 ID、路径写进新包、日志和报告。每一步的命令和选项见基础部分 ${code('voice-pack/SKILL.md')} 的「Making a pack」一节；流程、每个字段怎么写、查重比什么，见 ${code('protocol/new-pack/README.md')}。`,
+      `The new pack gets a new pack ID; its manifest records only the version of the base part used to make it and has no record of this pack, and the duplicate check does not write the name, pack ID or path of this pack into the new pack, the logs or the reports. The command and options of every step are in the section "Making a pack" of the base part's ${code('voice-pack/SKILL.md')}; the flow, how to write each field and what the duplicate check compares are in ${code('protocol/new-pack/README.md')}.`,
     ),
   ].join('\n');
 }
@@ -592,7 +592,7 @@ export const GUIDANCE_HINT = [
 ].join('\n');
 
 /**
- * 骨架里放配音指引的那一节的标题，也是读指引的标记行：协议的一部分，和 JSON 的键名一样，所有语言的骨架都原样写它，不翻译（理由和写法见 protocol/FORMAT.md「骨架的语言」）。
+ * 骨架里放配音指引的那一节的标题，也是读指引的标记行：协议的一部分，和 JSON 的键名一样，所有语言的骨架都原样写它，不翻译（理由和写法见 protocol/FORMAT.md「Language of the skeleton」）。
  * 生成（buildRoleSkillMd）和读回来（extractGuidance）用同一个，两边不会各写各的。
  */
 export const GUIDANCE_HEADING = '## 配音指引';
@@ -605,7 +605,7 @@ export const GUIDANCE_HEADING = '## 配音指引';
  * @returns {string | null}
  */
 export function extractGuidance(text) {
-  if (typeof text !== 'string') throw new TypeError('SKILL.md 的内容必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('SKILL.md content must be a string');
   const lines = text.split(/(?<=\n)/); // 每行带着自己的换行，取出来的内容就能原样拼回去
   const at = lines.findIndex((line) => line.replace(/\r?\n$/, '').replace(/[ \t]+$/, '') === GUIDANCE_HEADING);
   if (at === -1) return null;
@@ -626,7 +626,7 @@ export function extractGuidance(text) {
  * 所以任何语言的包，任何版本的基础部分读回来的指引都一样，不用给英文的包定更高的基础部分最低版本。随之两条：
  *   英文骨架解释最后一节是什么的那一段写在标记行的上面（写在下面会被当成指引读回去）；
  *   作者没写指引时，中文骨架在标记行下面放 GUIDANCE_HINT（读回来是 null），英文骨架什么都不放（一段英文的提示 1.0.0 认不出，会被当成指引）。
- * 规则的正本是 protocol/FORMAT.md「骨架的语言」。
+ * 规则的正本是 protocol/FORMAT.md「Language of the skeleton」。
  * 读的是清单草稿（做包和 seal 要先有 SKILL.md，它自己要列进 files，所以那时清单还写不出来）：草稿来自作者给的描述，先查结构，
  * 字段的类型不对（features 写成字符串、参考段里有 null、没写名字……）抛 manifest_invalid，不让它在下面生成文字时变成 TypeError。
  * @param {object} manifest 角色部分的清单（至少要有 part、id、name、version、madeWith、requires、features、reference）
@@ -636,9 +636,9 @@ export function extractGuidance(text) {
  * @throws {TypeError} manifest 不是角色部分的清单（part 不是 role），guidance 不是字符串，textLanguage 不是 'zh' 或 'en'：调用方用错了
  */
 export function buildRoleSkillMd(manifest, options = {}) {
-  if (manifest === null || typeof manifest !== 'object' || manifest.part !== 'role') throw new TypeError('要角色部分的清单（part 是 role）');
+  if (manifest === null || typeof manifest !== 'object' || manifest.part !== 'role') throw new TypeError('manifest must be a role part manifest (part is role)');
   const { guidance } = options;
-  if (guidance !== undefined && typeof guidance !== 'string') throw new TypeError('guidance 必须是字符串');
+  if (guidance !== undefined && typeof guidance !== 'string') throw new TypeError('guidance must be a string');
   const language = resolveTextLanguage(options.textLanguage);
   const t = picker(language);
   assertDraftManifest(manifest);
@@ -682,7 +682,7 @@ export function buildRoleSkillMd(manifest, options = {}) {
   );
 
   const segmentCount = manifest.reference.segments.length;
-  // 别的语言各自的默认段（FORMAT.md 4.4「默认段」）：清单写了 languageDefaults 才接在默认参考段后面，没写的包这一行和以前一字不差
+  // 别的语言各自的默认段（FORMAT.md 4.4「Default segment」）：清单写了 languageDefaults 才接在默认参考段后面，没写的包这一行和以前一字不差
   const otherDefaults = (manifest.reference.languageDefaults ?? []).map((id) => `${segmentLanguage(manifest.reference.segments.find((s) => s.id === id)) ?? '?'} ${code(id)}`);
   const otherDefaultsNote = otherDefaults.length === 0 ? ['', ''] : [`；别的语言的默认段：${otherDefaults.join('、')}`, `; other languages' default segments: ${otherDefaults.join(', ')}`];
   const sampleLineCount = manifest.sampleLines?.length ?? 0;

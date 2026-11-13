@@ -4,7 +4,7 @@
 //
 // 为什么自己写：Node 24.14 没有 Uint8Array.prototype.toHex / fromHex / toBase64 / fromBase64（2026-10-14 实测），
 // 浏览器里没有 Buffer。05（音频进模型要 Base64）、06（哈希要十六进制）、07（公钥和签名是 Base64）都要用，只写这一份。
-// 约定见 protocol/README.md「模块约定」。
+// 约定见 protocol/README.md「Module conventions」。
 import { VoicePackError } from './errors.mjs';
 
 const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
@@ -29,7 +29,7 @@ export function toHex(bytes) {
  */
 export function fromHex(text) {
   if (typeof text !== 'string' || text.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(text)) {
-    throw new VoicePackError('invalid_hex', '不是合法的十六进制：只能有 0-9、a-f，长度必须是偶数');
+    throw new VoicePackError('invalid_hex', 'Not valid hexadecimal: only 0-9 and a-f are allowed, and the length must be even');
   }
   const out = new Uint8Array(text.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(text.slice(i * 2, i * 2 + 2), 16);
@@ -55,12 +55,12 @@ export function toBase64(bytes) {
  */
 export function fromBase64(text) {
   // atob 会把参数转成字符串（null 变成 "null"，恰好是合法的 Base64），所以先自己核对类型
-  if (typeof text !== 'string') throw new VoicePackError('invalid_base64', 'Base64 必须是字符串');
+  if (typeof text !== 'string') throw new VoicePackError('invalid_base64', 'Base64 must be a string');
   let binary;
   try {
     binary = atob(text);
   } catch (cause) {
-    throw new VoicePackError('invalid_base64', '不是合法的 Base64（标准字母表）', { cause });
+    throw new VoicePackError('invalid_base64', 'Not valid Base64 (standard alphabet)', { cause });
   }
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);

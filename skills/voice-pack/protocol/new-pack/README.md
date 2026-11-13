@@ -1,56 +1,58 @@
-# 做新包
+# How to make a new pack
 
-每个部分都带着这份内容，所以拿到任何一个音色包，就能做一个和它没有关联的新包（这叫自传播）。这里是抽象的规格：写什么、怎么写、谁能看什么、怎么查重。这里没有也不该有一个完整的示例角色：示例会被照抄，新包就成了示例的影子。
+Every part carries this content, so anyone holding any voice pack can make a new pack that has no connection to it (this is called self-propagation). This is the abstract specification: what to write, how to write it, who may see what, and how the duplicate check works. There is no complete example character here, and there should not be one: an example gets copied, and then the new pack becomes the example's shadow.
 
-## 流程
+A note on language. The pack format has fixed Chinese tokens: the guidance section names (`### 这个人是谁`, `### 音色`, `### 演法`, `### 台词`, `### 换语言时怎么说`), the item names (`- 身份：`, `- 性格：`, `- 在意什么：`, `- 对不同的人：`, `- 情绪上来时：`, `- 名字：`, `- 自称：`, `- 口头禅：`) and the marker `缺`. They are written in Chinese exactly as they appear in `template/guidance.md`, whatever language the user speaks. Do not translate them. Glosses are given where they first come up below.
 
-1. **说出想要的属性。** 用设计词表里的标签，加上自己的话（想要什么样的声音、拿来做什么）。基础部分的 `clean-room` 命令把它们和这里的规格、空白模板放进一个目录：净室输入。这一步不读来源包。
-2. **净室里的做包 agent 写文字。** 新开一个会话或子 agent，只把净室输入这个目录给它（能开子 agent 的环境，调用方自己开；不能开的，调用方告诉使用者新开一个会话、工作目录设成净室输入目录，第一句话让它读 `BRIEF.md` 照做），让它写新包的文字内容：音色描述、配音指引、示例台词、卡片试听那一句。设计来源不由它写（见下面「设计来源」）。已经读过来源包角色内容的 agent（例如把来源包装成了 skill 的那个会话）不能写这一步：它读到的内容会漏进新写的文字里，净室就破了。
-3. **备素材。** 自己的录音，或者设计一个声音，素材不从来源包里拿。设计出来的声音，由调用方从使用者的话写设计描述（照基础部分的 `references/character-voice.md`「设计出来的声音：描述」），设计、试听锁定；试听只当原料，素材是照它配的一段带表演的话（做法见基础部分的 `references/make-pack.md`「设计出来的声音怎么做包」）。这段话不由读过来源包的 agent 写：从第 2 步写出的示例台词里挑几句连成，不另写。它会成为新包参考的逐字稿，查重比示例台词，不比转写。试听文本也一样，从示例台词里挑一两句：它记进设计来源的 `auditionLines`，查重不比这一项。
-4. **做包，同时查重。** 用基础部分的做包命令，把素材和第 2 步写出的文字做成新包，并把来源包交给它：在花钱的步骤之前，先把新包的文字和录音同来源包比一遍（查重）。
+## Procedure
 
-这几步的命令在基础部分的 `references/clean-room.md`；做包的选项在 `references/make-pack.md`（正本是 `lib/make-pack.mjs` 的文件头）。
+1. **State the attributes you want.** Use tags from the design vocabulary, plus your own words (what kind of voice you want, what it is for). The base part's `clean-room` command puts them, this specification, and the blank template into one directory: the clean-room input. This step does not read the source pack.
+2. **The make-pack agent in the clean room writes the text.** Open a new session or a sub-agent and give it only the clean-room input directory. (In an environment that can open sub-agents, the caller opens it. If it cannot, the caller tells the user to open a new session with the working directory set to the clean-room input directory, and the first message tells it to read `BRIEF.md` and do what it says.) It writes the text content of the new pack: the voice description, the dubbing guidance, the sample lines, and the audition line. It does not write the design source (see "Design source" below). An agent that has already read the character content of the source pack (for example, the session that installed the source pack as a skill) must not do this step: what it has read would leak into the newly written text, and the clean room is broken.
+3. **Prepare the materials.** Either your own recording, or design a voice; the materials are never taken from the source pack. For a designed voice, the caller writes the design description from the user's words (following the base part's `references/character-voice.md`「A designed voice: the description」), then designs it and locks the audition. The audition is only raw material: the material is an acted passage dubbed from it (for how, see the base part's `references/make-pack.md`「Making a pack from a designed voice」). This passage is not written by an agent that has read the source pack: it is joined from a few of the sample lines written in step 2, not written separately. It becomes the verbatim transcript of the new pack's reference segment, and the duplicate check compares it as sample lines, not as a transcription. The design audition text is the same: pick one or two lines from the sample lines. It is recorded in the design source's `auditionLines`; the duplicate check does not compare this item.
+4. **Make the pack and run the duplicate check at the same time.** Use the base part's make-pack command to make the new pack from the materials and the text written in step 2, and hand it the source pack: before any step that costs money, it compares the new pack's text and recording with the source pack (the duplicate check).
 
-## 净室：谁能看什么
+The commands for these steps are in the base part's `references/clean-room.md`; the make-pack options are in `references/make-pack.md` (the authoritative copy is the file header of `lib/make-pack.mjs`).
 
-- 净室里的做包 agent 只看净室输入：这份规格（`spec/`：这份说明和三个字段的格式 `fields.json`）、空白模板（`template/`）、使用者说的属性（`attributes.json`）、任务说明（`BRIEF.md`）。
-- 它不看来源包的任何角色内容：清单里的描述、配音指引、示例台词、卡片试听那一句、转写、参考音频、脚本。也不向使用者或别的 agent 要这些。
-- 使用者的话原样交给它，不改写，也不替使用者补充来源包里有的东西。使用者要是把来源包的原文贴进了属性，这一步拦不住，由查重在最后拦。
+## Clean room: who can see what
 
-## 每个字段怎么写
+- The make-pack agent in the clean room sees only the clean-room input: this specification (`spec/`: this document and `fields.json`, the format of the three fields), the blank template (`template/`), the attributes the user stated (`attributes.json`), and the task description (`BRIEF.md`).
+- It does not see any character content of the source pack: the description in the manifest, the dubbing guidance, the sample lines, the audition line, the transcription, the reference audio, the scripts. It does not ask the user or any other agent for these either.
+- The user's words are handed to it as they are, not rewritten, and nothing the source pack has is added on the user's behalf. If the user pastes the source pack's original text into the attributes, this step cannot stop it; the duplicate check stops it at the end.
 
-格式的正本是 `FORMAT.md`（清单的 schema 在 `schema/manifest.schema.json`），净室输入里的 `spec/fields.json` 是从 schema 里摘出来的这三个字段的格式，字数、条数的上限看它。这里只说写什么。下面只给写法的形状（尖括号里是要你填的），不给现成的句子：现成的句子会被照抄，新包就成了它的影子。
+## How to write each field
 
-**语言**：示例台词、卡片试听那一句、配音指引的「台词」一节，都用这个声音要说的语言写，就是 `attributes.json` 的 `language`。没有这一项，用使用者的话（`words`）的语言；也没有 `words`，写完告诉调用你的 agent 你用了哪种语言。写成别的语言，卡片那一句做包时不配（默认不带口音），用示例台词连成的那段话也配不了。音色描述（`direction.description`）和配音指引（「台词」一节以外）用使用者说话的语言写，就是使用者的话（`words`）的语言；没有 `words`，用这个声音要说的语言。小节名、项名和 `缺` 照模板写，不翻译；方括号里的提示照旧写英文。
+The authoritative format is `FORMAT.md` (the manifest schema is `schema/manifest.schema.json`); `spec/fields.json` in the clean-room input is an extract of the format of these three fields from the schema, and holds the limits on length and number of items. This document only says what to write. Below, only the shape of the writing is given (what you fill in is in angle brackets), with no ready-made sentences: a ready-made sentence gets copied, and the new pack becomes its shadow.
 
-**音色描述**（`direction.description`）：一两句，说这个声音听起来是什么样：年龄感、音色的质地、气质、语速。写声音，不写人：不写真人的名字、角色名、作品名。
-形状：「<年龄感>、<质地>的<音色>，语速<快慢>，<像什么、给人什么感觉>。」
+**Language**：The sample lines, the audition line, and the lines section of the dubbing guidance (`### 台词`, lines) are all written in the language the voice will speak, which is `language` in `attributes.json`. If there is no `language`, use the language of the user's words (`words`); if there are no `words` either, tell the calling agent when you finish which language you used. If they are written in another language, the audition line is not dubbed when the pack is made (the default has no accent), and the passage joined from the sample lines cannot be dubbed either. The voice description (`direction.description`) and the dubbing guidance (everything except the lines section) are written in the language the user speaks, which is the language of the user's words (`words`); if there are no `words`, use the language the voice will speak. Section names, item names, and `缺` are written as in the template, not translated; cues in square brackets are still written in English.
 
-**标签**（`direction.tags`）：只能从设计词表里选（在基础部分的 `vocab/`）。净室输入的 `attributes.json` 里已经列了使用者选的，原样放进 `direction.json`，不增不减。
+**Voice description** (`direction.description`): one or two sentences saying what the voice sounds like: sense of age, texture of the timbre, temperament, speaking rate. Write the voice, not the person: no real person's name, no character name, no title of a work.
+Shape: "<age feel>, <texture> <timbre>, <pace>, <what it resembles>." (Write it in the language the user speaks.)
 
-**配音指引**（正文，放进 SKILL.md 的最后一节）：写给配音的 agent 看，它拿台本配音时怎么用这个声音。分五小节（模板里有）。
-「这个人是谁」「换语言时怎么说」两节必须写，每项一行，项名照写，`words` 没说的写 `缺`，不编。「这个人是谁」的项：`- 身份：`、`- 性格：`、`- 在意什么：`、`- 对不同的人：`（至少写熟人和生人）、`- 情绪上来时：`（声音往哪边变）；使用者说过的身份（做什么的、在哪、多大）写进「身份」，一处不丢。「换语言时怎么说」的项：`- 名字：`、`- 自称：`、`- 口头禅：`，各语言前面写语言标签（`- 名字：<标签> <名字>；<标签> <名字>`）；名字取 `attributes.json` 的 `name`，别的语言里的名字 `words` 没给的写 `缺`。
-形状：「- <项名>：<一两句；没有依据的写 缺>」
-另外三节：音色（这个声音听起来怎样）、演法（怎么念：喉位、松紧、气声、沙哑、语速、停顿、笑和叹气，只写有内容的项）、台词（说什么、怎么措辞：自称、句尾、口头禅、用词、方言，写台本的人看，不交给模型）。每节一到几句，只写想要的效果，不写某个模型的指令语法；写「怎么变」比写「是什么」有用：情绪变了，声音往哪边变。没有内容的小节整节不写，不写占位。演法和台词只从使用者的话（`attributes.json` 的 `words`）里来：使用者没说的那一项整行不写，不编喉位、气声这类（写台本时照它在要这样变的地方写两三个词的提示）。小节名照模板写，不翻译。音色可以照 `words` 和 `attributes.json` 的标签写（性别、年龄、音高、质地）。演法每项只写内容，不跟出处，也不写「推断」：写进去会被当成要演的东西。台词不按人物类型推。
-形状：「<这一节要的效果，一到几句>。」
+**Tags** (`direction.tags`): choose only from the design vocabulary (in the base part's `vocab/`). The `attributes.json` in the clean-room input already lists the ones the user chose; put them into `direction.json` as they are, none added, none removed.
 
-**示例台词**（`sampleLines`）：三到十句这个声音会说的话，各句的内容、长度、情绪拉开。可以带舞台提示：写在方括号里，每个两三个词，一律写英文（配音的模型照英文的提示演），说这一处怎么说（`[<情绪或说法>]`）；一句里说法变了，就在变的地方再写一个。不抄现成的台词、名言、歌词、作品里的对白。
-卡片试听那一句（清单 `cardLine` 的台词）也由你写：一句这个声音见到听它说话的人时会说的话，放在包的卡片上试听用（包做好以后用这个包自己的声音配出来）。一种心情，念出来约 5 到 8 秒（一两句），不写成自我介绍（报名字、几岁、做什么的），1–500 个字符；写法和形状同示例台词的一条，也可以从你写的示例台词里挑一句。开头写角色名 `[<名字>]`（`attributes.json` 的 `name`；没有就用 `words` 里使用者给的名字；都没有不写，写完告诉调用你的 agent），配音时每一句都以角色名开头。读过来源包的 agent 不写、不改它（它读到的会漏进来），查重把它当一条台词和来源包比。
-形状：「[<名字>]<提示><半句><提示><半句>」，一句里说法变几次，「<提示><半句>」就接几次（一次也行）；提示是方括号里的舞台提示，可以没有；说法没变时，开头写一个也行；每个两三个词。
+**Dubbing guidance** (the body; it goes into the last section of SKILL.md): written for the agent that dubs, telling it how to use this voice when it dubs a script. It has five sections (they are in the template).
+The two sections `### 这个人是谁` (who this person is) and `### 换语言时怎么说` (what to say when the language changes) must be written, one line per item; write the item names as given, and write `缺` (missing) for anything `words` does not say; do not invent. The items of `### 这个人是谁`: `- 身份：` (identity), `- 性格：` (personality), `- 在意什么：` (what they care about), `- 对不同的人：` (toward different people; write at least acquaintances and strangers), `- 情绪上来时：` (when emotion rises; which way the voice changes). An identity the user has stated (what they do, where they are, how old) goes into `身份`; not one detail is lost. The items of `### 换语言时怎么说`: `- 名字：` (name), `- 自称：` (how they refer to themselves), `- 口头禅：` (catchphrase); put a language tag in front of each language (`- 名字：<tag> <name>；<tag> <name>`). The name is the `name` from `attributes.json`; for names in other languages that `words` does not give, write `缺`.
+Shape: "- <item name>：<one or two sentences; 缺 if no basis>"
+The other three sections: `### 音色` (voice: what this voice sounds like), `### 演法` (how to perform: how to say it: throat position, tension, breathiness, huskiness, speaking rate, pauses, laughing and sighing; write only the items that have content), `### 台词` (lines: what to say and how to word it: self-reference, sentence endings, catchphrases, word choice, dialect; this is for the person writing the script, and is not given to the model). Each section is one to a few sentences. Write only the effect wanted, not the instruction syntax of any one model; writing "how it changes" is more useful than writing "what it is": when emotion changes, which way the voice changes. A section with no content is left out as a whole, with no placeholder. How to perform and lines come only from the user's words (`words` in `attributes.json`): an item the user did not mention is left out as a whole line, and nothing like throat position or breathiness is invented (when a script is written, put a two-or-three-word cue where it should change this way). Section names are written as in the template, not translated. The voice section may be written from `words` and the tags in `attributes.json` (gender, age, pitch, texture). Each item of how to perform has only its content, with no source attached and no "inference": if you write it in, it gets taken as something to act out. Lines are not inferred from the type of character.
+Shape: "<the effect this section wants, one to a few sentences>."
 
-**设计来源**（`designSource`）：只有设计出来的声音才有，不由你写，也不编。设计时用的那段描述（`description`）、用的模型和日期、设计时试听用的台词（`auditionLines`），是设计那一边记下的原文，由调用方交给做包的命令，写进清单（字段见 `FORMAT.md`，命令的写法见基础部分的 `references/make-pack.md`）。用录音做的包不写。
+**Sample lines** (`sampleLines`): three to ten lines this voice would say, varied in content, length, and emotion. They may carry stage cues: written in square brackets, two or three words each, always in English (the dubbing model acts on English cues), saying how this spot is said (`[<emotion or manner>]`); when the manner changes within a line, write another one where it changes. Do not copy existing lines, famous quotes, song lyrics, or dialogue from works.
+The audition line (the line of the manifest's `cardLine`) is also written by you: one line this voice would say on meeting the person who listens to it, put on the pack's card for audition (after the pack is made it is dubbed with the pack's own voice). One mood; read aloud it is about 5 to 8 seconds (one or two sentences); it is not written as a self-introduction (giving a name, an age, what they do); 1-500 characters; how to write it and its shape are the same as one of the sample lines, and you may pick one of the sample lines you wrote. It begins with the character's name `[<name>]` (the `name` in `attributes.json`; if there is none, the name the user gave in `words`; if there is neither, do not write it, and tell the calling agent when you finish); when dubbing, every line begins with the character's name. An agent that has read the source pack does not write or change it (what it has read would leak in); the duplicate check compares it with the source pack as one line.
+Shape: "[<name>]<cue><half sentence><cue><half sentence>": as many times as the manner changes within a line, that many "<cue><half sentence>" repeats (once is fine); a cue is a stage cue in square brackets and may be absent; when the manner does not change, writing one at the start is also fine; two or three words each.
 
-**交付**：写好的内容放进 `output/`，文件名照模板：`direction.json`、`guidance.md`、`sample-lines.json`；卡片试听那一句没有模板，写进 `card-line.txt`（UTF-8 的纯文字，整个文件就是这一句）。
+**Design source** (`designSource`): only a designed voice has one. You do not write it and you do not invent it. The description used for the design (`description`), the model and date used, and the lines used for the design audition (`auditionLines`) are the original text recorded on the design side; the caller hands them to the make-pack command, and they are written into the manifest (for the fields see `FORMAT.md`; for how to write the command see the base part's `references/make-pack.md`). A pack made from a recording has none.
 
-## 查重
+**Delivery**: put the finished content in `output/`, with file names as in the template: `direction.json`, `guidance.md`, `sample-lines.json`; the audition line has no template and is written into `card-line.txt` (UTF-8 plain text, the whole file is this one line).
 
-做包的最后一步，目的是不让来源包的文字和录音被原样搬进新包。规则的正本是基础部分的 `lib/duplicate-check.mjs`（比什么、怎么比、阈值和标定的依据），这里只说大意：
+## Duplicate check
 
-- 比新包的文字（音色描述、配音指引、示例台词、卡片试听那一句、设计来源的描述、脚本）和新包的录音。不比标签（从词表里选的，同一类声音本来就选得一样）、名字、变更说明、读音词表、转写（读同一句话不是抄；录音有没有被搬用由指纹管）、设计来源里的试听台词（`auditionLines`；试听文本不照来源包的台词写，靠的是上面流程第 3 步：从示例台词里挑）。
-- 文字用最长公共子序列的 F1（ROUGE-L）和连续词组的重合比例；录音用音频指纹找「同一段录音」。不比说话人像不像：同一个配音演员给几个角色配音是正常的。
-- 超过阈值报 `duplicate_detected`，`details` 里写是哪一项、重合多少、阈值多少。
-- 查完不留来源包的记录：来源包的名字、包 ID、路径，不写进新包、日志和报告。
+The last step of making a pack. Its purpose is to keep the source pack's text and recording from being moved into the new pack as they are. The authoritative rules are the base part's `lib/duplicate-check.mjs` (what is compared, how, the thresholds and the basis for calibrating them); only the gist is here:
 
-## 新包的记录
+- It compares the new pack's text (the voice description, the dubbing guidance, the sample lines, the audition line, the design source's description, the scripts) and the new pack's recording. It does not compare tags (chosen from the vocabulary; the same kind of voice naturally gets the same choices), names, the change notes, the pronunciation lexicon, or the transcription (reading the same sentence is not copying; whether a recording has been moved over is handled by the fingerprint), or the audition lines in the design source (`auditionLines`; the design audition text is not written from the source pack's lines, which relies on step 3 of the procedure above: pick from the sample lines).
+- For text it uses the F1 of the longest common subsequence (ROUGE-L) and the overlap ratio of consecutive word runs; for recordings it uses an audio fingerprint to find "the same recording". It does not compare whether the speaker sounds alike: the same voice actor dubbing several characters is normal.
+- Over the threshold it reports `duplicate_detected`, and `details` says which item, how much overlap, and what the threshold is.
+- After the check no record of the source pack is kept: the source pack's name, pack ID, and path are not written into the new pack, the logs, or the report.
 
-新包用新的包 ID。清单的 `madeWith.baseVersion` 只记做包时用的基础部分的版本，不记来源包。
+## Record of the new pack
+
+The new pack uses a new pack ID. `madeWith.baseVersion` in the manifest records only the version of the base part used to make the pack, not the source pack.

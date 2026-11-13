@@ -71,7 +71,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 const sameBytes = (a, b) => a.length === b.length && a.every((byte, index) => byte === b[index]);
-const sentenceCount = (problems) => (problems.length === 1 ? '' : `（共 ${problems.length} 处问题）`);
+const sentenceCount = (problems) => (problems.length === 1 ? '' : ` (${problems.length} problems in total)`);
 const invalid = (message, problems, details = {}) => new VoicePackError('pack_setup_invalid', message, { details: { ...details, problems } });
 
 // ---------------------------------------------------------------- 动手前、改完以后的检查
@@ -88,7 +88,7 @@ async function openRolePack(files) {
   const bytes = files.get(MANIFEST_FILE);
   const read = bytes === undefined ? null : readManifest(bytes);
   if (read?.manifest && read.manifest.part !== 'role') {
-    throw new VoicePackError('pack_not_role', `${MANIFEST_FILE} 说这是 ${read.manifest.part}：设定在角色部分（一个声音的参考集）的清单里，只能改角色部分`, { details: { part: read.manifest.part } });
+    throw new VoicePackError('pack_not_role', `${MANIFEST_FILE} says this is ${read.manifest.part}: setups live in the manifest of the role part (the reference set of one voice), and only the role part can be changed`, { details: { part: read.manifest.part } });
   }
   const problems = await checkProblems(files);
   if (problems.length > 0) {
@@ -97,7 +97,7 @@ async function openRolePack(files) {
   }
   const { manifest } = readManifest(files.get(MANIFEST_FILE));
   if (protocolMajorOf(manifest.protocol) !== protocolMajorOf(PROTOCOL_VERSION)) {
-    throw new VoicePackError('pack_protocol_old', `这个包按协议 ${manifest.protocol} 写：设定（和它指向的音色基底标签）是协议 ${PROTOCOL_VERSION.split('.')[0]}.x 的格式，旧包不原地改。用新的素材做一个新包`, { details: { protocol: manifest.protocol } });
+    throw new VoicePackError('pack_protocol_old', `this pack was written for protocol ${manifest.protocol}: setups (and the reference tags they point to) are a protocol ${PROTOCOL_VERSION.split('.')[0]}.x format, and old packs are not changed in place. Make a new pack from the new materials`, { details: { protocol: manifest.protocol } });
   }
   return manifest;
 }
@@ -148,7 +148,7 @@ function renewedSkillMd(current, oldManifest, newManifest) {
 
 // ---------------------------------------------------------------- 落定
 
-const tooDeep = () => invalid('设定嵌套得太深，写不出来', [{ code: 'manifest_invalid', message: '设定嵌套得太深，写不出来', details: { reason: 'too_deep' } }]);
+const tooDeep = () => invalid('the setup is nested too deeply to be written out', [{ code: 'manifest_invalid', message: 'the setup is nested too deeply to be written out', details: { reason: 'too_deep' } }]);
 
 /** 设定的 JSON 拷贝（交进来的对象不会被改，交出去的也和内部无关）。 */
 function copyOf(value) {
@@ -181,7 +181,7 @@ async function settle(files, manifest, next, status, name) {
   void _old;
   const nextFields = setups.length === 0 ? fields : { ...fields, setups };
   const { problems } = validateManifest({ ...nextFields, files: manifest.files });
-  if (problems.length > 0) throw invalid(`设定过不了清单检查：${problems[0].message}${sentenceCount(problems)}`, problems, typeof name === 'string' ? { name } : {});
+  if (problems.length > 0) throw invalid(`the setup fails the manifest check: ${problems[0].message}${sentenceCount(problems)}`, problems, typeof name === 'string' ? { name } : {});
   if (status !== 'deleted') {
     const at = setups.findIndex((setup) => setup.name === name);
     try {
@@ -189,7 +189,7 @@ async function settle(files, manifest, next, status, name) {
     } catch (error) {
       if (!(error instanceof VoicePackError)) throw error;
       const { words, limit } = error.details;
-      const message = `设定 ${JSON.stringify(name)} 合成的开头的提示数出来 ${words} 个词，超过上限 ${limit} 个词。配音时它写在每个请求的开头，要短：把这套设定的情绪、风格改短（references/make-pack.md「几套设定」）`;
+      const message = `the opening cue of setup ${JSON.stringify(name)} comes to ${words} words, over the limit of ${limit} words. When dubbing, it is written at the start of every request, so it has to be short: shorten the emotion and style of this setup (references/make-pack.md「Several setups (writing fixed values into the voice)」)`;
       throw invalid(message, [{ code: 'setup_opening_cue_too_long', message, details: { pointer: `/setups/${at}`, name, words, limit } }], { name });
     }
   }
@@ -204,7 +204,7 @@ async function settle(files, manifest, next, status, name) {
   if (!sameBytes(sealed.get(MANIFEST_FILE), files.get(MANIFEST_FILE))) changed.set(MANIFEST_FILE, sealed.get(MANIFEST_FILE));
 
   const after = await checkProblems(new Map([...files, ...changed]));
-  if (after.length > 0) throw invalid(`改完的包过不了检查，什么都没写：${after[0].message}${sentenceCount(after)}`, after, typeof name === 'string' ? { name } : {});
+  if (after.length > 0) throw invalid(`the changed pack fails the check, nothing was written: ${after[0].message}${sentenceCount(after)}`, after, typeof name === 'string' ? { name } : {});
   return { changed, report };
 }
 
@@ -219,7 +219,7 @@ async function settle(files, manifest, next, status, name) {
  */
 export async function saveSetup(files, setup) {
   const manifest = await openRolePack(files);
-  if (!isObject(setup)) throw invalid('一套设定要是一个对象 { name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }', [{ code: 'manifest_invalid', message: `设定要是一个对象，收到 ${setup === null ? 'null' : Array.isArray(setup) ? '数组' : typeof setup}`, details: { pointer: '/setups/0', keyword: 'type' } }]);
+  if (!isObject(setup)) throw invalid('a setup must be an object { name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }', [{ code: 'manifest_invalid', message: `a setup must be an object, got ${setup === null ? 'null' : Array.isArray(setup) ? 'an array' : typeof setup}`, details: { pointer: '/setups/0', keyword: 'type' } }]);
   const given = copyOf(setup);
   const old = manifest.setups ?? [];
   const at = typeof given.name === 'string' ? old.findIndex((one) => one.name === given.name) : -1;
@@ -245,7 +245,7 @@ export async function deleteSetup(files, name) {
   const old = manifest.setups ?? [];
   if (!old.some((one) => one.name === name)) {
     const names = old.map((one) => one.name);
-    throw new VoicePackError('setup_not_found', `包里没有叫 ${JSON.stringify(name)} 的设定${names.length === 0 ? '（这个包一套设定都没有）' : `（现有：${names.map((one) => JSON.stringify(one)).join('、')}）`}`, { details: { name, names } });
+    throw new VoicePackError('setup_not_found', `the pack has no setup named ${JSON.stringify(name)}${names.length === 0 ? ' (this pack has no setups at all)' : ` (existing: ${names.map((one) => JSON.stringify(one)).join(', ')})`}`, { details: { name, names } });
   }
   return settle(files, manifest, old.filter((one) => one.name !== name), 'deleted', name);
 }

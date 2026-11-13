@@ -64,7 +64,7 @@ function sentenceSegmenter() {
   if (segmenter) return segmenter;
   if (typeof Intl === 'undefined' || typeof Intl.Segmenter !== 'function') {
     // 环境没有分句所需的 Intl.Segmenter，没有退路（按标点硬切会切坏缩写和小数）。details.api 是缺的那一项
-    throw new VoicePackError('segmenter_missing', '运行环境没有 Intl.Segmenter（Chrome 87、Firefox 125、Safari 14.1 起才有），不能分句', { details: { api: 'Intl.Segmenter' } });
+    throw new VoicePackError('segmenter_missing', 'This runtime environment has no Intl.Segmenter (available from Chrome 87, Firefox 125, Safari 14.1), so text cannot be split into sentences', { details: { api: 'Intl.Segmenter' } });
   }
   segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
   return segmenter;
@@ -137,7 +137,7 @@ function shouldJoin(previous, next) {
  */
 export function splitSentences(text) {
   if (text === null || text === undefined || text === '') return [];
-  if (typeof text !== 'string') throw new TypeError('文字必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('The text must be a string');
   const sentences = [];
   let current = '';
   // Segmenter 看的是把提示换成 X、尖括号标签遮住的文字（文件头），切出来的一段按它的长短从原文里取回

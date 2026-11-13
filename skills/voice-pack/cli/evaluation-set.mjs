@@ -50,12 +50,12 @@ function audioReader() {
   return (file, field) => {
     if (cache.has(file)) return cache.get(file);
     const mimeType = mimeOfFileName(file);
-    if (mimeType === undefined) throw invalidEvaluationSet(field, `${field} 的后缀 .${path.extname(file).slice(1).toLowerCase()} 认不出是什么音频（能用的：${AUDIO_EXTENSIONS.join('、')}）：${file}`);
+    if (mimeType === undefined) throw invalidEvaluationSet(field, `The extension .${path.extname(file).slice(1).toLowerCase()} of ${field} is not a known audio type (usable: ${AUDIO_EXTENSIONS.join(', ')}): ${file}`);
     let clip;
     try {
       clip = { bytes: new Uint8Array(fs.readFileSync(file)), mimeType };
     } catch (cause) {
-      throw new VoicePackError('evaluation_set_unreadable', `读不了音频文件（${field}）：${file}`, { details: { file, field }, cause });
+      throw new VoicePackError('evaluation_set_unreadable', `Cannot read the audio file (${field}): ${file}`, { details: { file, field }, cause });
     }
     cache.set(file, clip);
     return clip;
@@ -73,41 +73,41 @@ export function readEvaluationSet(file) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (cause) {
-    throw new VoicePackError('evaluation_set_unreadable', `读不了评测集：${file}`, { details: { file }, cause });
+    throw new VoicePackError('evaluation_set_unreadable', `Cannot read the evaluation set: ${file}`, { details: { file }, cause });
   }
   let data;
   try {
     data = JSON.parse(text);
   } catch (cause) {
-    throw new VoicePackError('evaluation_set_invalid', `评测集不是合法的 JSON：${file}（${cause.message}）`, { details: { field: 'file' }, cause });
+    throw new VoicePackError('evaluation_set_invalid', `The evaluation set is not valid JSON: ${file} (${cause.message})`, { details: { field: 'file' }, cause });
   }
-  if (!isPlainObject(data)) throw invalid('file', '评测集必须是一个 JSON 对象：{ references: […], holdouts: […] }');
+  if (!isPlainObject(data)) throw invalid('file', 'The evaluation set must be a JSON object: { references: […], holdouts: […] }');
   const root = path.dirname(file);
   const readAudio = audioReader();
   const pathField = (raw, name, where) => {
-    if (typeof raw[name] !== 'string' || raw[name] === '') throw invalid(`${where}.${name}`, `${where}.${name} 必须是音频文件的路径`);
+    if (typeof raw[name] !== 'string' || raw[name] === '') throw invalid(`${where}.${name}`, `${where}.${name} must be the path of an audio file`);
     return readAudio(path.resolve(root, raw[name]), `${where}.${name}`);
   };
   const readList = (list, field) => {
     if (list === undefined) return [];
-    if (!Array.isArray(list)) throw invalid(field, `${field} 必须是数组`);
+    if (!Array.isArray(list)) throw invalid(field, `${field} must be an array`);
     return list.map((raw, index) => {
       const where = `${field}[${index}]`;
-      if (!isPlainObject(raw)) throw invalid(where, `${where} 必须是一个对象`);
-      if (typeof raw.id !== 'string' || raw.id === '') throw invalid(`${where}.id`, `${where}.id 必须是非空字符串`);
+      if (!isPlainObject(raw)) throw invalid(where, `${where} must be an object`);
+      if (typeof raw.id !== 'string' || raw.id === '') throw invalid(`${where}.id`, `${where}.id must be a non-empty string`);
       const track = { id: raw.id, audio: pathField(raw, 'audio', where), labels: raw.labels };
       if (raw.synthetic !== undefined) {
-        if (typeof raw.synthetic !== 'boolean') throw invalid(`${where}.synthetic`, `${where}.synthetic 必须是 true 或 false（这段是不是合成的，克隆出来的）`);
+        if (typeof raw.synthetic !== 'boolean') throw invalid(`${where}.synthetic`, `${where}.synthetic must be true or false (whether this segment is synthesized, that is cloned)`);
         if (raw.synthetic) track.synthetic = true;
       }
       if (raw.text !== undefined) {
-        if (typeof raw.text !== 'string') throw invalid(`${where}.text`, `${where}.text 必须是字符串（这段音频里说的话）`);
+        if (typeof raw.text !== 'string') throw invalid(`${where}.text`, `${where}.text must be a string (the words spoken in this audio)`);
         track.text = raw.text;
       }
       if (field === 'holdouts') {
-        if (track.text === undefined) throw invalid(`${where}.text`, `${where}.text 必须有：收音校验要拿它核对模型的转写`);
+        if (track.text === undefined) throw invalid(`${where}.text`, `${where}.text is required: the listening check compares the model's transcription with it`);
         if (raw.reference !== undefined) {
-          if (typeof raw.reference !== 'string' || raw.reference === '') throw invalid(`${where}.reference`, `${where}.reference 必须是参考集里的 id`);
+          if (typeof raw.reference !== 'string' || raw.reference === '') throw invalid(`${where}.reference`, `${where}.reference must be an id in the reference set`);
           track.reference = raw.reference;
         }
         if (raw.generated !== undefined) track.generated = pathField(raw, 'generated', where);
@@ -120,10 +120,10 @@ export function readEvaluationSet(file) {
   const referenceIds = new Set(references.map((track) => track.id));
   for (const [index, track] of holdouts.entries()) {
     if (track.reference !== undefined && !referenceIds.has(track.reference)) {
-      throw invalid(`holdouts[${index}].reference`, `holdouts[${index}].reference 指向的 id「${track.reference}」不在参考集里`);
+      throw invalid(`holdouts[${index}].reference`, `The id "${track.reference}" that holdouts[${index}].reference points to is not in the reference set`);
     }
   }
-  if (data.designSource !== undefined && typeof data.designSource !== 'boolean') throw invalid('designSource', 'designSource 必须是 true 或 false（这份评测集是不是设计出来的声音）');
+  if (data.designSource !== undefined && typeof data.designSource !== 'boolean') throw invalid('designSource', 'designSource must be true or false (whether this evaluation set is of a designed voice)');
   return { references, holdouts, ...(data.designSource === true ? { designSource: true } : {}) };
 }
 
@@ -137,12 +137,12 @@ export function readPreviousReport(file) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (cause) {
-    throw new VoicePackError('redo_report_unreadable', `读不了 --redo 给的上一次的报告：${file}`, { details: { file }, cause });
+    throw new VoicePackError('redo_report_unreadable', `Cannot read the previous report given to --redo: ${file}`, { details: { file }, cause });
   }
   try {
     return JSON.parse(text);
   } catch (cause) {
-    throw new VoicePackError('redo_report_invalid', `--redo 给的上一次的报告不是合法的 JSON：${file}（${cause.message}）。要的是 --json 的输出，或者 --save-report 存的文件`, { details: { file }, cause });
+    throw new VoicePackError('redo_report_invalid', `The previous report given to --redo is not valid JSON: ${file} (${cause.message}). It must be the output of --json, or the file saved by --save-report`, { details: { file }, cause });
   }
 }
 

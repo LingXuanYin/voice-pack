@@ -21,7 +21,7 @@ const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\
 const PROTOCOL_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const NUMERIC = /^\d+$/;
 
-const invalid = (version, what) => new VoicePackError('invalid_version', `不是合法的${what}：${JSON.stringify(version)}`, { details: { version: typeof version === 'string' ? version : String(version) } });
+const invalid = (version, what) => new VoicePackError('invalid_version', `Not a valid ${what}: ${JSON.stringify(version)}`, { details: { version: typeof version === 'string' ? version : String(version) } });
 
 /**
  * @param {unknown} text
@@ -30,7 +30,7 @@ const invalid = (version, what) => new VoicePackError('invalid_version', `不是
  */
 export function parseSemver(text) {
   const m = typeof text === 'string' ? SEMVER_RE.exec(text) : null;
-  if (!m) throw invalid(text, '语义化版本号（主.次.修订，例如 1.2.3）');
+  if (!m) throw invalid(text, 'semantic version (major.minor.patch, e.g. 1.2.3)');
   return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]), prerelease: m[4] ? m[4].split('.') : [], build: m[5] ? m[5].split('.') : [] };
 }
 
@@ -73,7 +73,7 @@ export function compareSemver(a, b) {
  */
 export function parseProtocolVersion(text) {
   const m = typeof text === 'string' ? PROTOCOL_RE.exec(text) : null;
-  if (!m) throw invalid(text, '协议版本（「主.次」两段，例如 1.0）');
+  if (!m) throw invalid(text, 'protocol version (two parts, "major.minor", e.g. 1.0)');
   return { major: Number(m[1]), minor: Number(m[2]) };
 }
 

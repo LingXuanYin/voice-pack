@@ -54,7 +54,7 @@
 //         externalUrl?  明确选了外部资源：这段音频不放进包，清单里只记这个 https:// 网址、大小和哈希（资源默认放进包里）。所以 audio 原样算哈希：不取音轨、不调响度，不收 trim
 //         synthetic?    true 表示这段是合成的（克隆出来的），不是这个人录的：清单里标 synthetic: true。它不当留出录音，不进真人基线，报告的真录音段数不数它；
 //                       当参考、当默认段和真录音一样挑（规则 5）。不给就是真录音。上一版的段沿用上一版清单里的标记
-//         sentence?     这段是一句话：{ bodySec, pauseSec }（句子的秒数，和它后面的原停顿，没有就是 null）。长录音的句子模式给，素材 .json 也可以写（references/make-pack.md「素材」）。
+//         sentence?     这段是一句话：{ bodySec, pauseSec }（句子的秒数，和它后面的原停顿，没有就是 null）。长录音的句子模式给，素材 .json 也可以写（references/make-pack.md「Source material」）。
 //                       做包先把句子并成段、再一段转写一次（段里每一句都带 text 的，接起来当段的文字，不转写；每一句都给了 annotatedText 的，接起来当段的提示标注；
 //                       每一句都标了 synthetic 的，段才标；lib/make-pack-sentences.mjs）。可能并进同一段的句子（素材给的语言一样的），synthetic、annotatedText 要标得一样，
 //                       不一样花钱之前报 make_pack_input_invalid（field 是 segments[2].synthetic 或 segments[2].annotatedText，规则在 lib/make-pack-input.mjs 的文件头「句子」）
@@ -70,12 +70,12 @@
 //     sampleLines?,     示例台词：字符串数组，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节：最多 50 条，每条 1–500 个字符，不能只有空白；台词里可以带舞台提示，例如（耳语））。
 //                       不是数组报 make_pack_input_invalid（field 是 sampleLines），哪一条不是字符串（例如把 vocab/design-sample-lines.json 的 { text, feel, kind } 对象原样抄进来）
 //                       也报它（field 是 sampleLines[0]），都在花钱之前；条数、长度、空白由清单检查在花钱之前报（试装，manifest_invalid）。空数组等于没写
-//     cardLine?,        卡片试听那一句：一句台词（字符串，去掉两头空白；1–500 个字符，不能只有空白，可以带舞台提示，规则见 protocol/FORMAT.md 4.4 的 cardLine）。
+//     cardLine?,        试听句：一句台词（字符串，去掉两头空白；1–500 个字符，不能只有空白，可以带舞台提示，规则见 protocol/FORMAT.md 4.4 的 cardLine）。
 //                       包做好以后用这个包配出来，写进清单的 cardLine（lib/make-pack-card-line.mjs：怎么配、没配成怎么办、花钱之前查什么）。不是字符串报 make_pack_input_invalid
 //                       （field 是 cardLine）；长度、空白由清单检查在花钱之前报（试装，manifest_invalid）
 //     expressiveness?,  这个声音的起伏（全局值，0 到 100 的整数）：写进清单顶层；配音时没有更靠后的一层声明起伏就用它（lib/dub.mjs 文件头「设定」）。发新版本没给就沿用上一版的，null 是去掉。不是 0 到 100 的整数，花钱之前报 make_pack_input_invalid（field 是 expressiveness，dryRun 也报）
-//     cardLineLanguage?,  卡片试听那一句的语言（语言标签）：这一句的文字认不出是哪种语言时用（法语、西语都是拉丁字母）：比跨语言、写语言提示都照它。要和 cardLine 一起给，不然 make_pack_input_invalid（field 是 cardLineLanguage）
-//     cardLineExpressiveness?,  卡片试听那一句单独取的起伏（0 到 100 的整数）：只有这一次配的这一句用这个值，其余照默认那套，写进清单的 cardLine.expressiveness。要和 cardLine 一起给，不然 make_pack_input_invalid（field 是 cardLineExpressiveness）
+//     cardLineLanguage?,  试听句的语言（语言标签）：这一句的文字认不出是哪种语言时用（法语、西语都是拉丁字母）：比跨语言、写语言提示都照它。要和 cardLine 一起给，不然 make_pack_input_invalid（field 是 cardLineLanguage）
+//     cardLineExpressiveness?,  试听句单独取的起伏（0 到 100 的整数）：只有这一次配的这一句用这个值，其余照默认那套，写进清单的 cardLine.expressiveness。要和 cardLine 一起给，不然 make_pack_input_invalid（field 是 cardLineExpressiveness）
 //     setups?,          几套设定（固定到音色里）：数组，每项 { name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }，原样写进清单的 setups（写法和规则见 protocol/FORMAT.md 4.4、4.5 节；配音怎么用，见 lib/dub.mjs 文件头「设定」）。
 //                       不是数组报 make_pack_input_invalid（field 是 setups）；重名、不止一套带 default、speed 不是正数这类由清单检查在花钱之前报（试装，manifest_invalid）。空数组等于没写。
 //                       instructions 是给写台本的人看的具体说明（口音、口吻的特征），配音时不发给模型，不限长。labels 的情绪、风格、能量合成的开头的提示超过 lib/cue-length.mjs 的 MAX_OPENING_CUE_WORDS 个词，
@@ -118,7 +118,7 @@
 //   holdoutRatio, maxHoldout, maxReferences, minHoldoutTokens, maxSynthesisChars   挑素材的参数，默认值和规则见 lib/pack-material.mjs。holdoutRatio 为 0 就是不留出录音：报告也不给 no_holdout、holdouts_few（lib/material-hints.mjs 的 noHoldout）
 //   minChars        合成能力一次至少要多少个字（环境声明的：命令行上是适配器的 limits.minChars，app 是 contract 的 minTextChars）。给了，规划和试合成都按它算：
 //                   留出录音里文字不够的不合成、不算费用，报告的 trial.items 里写明「比合成能力的下限短」（lib/dub.mjs、lib/make-pack-trial.mjs）；不给就没有下限
-//   maxChars, maxPauseInRequestMs   配卡片试听那一句时交给配音的两项上限（环境声明的，意思同 lib/dub.mjs 的同名选项；命令行上是适配器的 limits），不给照配音的默认。写错抛 make_pack_input_invalid
+//   maxChars, maxPauseInRequestMs   配试听句时交给配音的两项上限（环境声明的，意思同 lib/dub.mjs 的同名选项；命令行上是适配器的 limits），不给照配音的默认。写错抛 make_pack_input_invalid
 //   thresholds      音质检查的阈值（tools/audio-quality.mjs 的 judgeReference 的写法），省略用默认
 //   loudness        调响度（规则在 lib/make-pack-loudness.mjs 的文件头）：省略或 true 用默认目标，false 不调，{ targetLufs?, peakCeilingDbfs?, limiter? } 改目标、上限和限幅器（limiter: false 关掉限幅器，回到只加增益；{ maxDb } 改最多压多少 dB）。写错抛 make_pack_input_invalid（field 是 loudness）
 //   concurrency     调能力的并发数，1–8，默认 2
@@ -132,14 +132,15 @@
 //                   app 传一个按「取消」就停的，测试传一个马上返回的。不是函数，在入口就抛 make_pack_input_invalid（field 是 retryWait）
 //   textLanguage    包里 SKILL.md 骨架（各节的标题和说明）用的语言：'zh'（省略就是它）或 'en'，调用方按作者的语言给（app 里是作者做包时的界面语言，命令行是 --text-language）；
 //                   试装和正式装、第一个版本和发新版本都用这一次给的，发新版本不看上一版是什么语言。别的值抛 make_pack_input_invalid（field 是 textLanguage），在花钱之前。
-//                   只管骨架：「## 配音指引」这一行所有语言都一样，作者写的名字、指引、描述、变更说明原样放进去，不翻译（规则的正本是 protocol/FORMAT.md「骨架的语言」）
+//                   只管骨架：「## 配音指引」这一行所有语言都一样，作者写的名字、指引、描述、变更说明原样放进去，不翻译（规则的正本是 protocol/FORMAT.md「Language of the skeleton」）
 //   evaluate        false 就不试合成、不量还原度（默认 true）
-//   allowCrossLanguage  true 就照跨语言克隆配卡片试听那一句：包里给它挑的参考段不是这一句的语言（参考是日语，这一句是英文），也照配，带参考那种语言的口音。
+//   allowCrossLanguage  true 就照跨语言克隆配试听句：包里给它挑的参考段不是这一句的语言（参考是日语，这一句是英文），也照配，带参考那种语言的口音。
 //                   不给（默认 false）就不配这一句，包照做，报告的 cardLine 是 failed（error.code 是 dub_cross_language），提示是 card_line_cross_language（lib/make-pack-card-line.mjs 的 voiceCardLine「跨语言」）。
 //                   不管试合成：试合成量的是声音本身，照旧跨语言也配（lib/make-pack-trial.mjs）。不是 true、false，抛 make_pack_input_invalid（field 是 allowCrossLanguage）
-//   languageMarks   false 就在跨语言配卡片试听那一句时不要求名字对，不加两边的语言提示（lib/dub.mjs 第 7c 步）。不给是 true。不是 true、false，抛 make_pack_input_invalid（field 是 languageMarks）
+//   languageMarks   false 就在跨语言配试听句时不要求名字对，不加两边的语言提示（lib/dub.mjs 第 7c 步）。不给是 true。不是 true、false，抛 make_pack_input_invalid（field 是 languageMarks）
 //   dryRun          true 就只做不花钱的几步（筛片段、查哪些能用），不调任何所需能力，不做包；返回 { plan, report }
-//   onPlan          (plan) => void：不花钱的几步做完、第一次调所需能力之前交给它；plan.calls 是各项能力最多要调多少次。它抛错就停，什么都不调
+//   onPlan          (plan, { notes }) => void：不花钱的几步做完、第一次调所需能力之前交给它；plan.calls 是各项能力最多要调多少次；notes 是现在就该让使用者看到的说明（报告 notes 里的同一批：现在只有 recording_noisy，
+//                   录音的底噪会原样带进声音，lib/recording-noise.mjs），没有就是空数组。它抛错就停，什么都不调
 //
 // ---------------------------------------------------------------- 返回
 //
@@ -159,8 +160,8 @@
 //             counts 数量；plan 各项能力最多调几次；
 //             steps 转写、标提示标注（annotation，写法见 lib/make-pack-annotation.mjs）、调响度、试合成各一步的情况（长录音的句子模式另有 sentences）；trial 试合成；fidelity 还原度（读法的正本是 lib/fidelity.mjs 的文件头）；
 //             redo 有「没听成」的盲听时，按 planRedo 说明补做要调几次；verification 写进清单的那一条验证记录（没量出来是 null）；
-//             cardLine 卡片试听那一句配了没有、沿用了没有（status 是 voiced、carried、failed、none，写法见 lib/make-pack-card-line.mjs 的文件头）；
-//             hints 还缺什么素材（lib/material-hints.mjs）；notes 前几步留下的说明（input.notes），后面接着发新版本留下的（design_source_dropped，lib/pack-version.mjs 的 versionNotes）、沿用上一版的设定合成的开头的提示超长的（setup_opening_cue_too_long，lib/make-pack-input.mjs 的 checkSetupOpeningCues）、读音词表里只写了一个字的词条（lexicon_single_character，lib/pronunciation-lexicon.mjs 的文件头「只写一个字的词条」）和调响度这一步留下的；
+//             cardLine 试听句配了没有、沿用了没有（status 是 voiced、carried、failed、none，写法见 lib/make-pack-card-line.mjs 的文件头）；
+//             hints 还缺什么素材（lib/material-hints.mjs）；notes 前几步留下的说明（input.notes），录音的底噪（recording_noisy，lib/recording-noise.mjs），后面接着发新版本留下的（design_source_dropped，lib/pack-version.mjs 的 versionNotes）、沿用上一版的设定合成的开头的提示超长的（setup_opening_cue_too_long，lib/make-pack-input.mjs 的 checkSetupOpeningCues）、读音词表里只写了一个字的词条（lexicon_single_character，lib/pronunciation-lexicon.mjs 的文件头「只写一个字的词条」）和调响度这一步留下的；
 //             version 发新版本时才有：{ previous, next, bump, changelogSource: 'author' | 'generated', changes, verification: { status, droppedFromPrevious } }
 //   evaluation  量还原度用的那一批数据（参考、留出录音、合成出来的录音），补做「没听成」的盲听时要用；没量就是 null
 //
@@ -180,7 +181,7 @@
 //   参考集的段数、包解开以后的总大小撞上格式写明的上限：在转写之前就报，一个付费步骤都不走，dryRun 也报（lib/make-pack-assemble.mjs 的 assertFitsFormat，按切出的段数和估算的大小，估法写在那里）。
 //                               报的是格式那一条的原话，码和装包时一样：manifest_invalid（details.problems[0].details 是 { pointer: '/reference/segments', keyword: 'maxItems' }）、total_too_large；details.estimated 为真
 //   另外 pack_invalid、manifest_invalid 来自 protocol/lib/pack.mjs；所需能力自己抛的错原样往上传（401 之类要让调用方看见），
-//   服务暂时出错（details.transient）的那一项记在报告里，不让整件事作废。例外只有一处：配卡片试听那一句（包做好以后最后一次调能力）碰到凭据被拒（401）、
+//   服务暂时出错（details.transient）的那一项记在报告里，不让整件事作废。例外只有一处：配试听句（包做好以后最后一次调能力）碰到凭据被拒（401）、
 //   账户停了（details.halted）不往上抛，包照做（钱已经花在包上了，抛出去包就扔了），报告的 cardLine 标 halted、提示 card_line_halted 要使用者先处理（lib/make-pack-card-line.mjs）。上一版的文件和它自己的清单对不上（file_modified、external_hash_mismatch……）
 //   来自 lib/voice-pack.mjs（读上一版时用 verify: true），原样抛出：不在被改过的东西上发新版本。
 //
@@ -196,7 +197,7 @@
 //                                  挑默认段的规则（暂时出错重试、作废、出错退回）写在 lib/make-pack-pick.mjs 的文件头；
 //                                  标提示标注每段参考听一次（lib/segment-annotation.mjs），暂时出错先重试，最多问 3 次（lib/call-attempts.mjs）；被服务商拦下（provider_blocked）、回答不是固定格式的，这一段作废
 //                                  （lib/make-pack-annotation.mjs 的文件头）；没标上的段只存逐字稿，报告写明是哪几段、为什么。盲听出错不在这里重试（lib/fidelity.mjs 有自己的补做）
-//   @capability voice-cloning      试合成留出录音、配卡片试听那一句（都走 lib/dub.mjs）；缺了不能试合成，所以不量还原度，那一句也没配成（报告写明）
+//   @capability voice-cloning      试合成留出录音、配试听句（都走 lib/dub.mjs）；缺了不能试合成，所以不量还原度，那一句也没配成（报告写明）
 //   @capability speaker-verification  说话人相似度、真人基线（lib/fidelity.mjs）；缺了说话人相似度量不了（盲听照做）。能听音频的模型没挑默认段时，挑默认段也用它（lib/make-pack-pick.mjs）：
 //                                  有它，默认段挑和其余参考平均最像的那一段（参考之间两两量，留出录音不量）；没有，就按优先级挑，报告的 defaultSegment.rule 写着是哪条。
 //                                  量的时候抛的错（不是 no_speech）不往上传：这一次的默认段退回按优先级，报告的 defaultSegment.unmeasured 写明错误，做包接着做；
@@ -223,7 +224,7 @@
 //   调响度           lib/make-pack-loudness.mjs    写进包里的参考和留出录音统一到同一个响度（「调响度」的规则在它的文件头）
 //   装包             lib/make-pack-assemble.mjs    把素材装成角色部分
 //   试合成和还原度     lib/make-pack-trial.mjs       合成留出录音，量还原度，写验证记录
-//   卡片试听那一句     lib/make-pack-card-line.mjs   花钱之前查它配得成一个请求；包做好以后用这个包配（发新版本没给的，沿用上一版的），再装一次包（和验证记录一起）
+//   试听句     lib/make-pack-card-line.mjs   花钱之前查它配得成一个请求；包做好以后用这个包配（发新版本没给的，沿用上一版的），再装一次包（和验证记录一起）
 //   报告             lib/make-pack-report.mjs      每一段的去向、dryRun 和最后的 report 怎么写
 // 每一段在流程里是一个条目（item）：各步读它、写它，条目有哪些字段，见 lib/make-pack-input.mjs 的文件头和各步的文件头。
 //
@@ -231,7 +232,7 @@
 import { DEFAULT_MAX_ERROR_RATE } from './fidelity.mjs';
 import { readPreviousVersion, nextVersion, effectiveOf, versionNotes, assertSomethingNew, releaseChanges, withoutCardLine, changelogFor } from './pack-version.mjs';
 import { assertInput, readInput, readOptions, materialOptionsOf, checkSetupOpeningCues } from './make-pack-input.mjs';
-import { takeAudio } from './make-pack-take-audio.mjs';
+import { takeAudio, cutNotes } from './make-pack-take-audio.mjs';
 import { screen } from './make-pack-screen.mjs';
 import { transcribe, settleText, writeFromScripts } from './make-pack-transcribe.mjs';
 import { resolveLanguages, assertReferenceTagsKnown, assertReferenceTagsPlaced, referencedTagsOf, assignTags, carriedTags } from './make-pack-tags.mjs';
@@ -239,6 +240,7 @@ import { mergeSentences } from './make-pack-sentences.mjs';
 import { assertDefaultsUsable, assertSomeUsable, pickMaterial } from './make-pack-pick.mjs';
 import { annotateReferences } from './make-pack-annotation.mjs';
 import { adjustLoudness } from './make-pack-loudness.mjs';
+import { recordingNoiseNote } from './recording-noise.mjs';
 import { preflight, assertFitsFormat, placeMaterial, assembler } from './make-pack-assemble.mjs';
 import { evaluatePack, verificationOf } from './make-pack-trial.mjs';
 import { assertCardLineSpeakable, voiceCardLine, carriedCardLine } from './make-pack-card-line.mjs';
@@ -275,6 +277,7 @@ export async function makePack(env, input, options = {}) {
 
   // 不花钱的几步：裁剪（写了起止秒的段先切出那几秒），筛片段，查出花钱之前能查出的问题，试装，规划
   await takeAudio(env, items);
+  notes.push(...cutNotes(items)); // 超长的表演段在句末切开了：不重配，说一声（lib/make-pack-take-audio.mjs 文件头「切表演段」）
   await screen(env, items, { thresholds: settings.thresholds, loudness: settings.loudness });
   // 句子模式（长录音）：句子先并成段，再一段转写一次（不花钱，在规划和转写之前：句子不逐句转写、不逐句听，规划和费用都按段数算）。
   // 合成的段和别的段一样量音质（规则在 lib/make-pack-sentences.mjs）；点名的默认段是句子的，换成它所在的段
@@ -286,22 +289,25 @@ export async function makePack(env, input, options = {}) {
     version.defaultSegments = [...new Set(version.defaultSegments.map((id) => sentences.aliases.get(id) ?? id))];
   }
   const fresh = items.filter((item) => item.previous === undefined); // 这一版新补的（句子模式是合好的段）
+  // 用录音做声音：录音的底噪会原样带进声音，花钱之前说清（预演和真做的报告里都有，onPlan 也交给调用方；设计出来的声音不报，lib/recording-noise.mjs）
+  const noise = recordingNoiseNote(fresh, { designed: effective.designSource !== undefined });
+  if (noise !== null) notes.push(noise);
   assertDefaultsUsable(items, version.defaultSegments, materialOptions);
   assertReferenceTagsKnown(items, effective.setups); // 设定的默认参考（referenceTag）要是素材给的标签、或者上一版参考的标签：对不上花钱之前就报（dryRun 也报）
   if (previous !== null) await assertSomethingNew(previous, { effective, items, fresh, defaultSegments: version.defaultSegments, tags: carried, cardLine }); // 花钱之前先看一眼：新补的素材一段都用不上、别的也没改（只改了标签也算改了），就不用往下做了
   const context = { effective, input, previous, versionNumber, changelog: version.changelog, textLanguage: settings.textLanguage };
   const stub = await preflight(items, context, { cardLine });
-  const limits = { maxChars: settings.maxChars, minChars: settings.minChars, maxPauseInRequestMs: settings.maxPauseInRequestMs }; // 配卡片试听那一句时交给配音的上限
-  if (cardLine !== undefined) await assertCardLineSpeakable(env, stub, cardLine, limits); // 卡片试听那一句配不配得成一个请求：花钱之前就报（dryRun 也报）
+  const limits = { maxChars: settings.maxChars, minChars: settings.minChars, maxPauseInRequestMs: settings.maxPauseInRequestMs }; // 配试听句时交给配音的上限
+  if (cardLine !== undefined) await assertCardLineSpeakable(env, stub, cardLine, limits); // 试听句配不配得成一个请求：花钱之前就报（dryRun 也报）
   // 默认段花钱之前就定了的语言（作者点名的，或者发新版本时沿用上一版的），不请模型挑，费用里不算那一次（lib/make-pack-plan.mjs）
   const before = previous?.manifest.reference;
   const previousDefaults = before === undefined ? [] : [before.defaultSegment, ...(before.languageDefaults ?? [])];
   const pinned = [...version.defaultSegments, ...items.filter((item) => item.previous === 'reference' && previousDefaults.includes(item.id)).map((item) => item.id)];
   const plan = buildPlan(env, items, settings, materialOptions, { pinned, cardLine: cardLine !== undefined });
-  assertFitsFormat(env, items, plan, context, { maxReferences: materialOptions.maxReferences, reencoded: settings.loudness !== null, cardLine }); // 参考集的段数、包解开的总大小（连卡片试听那一句）撞上格式的上限：转写之前就报（dryRun 也报）
+  assertFitsFormat(env, items, plan, context, { maxReferences: materialOptions.maxReferences, reencoded: settings.loudness !== null, cardLine }); // 参考集的段数、包解开的总大小（连试听句）撞上格式的上限：转写之前就报（dryRun 也报）
   assertSomeUsable(env, items); // 一段能用的都没有（筛掉了，或者没有逐字文本、环境又不能转写）：花钱之前就报 make_pack_no_material，dryRun 也报
   if (settings.dryRun === true) return dryRunOf({ plan, items, fresh, previous, versionNumber, steps, notes });
-  await settings.onPlan?.(plan); // 花钱之前：不花钱的几步都做完了，调用方在这里说明费用，抛错就停
+  await settings.onPlan?.(plan, { notes: noise === null ? [] : [noise] }); // 花钱之前：不花钱的几步都做完了，调用方在这里说明费用，抛错就停
 
   // 转写（调所需能力），定语言
   steps.transcription = await transcribe(env, items, { concurrency, wait: settings.retryWait });
@@ -314,19 +320,19 @@ export async function makePack(env, input, options = {}) {
   // 参考集定了：再查一遍设定引用的标签在参考集里（参考上限裁掉的也在这里报），在标提示标注之前，做不成的包不再花这份钱
   assertReferenceTagsPlaced(items, effective.setups, { referenceIds: chosen.references });
   const byId = new Map(items.map((item) => [item.id, item]));
-  // 卡片试听那一句：给了就要重配；没给、上一版有的，沿用（见下面「卡片试听那一句」）
+  // 试听句：给了就要重配；没给、上一版有的，沿用（见下面「试听句」）
   const plannedCard = cardLine !== undefined ? { text: cardLine, revoiced: true } : previous?.cardLine ? { text: previous.cardLine.text } : undefined;
   // 发新版本：这一版比上一版变了什么（什么都没变就不发；变更说明作者没写就按这个生成）
   let { changes, changelog } = await releaseChanges(previous, { effective, chosen, fresh, changelog: version.changelog, describeChanges: settings.describeChanges, tags: carried, cardLine: plannedCard });
   // 标提示标注（调所需能力）：参考集定了才标，每段参考听一次，留出录音不标；放在「什么都没变就不发」之后，不发的版本不花这份钱。
   // 素材没给标签的段，同一次里顺带要一个短名字（用骨架的语言），不另调
-  steps.annotation = await annotateReferences(env, items, chosen.references, { concurrency, maxErrorRate, wait: settings.retryWait, nameLanguage: settings.textLanguage });
+  steps.annotation = await annotateReferences(env, items, chosen.references, { concurrency, maxErrorRate, wait: settings.retryWait, nameLanguage: settings.textLanguage, loudness: settings.loudness });
   // 素材给了台本原文（scriptText）的段：转写、挑默认段、标提示标注都照听到的做完了，这里才把读音一样的几截写成台本的写法（逐字稿和提示标注一起）
   writeFromScripts(items);
   // 给每段参考定音色基底标签：素材给的、模型给的名字、段名（撞名加序号，只在参考集里）
   assignTags(items, chosen.references);
 
-  // 调响度：量音质、挑默认段、标提示标注都是照原始音频做的，到这里才把要写进包里的参考和留出录音统一响度。后面写进包、试合成、量还原度用的都是调过的这份
+  // 调响度：量音质、挑默认段、标提示标注都是照原始音频做的（标提示标注里量停顿和快慢除外：它在内存里先调到目标响度再量，lib/point-measure.mjs），到这里才把要写进包里的参考和留出录音统一响度。后面写进包、试合成、量还原度用的都是调过的这份
   const loudness = await adjustLoudness(env, [...chosen.references, ...chosen.holdouts].map((id) => byId.get(id)), settings.loudness);
   steps.loudness = loudness.step;
   const material = placeMaterial({ chosen, byId, effective });
@@ -336,7 +342,7 @@ export async function makePack(env, input, options = {}) {
   const evaluated = await evaluatePack(env, made, byId, { enabled: settings.evaluate, concurrency, maxErrorRate, random: settings.random, externals: material.externals, wait: settings.retryWait, minChars: settings.minChars });
   steps.trial = evaluated.trial;
   const verification = verificationOf(evaluated.fidelity, { environment: input.environment ?? settings.environment ?? 'unspecified', models: evaluated.trial.models ?? [], now: settings.now ?? (() => new Date()) });
-  // 卡片试听那一句：给了就用做好的包配（没配成，包照做、清单里没有它）；没给的，上一版的那一句原样沿用，报告里比一比和现在的配法（都在 lib/make-pack-card-line.mjs），上一版没有就是没有
+  // 试听句：给了就用做好的包配（没配成，包照做、清单里没有它）；没给的，上一版的那一句原样沿用，报告里比一比和现在的配法（都在 lib/make-pack-card-line.mjs），上一版没有就是没有
   const card = cardLine !== undefined
     ? await voiceCardLine(env, made, cardLine, { externals: material.externals, wait: settings.retryWait, limits, previous, previousFiles: input.previous, allowCrossLanguage: settings.allowCrossLanguage === true, languageMarks: settings.languageMarks !== false, expressiveness: cardLineExpressiveness, language: cardLineLanguage }) // 上一版：用同样的请求重配就换一个 seed
     : (await carriedCardLine(env, previous, made, { previousFiles: input.previous, externals: material.externals, limits })) ?? { outcome: { status: 'none' }, audio: null };

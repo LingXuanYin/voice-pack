@@ -27,7 +27,7 @@
 //        合成暂时出错的，每条留出录音最多试 3 次（lib/call-attempts.mjs，envForPackDub）；试满了还是出错的记在 trial.failed 里，不进评测。
 //        作废的（check.status 是 voided）也不进评测；没查到的照旧量。
 //   verificationOf(fidelity, { environment, models, now })
-//        写进清单的那一条验证记录（协议的写法，protocol/FORMAT.md「角色部分的清单」）：在哪个环境、用哪个模型、哪天测的、还原度比值、量还原度的两种办法各用的哪个模型。
+//        写进清单的那一条验证记录（协议的写法，protocol/FORMAT.md「4.4 Manifest of the role part」）：在哪个环境、用哪个模型、哪天测的、还原度比值、量还原度的两种办法各用的哪个模型。
 //        两种评测一项都没量出来，就没有东西可记，给 null。
 //
 // 抛出的错误：
@@ -51,7 +51,7 @@ const clipOf = (item) => ({ bytes: item.audio.bytes, mimeType: MIME_OF_FORMAT[it
 const skipped = (reason, extra = {}) => ({ trial: { status: 'skipped', reason, ...extra }, fidelity: { status: 'skipped', reason: extra.capability === undefined && extra.runtime === undefined ? reason : 'no_trial' }, evaluation: null, redo: null });
 
 /**
- * 做包里读刚做好的包（试合成、配卡片试听那一句，lib/make-pack-card-line.mjs）时用的环境：外部资源的字节这里已经有了（作者可能还没把音频传到清单里那个网址），读外部资源就直接给这些字节，不联网。
+ * 做包里读刚做好的包（试合成、配试听句，lib/make-pack-card-line.mjs）时用的环境：外部资源的字节这里已经有了（作者可能还没把音频传到清单里那个网址），读外部资源就直接给这些字节，不联网。
  * 做法同 protocol/lib/pack.mjs 做包时的自检（那里的 stubFetch）：对得上网址的给字节，别的 404。
  */
 export function envWithExternals(env, externals) {
@@ -67,8 +67,8 @@ export function envWithExternals(env, externals) {
 
 /**
  * 合成出来的一句进还原度之前的检查线。依据是这台机器上量出来的数，量法和解码和检查用的是同一条路（measureAudio、decodeAudio）：
- *   用来对照的录音：84 条非残片（配音、走查、试合成、Neta 的克隆、语音设计、有声书；不全是音色克隆的合成，最长 26.98 秒）；
- *                   2 条残片（Neta 的 gorrath ref2；走查里的 i-openai-speech.mp3，它和同名的另一份字节相同，模型没查证），同为 40.68 秒。
+ *   用来对照的录音：84 条非残片（配音、走查、试合成、克隆、语音设计、有声书；不全是音色克隆的合成，最长 26.98 秒）；
+ *                   2 条残片（克隆的 gorrath ref2；走查里的 i-openai-speech.mp3，它和同名的另一份字节相同，模型没查证），同为 40.68 秒。
  *                   这些录音没有随基础部分一起放出，没法重新量；要复现，就用 decodeAudio 解码，再用 measureAudio 量同一个文件。
  *   silenceRatio   静音占比超过它，就是「几乎全是静音」。84 条里最大 0.393；两条残片是 0.846 和 0.917。0.6 落在中间，离两边都远。
  *                  它和参考音频的 reject 线（tools/audio-quality.mjs）是同一个数，但判的是「这一句合成的话几乎没有说话」，不是参考的要求。
@@ -116,7 +116,7 @@ async function checkSynthesized(env, clip, holdoutSec) {
 }
 
 /**
- * 做包里用刚做好的包配音（试合成、配卡片试听那一句，lib/make-pack-card-line.mjs）时用的环境：把合成的调用包一层，暂时出错的就按 lib/call-attempts.mjs 的规则再来，
+ * 做包里用刚做好的包配音（试合成、配试听句，lib/make-pack-card-line.mjs）时用的环境：把合成的调用包一层，暂时出错的就按 lib/call-attempts.mjs 的规则再来，
  * 每一段最多 3 次。dub 每段只调一次合成，所以 tries 里每一项是一段用了几次；试满了还是暂时出错的那一段，错误带上次数原样交回去（spent），dub 把它记成 failed。
  */
 export function envForPackDub(env, { wait, tries }) {
@@ -166,7 +166,7 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
     throw error;
   }
   if (dubbed.units.length !== holdouts.length) {
-    throw new VoicePackError('make_pack_trial_mismatch', `试合成的结果和留出录音对不上：${holdouts.length} 条留出录音，配音规划出了 ${dubbed.units.length} 段`, { details: { holdouts: holdouts.length, units: dubbed.units.length } });
+    throw new VoicePackError('make_pack_trial_mismatch', `The trial synthesis does not match the held-out recordings: ${holdouts.length} held-out recording(s), but the dub plan has ${dubbed.units.length} piece(s)`, { details: { holdouts: holdouts.length, units: dubbed.units.length } });
   }
   // 合成出来的每一句，量还原度之前先检查：几乎全是静音、时长和同一句的留出录音差得离谱的，作废，不进比值
   const checks = [];
@@ -213,7 +213,7 @@ export async function evaluatePack(env, made, byId, { enabled, concurrency, maxE
 }
 
 /**
- * 验证记录：在哪个环境、用哪个模型、哪天测的、还原度多少、量还原度的两种办法各用的哪个模型（协议的写法，protocol/FORMAT.md「角色部分的清单」）。
+ * 验证记录：在哪个环境、用哪个模型、哪天测的、还原度多少、量还原度的两种办法各用的哪个模型（协议的写法，protocol/FORMAT.md「4.4 Manifest of the role part」）。
  * 两种评测一项都没量出来，就没有东西可记，给 null。清单里比值的位置只有比值，所以盲听量出来了而说话人相似度量不了，fidelity 里没有 ratio。
  * measuredBy 是 { speakerVerification?, blindListening? }：各是这一种办法量还原度时用的模型名（评测报告里 models 记着，取自能力返回里的 model）。
  * 这种办法没量出来的、能力没报模型的，不写那个键；两个都没有就不写 measuredBy。

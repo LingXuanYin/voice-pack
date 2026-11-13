@@ -2,7 +2,7 @@
 //
 // 一场戏一个请求（lib/dub.mjs 的第 5a 步）：台本里一段连续的、几个说话人轮流说的话，放进一个 text-to-dialogue 请求（环境声明了 scene-in-request，见 vocab/capability-signatures.md）。
 // 这个文件只回答两件事，规则只写在这里：哪几段连成一场（sceneRuns），一个说话人整场用他挑到的哪一段参考（mostPicked）。每一轮怎么写、传给环境什么，是 lib/dub.mjs 的事；
-// 每一轮在平台上怎么写，是适配器的事（基础部分里没有平台的写法）。给使用者的说法在 references/dub.md 的「一场戏一个请求」；规则改了，两处一起改，别处只指过来。
+// 每一轮在平台上怎么写，是适配器的事（基础部分里没有平台的写法）。给使用者的说法在 references/dub.md 的「One request per scene」；规则改了，两处一起改，别处只指过来。
 //
 // 一场 = 连续的几段，每相邻的两段都满足：
 //   同一章；同一个语速（一个请求只有一个音频，拼接时只能整段变速）；同一个起伏（一个请求只带一个值，lib/dub.mjs 第 7 步：几个包各用各的设定，值不同的几个人不成一场）；两段之间的停顿（前一段的 pauseAfterMs 加后一段的 pauseBeforeMs）不超过 maxPauseMs

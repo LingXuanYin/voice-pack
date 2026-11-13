@@ -14,7 +14,7 @@
 //     guidance       配音指引的正文，比之前先去掉 Markdown 的标题行，和两节（这个人是谁、换语言时怎么说）的项名、写「缺」的项（这些来自模板，不是作者写的）
 //     sampleLines[i] 示例台词的每一条（词数不到 minTokens 的那一条单独不比：太短，各写各的也容易撞）
 //     sampleLines    整份示例台词（每条一行连起来）：一条一条都很短时，整份抄是抄的是整份
-//     cardLine       卡片试听那一句（新包是做包输入的 cardLine，来源包是清单的 cardLine.text）：它也是台词，当一条示例台词比（和别的文字、每一条示例台词都比，
+//     cardLine       试听句（新包是做包输入的 cardLine，来源包是清单的 cardLine.text）：它也是台词，当一条示例台词比（和别的文字、每一条示例台词都比，
 //                    不和整份示例台词比）。照着做的新包，这一句由净室里没读过来源包的写作会话写（protocol/new-pack/README.md）；读过来源包的 agent 照抄来源包的那一句，在这里拦
 //     script:路径     包里登记的脚本（清单的 scripts，UTF-8 的文本文件）
 //   不比的，和为什么：
@@ -86,7 +86,7 @@ export const DEFAULT_THRESHOLDS = Object.freeze({
 
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-/** 模板定的项名（「这个人是谁」「换语言时怎么说」两节的，references/make-pack.md「配音指引的五节」）。 */
+/** 模板定的项名（「这个人是谁」「换语言时怎么说」两节的，references/make-pack.md「The five sections of the dubbing guidance」）。 */
 const TEMPLATE_ITEM = /^\s*-\s*(?:身份|性格|在意什么|对不同的人|情绪上来时|名字|自称|口头禅)\s*[：:]\s*/u;
 const stripTemplate = (text) => text.split(/\r?\n/)
   .filter((line) => !/^\s*#{1,6}\s/.test(line))
@@ -97,20 +97,20 @@ const round = (value) => Math.round(value * 1000) / 1000;
 
 function mergeThresholds(overrides) {
   if (overrides === undefined) return DEFAULT_THRESHOLDS;
-  if (!isPlainObject(overrides)) throw new TypeError('thresholds 必须是对象 { text?, audio? }');
+  if (!isPlainObject(overrides)) throw new TypeError('thresholds must be an object { text?, audio? }');
   const out = {};
   for (const group of Object.keys(DEFAULT_THRESHOLDS)) {
     const given = overrides[group] ?? {};
-    if (!isPlainObject(given)) throw new TypeError(`thresholds.${group} 必须是对象`);
+    if (!isPlainObject(given)) throw new TypeError(`thresholds.${group} must be an object`);
     const unknown = Object.keys(given).filter((key) => !Object.hasOwn(DEFAULT_THRESHOLDS[group], key));
-    if (unknown.length > 0) throw new TypeError(`thresholds.${group} 里不认识的项：${unknown.join('、')}`);
+    if (unknown.length > 0) throw new TypeError(`unknown entries in thresholds.${group}: ${unknown.join(', ')}`);
     out[group] = { ...DEFAULT_THRESHOLDS[group], ...given };
     for (const [key, value] of Object.entries(out[group])) {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || (key !== 'minTokens' && key !== 'reusedSeconds' && value > 1)) throw new TypeError(`thresholds.${group}.${key} 必须是正数${key === 'minTokens' || key === 'reusedSeconds' ? '' : '（不大于 1）'}`);
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || (key !== 'minTokens' && key !== 'reusedSeconds' && value > 1)) throw new TypeError(`thresholds.${group}.${key} must be a positive number${key === 'minTokens' || key === 'reusedSeconds' ? '' : ' (at most 1)'}`);
     }
   }
   const unknownGroups = Object.keys(overrides).filter((group) => !Object.hasOwn(DEFAULT_THRESHOLDS, group));
-  if (unknownGroups.length > 0) throw new TypeError(`thresholds 里不认识的项：${unknownGroups.join('、')}`);
+  if (unknownGroups.length > 0) throw new TypeError(`unknown entries in thresholds: ${unknownGroups.join(', ')}`);
   return out;
 }
 
@@ -154,13 +154,13 @@ function trimOf(segment) {
  *   段写了起止秒的，带着 trim（写法对的才带，见文件头「比什么」的录音）
  */
 export function materialOfInput(input, { recordings = [] } = {}) {
-  if (!isPlainObject(input)) throw new TypeError('input 必须是对象');
+  if (!isPlainObject(input)) throw new TypeError('input must be an object');
   const texts = [];
   textUnit(texts, 'direction.description', 'description', input.direction?.description);
   textUnit(texts, 'designSource.description', 'description', input.designSource?.description);
   if (typeof input.guidance === 'string') textUnit(texts, 'guidance', 'guidance', stripTemplate(input.guidance));
   sampleLineUnits(texts, input.sampleLines);
-  textUnit(texts, 'cardLine', 'sampleLine', input.cardLine); // 卡片那一句当一条台词比（文件头「比什么」）
+  textUnit(texts, 'cardLine', 'sampleLine', input.cardLine); // 试听句当一条台词比（文件头「比什么」）
   for (const script of Array.isArray(input.scripts) ? input.scripts : []) {
     const text = textOfFile(input.files instanceof Map ? input.files.get(script?.entry) : undefined);
     if (text !== null) textUnit(texts, `script:${script.entry}`, 'script', text);
@@ -175,22 +175,22 @@ export function materialOfInput(input, { recordings = [] } = {}) {
 }
 
 /**
- * 来源包要比的东西，读自角色部分的文件。只读清单（连卡片试听那一句的台词）、SKILL.md、清单里登记的脚本和录音；不验哈希，不联网。
+ * 来源包要比的东西，读自角色部分的文件。只读清单（连试听句的台词）、SKILL.md、清单里登记的脚本和录音；不验哈希，不联网。
  * 返回里没有来源包的名字和包 ID：用不着，也不该往后传。
  * @param {Map<string, Uint8Array>} files 角色部分的文件（完整包里还有 protocol/、voice-pack/，不会读）
  * @returns {{ texts: { item: string, kind: string, text: string }[], recordings: { bytes: Uint8Array }[], external: number }}
  */
 export function materialOfPack(files) {
-  if (!(files instanceof Map)) throw new TypeError('files 必须是 Map<路径, Uint8Array>');
+  if (!(files instanceof Map)) throw new TypeError('files must be a Map<path, Uint8Array>');
   const bytes = files.get('manifest.json');
-  if (!(bytes instanceof Uint8Array)) throw new VoicePackError('duplicate_check_source_invalid', '来源包里没有 manifest.json：不是一个音色包', { details: { reason: 'manifest_missing' } });
+  if (!(bytes instanceof Uint8Array)) throw new VoicePackError('duplicate_check_source_invalid', 'the source pack has no manifest.json: it is not a voice pack', { details: { reason: 'manifest_missing' } });
   let manifest;
   try {
     manifest = JSON.parse(decoder.decode(bytes));
   } catch (cause) {
-    throw new VoicePackError('duplicate_check_source_invalid', '来源包的 manifest.json 读不了（不是合法的 JSON）', { details: { reason: 'manifest_unreadable' }, cause });
+    throw new VoicePackError('duplicate_check_source_invalid', 'manifest.json in the source pack cannot be read (it is not valid JSON)', { details: { reason: 'manifest_unreadable' }, cause });
   }
-  if (!isPlainObject(manifest) || manifest.part !== 'role') throw new VoicePackError('duplicate_check_source_invalid', '来源包不是角色部分（或是只有基础部分、协议核心）：没有角色内容可比', { details: { reason: 'not_role_part' } });
+  if (!isPlainObject(manifest) || manifest.part !== 'role') throw new VoicePackError('duplicate_check_source_invalid', 'the source pack is not a role part (or it has only the base part or the protocol core): there is no role content to compare', { details: { reason: 'not_role_part' } });
 
   const texts = [];
   textUnit(texts, 'direction.description', 'description', manifest.direction?.description);
@@ -325,8 +325,8 @@ async function compareRecordings(env, candidateClips, sourceClips, limits, { yie
 // ---------------------------------------------------------------- 入口
 
 const describe = (finding) => (finding.kind === 'text'
-  ? `${finding.item} 的${{ rouge_l_f1: ' ROUGE-L F1', copied_ratio: '抄用比例', copied_coverage: '来源被带走的比例' }[finding.measure]}是 ${finding.value}（阈值 ${finding.threshold}）`
-  : `录音 ${finding.item} 里有 ${finding.value} 秒是来源包里的录音（这段一共 ${finding.totalSeconds} 秒，阈值 ${finding.threshold} 秒）`);
+  ? `${finding.item}: ${{ rouge_l_f1: 'ROUGE-L F1', copied_ratio: 'copied ratio', copied_coverage: 'share of the source that was taken over' }[finding.measure]} is ${finding.value} (threshold ${finding.threshold})`
+  : `recording ${finding.item}: ${finding.value} seconds of it come from recordings in the source pack (${finding.totalSeconds} seconds in total, threshold ${finding.threshold} seconds)`);
 
 /**
  * 把新包和来源包比一遍。规则、返回和错误见文件头。
@@ -335,9 +335,9 @@ const describe = (finding) => (finding.kind === 'text'
  *   yieldControl 每解码、取完一段录音的指纹以后等一下（给浏览器让出主线程：() => new Promise((resolve) => setTimeout(resolve, 0))）；onProgress 报进度
  */
 export async function checkDuplicates(env, input) {
-  if (!isPlainObject(input) || !isPlainObject(input.candidate) || !isPlainObject(input.source)) throw new TypeError('input 必须是 { candidate, source }，用 materialOfInput 和 materialOfPack 做出来');
+  if (!isPlainObject(input) || !isPlainObject(input.candidate) || !isPlainObject(input.source)) throw new TypeError('input must be { candidate, source }, built with materialOfInput and materialOfPack');
   for (const side of [input.candidate, input.source]) {
-    if (!Array.isArray(side.texts) || !Array.isArray(side.recordings)) throw new TypeError('candidate 和 source 都要有 texts 和 recordings 两个数组');
+    if (!Array.isArray(side.texts) || !Array.isArray(side.recordings)) throw new TypeError('candidate and source must each have two arrays, texts and recordings');
   }
   const thresholds = mergeThresholds(input.thresholds);
   const text = compareAllTexts(input.candidate.texts, input.source.texts, thresholds.text);
@@ -345,7 +345,7 @@ export async function checkDuplicates(env, input) {
   const report = { thresholds, text: text.report, audio: { ...audio.report, sourceUnchecked: { ...audio.report.sourceUnchecked, ...(input.source.external > 0 ? { external: input.source.external } : {}) } } };
   const findings = [...text.findings, ...audio.findings];
   if (findings.length > 0) {
-    throw new VoicePackError('duplicate_detected', `查重不通过：新包里有 ${findings.length} 处和来源包重合太多：${findings.map(describe).join('；')}。把这些文字改成自己的话、换掉这些录音，再做。`, { details: { findings, ...report } });
+    throw new VoicePackError('duplicate_detected', `duplicate check failed: ${findings.length} ${findings.length === 1 ? 'place' : 'places'} in the new pack overlap too much with the source pack: ${findings.map(describe).join('; ')}. Rewrite these texts in your own words and replace these recordings, then make the pack again.`, { details: { findings, ...report } });
   }
   return report;
 }

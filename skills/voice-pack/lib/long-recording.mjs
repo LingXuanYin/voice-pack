@@ -152,7 +152,7 @@ function sentenceCutOf(split) {
 }
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-const invalid = (field, problem) => new VoicePackError('long_recording_input_invalid', `长录音的输入不合约定（${field}）：${problem}`, { details: { field, problem } });
+const invalid = (field, problem) => new VoicePackError('long_recording_input_invalid', `The long recording input does not match the contract (${field}): ${problem}`, { details: { field, problem } });
 const round = (x, digits) => {
   const k = 10 ** digits;
   return Math.round(x * k) / k;
@@ -161,11 +161,11 @@ const round = (x, digits) => {
 // ---------------------------------------------------------------- 读输入
 
 function readRecording(recording) {
-  if (!isPlainObject(recording)) throw invalid('recording', '必须是 { audio: { bytes, mimeType }, name? } 对象');
+  if (!isPlainObject(recording)) throw invalid('recording', 'must be an object { audio: { bytes, mimeType }, name? }');
   for (const key of Object.keys(recording)) {
-    if (!RECORDING_KEYS.includes(key)) throw invalid(`recording.${key}`, `不认识的字段 ${JSON.stringify(key)}（只有 ${RECORDING_KEYS.join('、')}；库不收路径，文件读成字节是命令行层的事）`);
+    if (!RECORDING_KEYS.includes(key)) throw invalid(`recording.${key}`, `unknown field ${JSON.stringify(key)} (only ${RECORDING_KEYS.join(', ')}; the library takes no paths, and reading a file into bytes is for the command-line layer)`);
   }
-  if (recording.name !== undefined && (typeof recording.name !== 'string' || recording.name.trim() === '')) throw invalid('recording.name', '必须是非空字符串（例如文件名）');
+  if (recording.name !== undefined && (typeof recording.name !== 'string' || recording.name.trim() === '')) throw invalid('recording.name', 'must be a non-empty string (for example a file name)');
   assertAudioClip(recording.audio, 'recording.audio');
   return { audio: recording.audio, name: recording.name };
 }
@@ -175,7 +175,7 @@ function readRecording(recording) {
  * 句子模式按它实际用的选项查（sentenceCutOf 盖上去以后的）：普通模式的默认最短段（5 秒）不适用于句子，拿它来查会挡住 5 秒以下的 maxSeconds。
  */
 function checkSplitOptions(split, sentences) {
-  if (!isPlainObject(split)) throw invalid('split', '必须是对象，例如 { maxSeconds: 15 }');
+  if (!isPlainObject(split)) throw invalid('split', 'must be an object, for example { maxSeconds: 15 }');
   const used = sentences ? { ...split, ...sentenceCutOf(split) } : split;
   try {
     splitBySilence({ sampleRate: 16000, samples: [new Float32Array(0)] }, used);
@@ -186,23 +186,23 @@ function checkSplitOptions(split, sentences) {
 }
 
 function readOptions(options) {
-  if (!isPlainObject(options)) throw invalid('options', '必须是对象');
+  if (!isPlainObject(options)) throw invalid('options', 'must be an object');
   for (const key of Object.keys(options)) {
-    if (!OPTION_NAMES.includes(key)) throw invalid(`options.${key}`, `不认识的选项 ${JSON.stringify(key)}（有：${OPTION_NAMES.join('、')}）`);
+    if (!OPTION_NAMES.includes(key)) throw invalid(`options.${key}`, `unknown option ${JSON.stringify(key)} (the options are: ${OPTION_NAMES.join(', ')})`);
   }
   for (const key of ['separate', 'transcribe', 'sentences']) {
-    if (options[key] !== undefined && typeof options[key] !== 'boolean') throw invalid(key, '必须是 true 或 false');
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') throw invalid(key, 'must be true or false');
   }
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
-  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) throw invalid('concurrency', `必须是 1–${MAX_CONCURRENCY} 的整数`);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) throw invalid('concurrency', `must be an integer from 1 to ${MAX_CONCURRENCY}`);
   if (options.idPrefix !== undefined && (typeof options.idPrefix !== 'string' || options.idPrefix.length > PREFIX_MAX || !ID_PREFIX.test(options.idPrefix))) {
-    throw invalid('idPrefix', `必须是小写字母、数字、连字符、下划线，以字母或数字开头，最长 ${PREFIX_MAX} 个字符`);
+    throw invalid('idPrefix', `must be lowercase letters, digits, hyphens and underscores, starting with a letter or digit, at most ${PREFIX_MAX} characters`);
   }
   const language = options.language === undefined ? undefined : normalizeLanguage(options.language);
-  if (language === null) throw invalid('language', `必须是语言标签，例如 en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）`);
+  if (language === null) throw invalid('language', `must be a language tag, for example en, zh-CN (at most ${MAX_LANGUAGE_TAG} characters)`);
   if (options.split !== undefined) checkSplitOptions(options.split, options.sentences === true);
-  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', '必须是函数');
-  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写暂时出错、再试之前等多久');
+  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', 'must be a function');
+  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', 'must be a function (milliseconds) => Promise, how long to wait before trying again after a temporary transcription error');
   return {
     separate: options.separate ?? true,
     transcribe: options.transcribe ?? true,
@@ -239,13 +239,13 @@ function toMono(samples) {
 /** VAD 的返回：{ speech: [{ start_sec, end_sec }] }，按先后排、互不重叠、不超过录音的时长。不合格就抛，不猜。 */
 function readSpeech(result, durationSec) {
   const bad = (message, index) => badResult('voice-activity-detection', 'speech_invalid', message, index === undefined ? {} : { index });
-  if (!isPlainObject(result) || !Array.isArray(result.speech)) throw bad('必须返回 { speech: [{ start_sec, end_sec }], model? }');
+  if (!isPlainObject(result) || !Array.isArray(result.speech)) throw bad('must return { speech: [{ start_sec, end_sec }], model? }');
   let previousEnd = 0;
   result.speech.forEach((region, index) => {
-    if (!isPlainObject(region) || !Number.isFinite(region.start_sec) || !Number.isFinite(region.end_sec)) throw bad(`speech[${index}] 必须是 { start_sec, end_sec }，两个都是数（秒）`, index);
-    if (region.start_sec < 0 || !(region.end_sec > region.start_sec)) throw bad(`speech[${index}] 要满足 0 <= start_sec < end_sec，收到 ${region.start_sec}–${region.end_sec}`, index);
-    if (region.start_sec < previousEnd) throw bad(`speech[${index}] 和前一个区间重叠，或者没有按先后排`, index);
-    if (region.end_sec > durationSec + SPEECH_TOLERANCE_SECONDS) throw bad(`speech[${index}] 的 end_sec（${region.end_sec}）超出了录音的时长（${round(durationSec, 3)} 秒）`, index);
+    if (!isPlainObject(region) || !Number.isFinite(region.start_sec) || !Number.isFinite(region.end_sec)) throw bad(`speech[${index}] must be { start_sec, end_sec }, both numbers (seconds)`, index);
+    if (region.start_sec < 0 || !(region.end_sec > region.start_sec)) throw bad(`speech[${index}] must satisfy 0 <= start_sec < end_sec, got ${region.start_sec}–${region.end_sec}`, index);
+    if (region.start_sec < previousEnd) throw bad(`speech[${index}] overlaps the previous region, or is not in order`, index);
+    if (region.end_sec > durationSec + SPEECH_TOLERANCE_SECONDS) throw bad(`end_sec of speech[${index}] (${region.end_sec}) is beyond the length of the recording (${round(durationSec, 3)} s)`, index);
     previousEnd = region.end_sec;
   });
   return result.speech;
@@ -284,7 +284,7 @@ async function transcribeAll(env, items, { concurrency, language, wait }) {
       return;
     }
     const { result } = outcome;
-    if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', '必须返回 { text: 字符串, language?: 字符串, model?: 字符串 }');
+    if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', 'must return { text: string, language?: string, model?: string }');
     if (typeof result.model === 'string') models.add(result.model);
     const text = result.text.trim();
     if (text === '') {
@@ -300,17 +300,17 @@ async function transcribeAll(env, items, { concurrency, language, wait }) {
 
 // ---------------------------------------------------------------- 提醒（notes）
 
-const idsText = (items) => items.slice(0, 10).map((item) => item.id).join('、') + (items.length > 10 ? ` 等共 ${items.length} 段` : '');
+const idsText = (items) => items.slice(0, 10).map((item) => item.id).join(', ') + (items.length > 10 ? ` and others (${items.length} segments in all)` : '');
 
 function cuttingNotes({ method, cut, items, shortestSeconds }) {
   const notes = [];
   const droppedShort = cut.dropped.filter((d) => d.reason === 'too_short');
-  if (items.length === 0 && droppedShort.length === 0) notes.push({ code: 'no_speech', message: '没有找到说话的部分，没有切出片段', details: {} });
-  else if (method === 'energy' && cut.analysis.discernible === false && cut.analysis.regions > 0) notes.push({ code: 'cut_not_discernible', message: '录音里分不出哪里是停顿（一直有背景声），只能按长度硬切，切点可能落在话中间', details: {} });
-  else if (cut.analysis.forcedCuts > 0) notes.push({ code: 'cut_forced', message: `有 ${cut.analysis.forcedCuts} 处没有停顿，在最安静的地方硬切了（可能切在词中间）`, details: { count: cut.analysis.forcedCuts } });
+  if (items.length === 0 && droppedShort.length === 0) notes.push({ code: 'no_speech', message: 'No speech was found, so no segments were cut', details: {} });
+  else if (method === 'energy' && cut.analysis.discernible === false && cut.analysis.regions > 0) notes.push({ code: 'cut_not_discernible', message: 'No pauses can be told apart in the recording (there is background sound all the time), so it can only be cut by length, and a cut may fall in the middle of speech', details: {} });
+  else if (cut.analysis.forcedCuts > 0) notes.push({ code: 'cut_forced', message: `${cut.analysis.forcedCuts} ${cut.analysis.forcedCuts === 1 ? 'place has' : 'places have'} no pause; the recording was cut by force at the quietest spot (it may fall in the middle of a word)`, details: { count: cut.analysis.forcedCuts } });
   if (droppedShort.length > 0) {
     const seconds = round(droppedShort.reduce((sum, d) => sum + d.durationSec, 0), 1);
-    notes.push({ code: 'pieces_dropped', message: `${droppedShort.length} 块不足 ${shortestSeconds} 秒的零头没有用（共 ${seconds} 秒）`, details: { count: droppedShort.length, seconds, shortestSeconds } });
+    notes.push({ code: 'pieces_dropped', message: `${droppedShort.length} leftover ${droppedShort.length === 1 ? 'piece' : 'pieces'} shorter than ${shortestSeconds} s not used (${seconds} s in all)`, details: { count: droppedShort.length, seconds, shortestSeconds } });
   }
   return notes;
 }
@@ -318,15 +318,15 @@ function cuttingNotes({ method, cut, items, shortestSeconds }) {
 function transcriptionNotes(step, items) {
   const notes = [];
   if (step.status === 'skipped') {
-    notes.push({ code: 'transcription_skipped', message: step.reason === 'disabled' ? '这次没转写（调用方不要），片段没有文本' : '环境没有转写能力（automatic-speech-recognition），片段没有文本，补上文本才能当参考', details: { reason: step.reason } });
+    notes.push({ code: 'transcription_skipped', message: step.reason === 'disabled' ? 'Not transcribed this time (the caller did not want it), so the segments have no text' : 'The environment has no transcription capability (automatic-speech-recognition), so the segments have no text; add the text so they can serve as references', details: { reason: step.reason } });
     return notes;
   }
   const failed = items.filter((item) => item.transcription === 'failed');
   const empty = items.filter((item) => item.transcription === 'empty');
   const blocked = items.filter((item) => item.transcription === 'blocked');
-  if (failed.length > 0) notes.push({ code: 'transcription_failed', message: `${failed.length} 段转写暂时出错（服务暂时不可用），这几段没有文本：${idsText(failed)}`, details: { ids: failed.map((item) => item.id) } });
-  if (empty.length > 0) notes.push({ code: 'transcription_empty', message: `${empty.length} 段没有转写出文字（静音、音乐或听不清）：${idsText(empty)}`, details: { ids: empty.map((item) => item.id) } });
-  if (blocked.length > 0) notes.push({ code: 'transcription_blocked', message: `${blocked.length} 段转写被服务商拦下了（内容过滤），这几段丢掉了：${idsText(blocked)}`, details: { ids: blocked.map((item) => item.id) } });
+  if (failed.length > 0) notes.push({ code: 'transcription_failed', message: `${failed.length} ${failed.length === 1 ? 'segment' : 'segments'}: temporary transcription error (service temporarily unavailable), no text for ${failed.length === 1 ? 'it' : 'them'}: ${idsText(failed)}`, details: { ids: failed.map((item) => item.id) } });
+  if (empty.length > 0) notes.push({ code: 'transcription_empty', message: `${empty.length} ${empty.length === 1 ? 'segment' : 'segments'}: transcription produced no text (silence, music or inaudible): ${idsText(empty)}`, details: { ids: empty.map((item) => item.id) } });
+  if (blocked.length > 0) notes.push({ code: 'transcription_blocked', message: `${blocked.length} ${blocked.length === 1 ? 'segment' : 'segments'}: transcription blocked by the provider (content filter), dropped: ${idsText(blocked)}`, details: { ids: blocked.map((item) => item.id) } });
   return notes;
 }
 
@@ -385,7 +385,7 @@ async function sentencesOf(env, { work, mono, sampleRate, input, settings, canDe
     source: { ...(input.name === undefined ? {} : { recording: input.name }), startSec: item.seg.startSec, endSec: item.seg.endSec },
   }));
   const notes = [];
-  if (report.separation.status === 'skipped') notes.push({ code: 'separation_skipped', message: '这次没做分离，输入要是干净的人声', details: { reason: report.separation.reason } });
+  if (report.separation.status === 'skipped') notes.push({ code: 'separation_skipped', message: 'Separation was not done this time, so the input must be clean vocals', details: { reason: report.separation.reason } });
   notes.push(...cuttingNotes({ method, cut, items: pieces, shortestSeconds: SENTENCE_CUT.shortestSeconds }));
   return { segments, notes, report };
 }
@@ -425,7 +425,7 @@ export async function prepareLongRecording(env, recording, options = {}) {
   else if (!canSeparate) report.separation = { status: 'skipped', reason: 'capability_missing' };
   else {
     const result = await requireCapability(env, 'audio-source-separation')({ audio: clip });
-    if (!isPlainObject(result) || !isAudioClip(result.vocals)) throw badResult('audio-source-separation', 'vocals_missing', '必须返回 { vocals: { bytes, mimeType }, accompaniment?, model? }：vocals 是分出来的人声');
+    if (!isPlainObject(result) || !isAudioClip(result.vocals)) throw badResult('audio-source-separation', 'vocals_missing', 'must return { vocals: { bytes, mimeType }, accompaniment?, model? }: vocals is the separated voice');
     work = { clip: result.vocals, decoded: await decodeAudio(env, result.vocals.bytes) };
     report.separation = { status: 'done', ...(typeof result.model === 'string' ? { model: result.model } : {}) };
   }
@@ -521,7 +521,7 @@ export async function prepareLongRecording(env, recording, options = {}) {
   }));
 
   const notes = [];
-  if (report.separation.status === 'skipped') notes.push({ code: 'separation_skipped', message: '这次没做分离，输入要是干净的人声', details: { reason: report.separation.reason } });
+  if (report.separation.status === 'skipped') notes.push({ code: 'separation_skipped', message: 'Separation was not done this time, so the input must be clean vocals', details: { reason: report.separation.reason } });
   notes.push(...cuttingNotes({ method, cut, items, shortestSeconds: settings.split.shortestSeconds ?? SPLIT_DEFAULTS.shortestSeconds }));
   notes.push(...transcriptionNotes(transcription, items));
   return { segments, notes, report };

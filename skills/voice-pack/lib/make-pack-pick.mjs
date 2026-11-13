@@ -64,12 +64,12 @@ const ASR = 'automatic-speech-recognition';
  * missingRuntime 同理，是环境缺的运行时：有段不是包能放的格式（带视频轨的文件、别的格式），环境没有 ffmpeg 取音轨（lib/make-pack-take-audio.mjs）。
  */
 function noMaterial(unused, missingCapability, missingRuntime) {
-  const counts = Object.entries(unused).map(([reason, count]) => `${reason} ${count} 段`).join('、');
+  const counts = Object.entries(unused).map(([reason, count]) => `${reason} ${count} ${count === 1 ? 'segment' : 'segments'}`).join(', ');
   const remedy = missingCapability === undefined
     ? ''
-    : `。没有逐字文本的 ${unused.no_text} 段要转写，这个环境没有 ${missingCapability}：接一个有 ${missingCapability} 的适配器，或者给每段配上逐字文本`;
-  const track = missingRuntime === undefined ? '' : `。有段不是包能放的格式（带视频轨的文件、别的格式），这个环境没有 ${missingRuntime} 取音轨：装上 ${missingRuntime}，或者先转成 wav、mp3、flac、ogg 或 m4a`;
-  return new VoicePackError('make_pack_no_material', `没有一段能用，做不出包：${counts}${remedy}${track}`, { details: { unused, ...(missingCapability === undefined ? {} : { missingCapability }), ...(missingRuntime === undefined ? {} : { missingRuntime }) } });
+    : `. Transcription is needed for the ${unused.no_text} ${unused.no_text === 1 ? 'segment' : 'segments'} without a verbatim transcript, but this environment has no ${missingCapability}: connect an adapter that has ${missingCapability}, or give each segment a verbatim transcript`;
+  const track = missingRuntime === undefined ? '' : `. Some segments are not in a format a pack can hold (files with a video track, other formats), and this environment has no ${missingRuntime} to extract the audio track: install ${missingRuntime}, or convert them to wav, mp3, flac, ogg or m4a first`;
+  return new VoicePackError('make_pack_no_material', `No segment is usable, so no pack can be made: ${counts}${remedy}${track}`, { details: { unused, ...(missingCapability === undefined ? {} : { missingCapability }), ...(missingRuntime === undefined ? {} : { missingRuntime }) } });
 }
 
 /**
@@ -114,7 +114,7 @@ function assertOnePerLanguage(items, defaultSegments, languageOf) {
     const language = item === undefined ? null : languageOf(item);
     if (language === null || language === undefined) continue;
     const key = languageKey(language);
-    if (seen.has(key)) throw invalid('defaultSegment', `${JSON.stringify(seen.get(key))} 和 ${JSON.stringify(id)} 都是 ${language}：一种语言只能点名一段默认段`);
+    if (seen.has(key)) throw invalid('defaultSegment', `${JSON.stringify(seen.get(key))} and ${JSON.stringify(id)} are both ${language}: only one default segment can be named per language`);
     seen.set(key, id);
   }
 }
@@ -129,13 +129,13 @@ function assertOnePerLanguage(items, defaultSegments, languageOf) {
 export function assertDefaultsUsable(items, defaultSegments, materialOptions = {}) {
   const wanted = defaultSegments.map((id) => items.find((item) => item.id === id)).filter((item) => item !== undefined);
   const gone = wanted.find((item) => item.unused !== undefined);
-  if (gone !== undefined) throw invalid('defaultSegment', `${JSON.stringify(gone.id)} 这次没能用上（${gone.unused.reason}），当不了默认参考段`);
+  if (gone !== undefined) throw invalid('defaultSegment', `${JSON.stringify(gone.id)} could not be used this time (${gone.unused.reason}), so it cannot be a default segment`);
   const cap = materialOptions.maxReferences ?? DEFAULTS.maxReferences;
   const previousReferences = items.filter((item) => item.previous === 'reference' && item.unused === undefined).length;
   const fresh = wanted.filter((item) => item.previous === undefined);
   if (fresh.length > 0 && previousReferences + fresh.length > cap) {
-    const left = fresh.slice(Math.max(0, cap - previousReferences)).map((item) => JSON.stringify(item.id)).join('、');
-    throw invalid('defaultSegment', `${left} 是这次新补的，上一版的参考（${previousReferences} 段）加上新补的点名的超过了参考上限（${cap} 段），进不了参考集，当不了默认参考段`);
+    const left = fresh.slice(Math.max(0, cap - previousReferences)).map((item) => JSON.stringify(item.id)).join(', ');
+    throw invalid('defaultSegment', `${left} newly added this time; the previous version's references (${previousReferences}) plus the newly added named segments exceed the reference limit (${cap}), so they cannot enter the reference set or be default segments`);
   }
   assertOnePerLanguage(items, defaultSegments, languageBeforeSpending);
 }
@@ -277,10 +277,10 @@ export async function pickMaterial(env, items, { previous, version, materialOpti
       if (similarities !== null) chosen = chooseMaterial(candidates, { ...options, picked, similarities });
     }
   }
-  if (chosen.references.length === 0) throw invalid('drop', '去掉以后参考集里一段都不剩：至少要留一段参考');
+  if (chosen.references.length === 0) throw invalid('drop', 'no reference segment would be left in the reference set after the removal: keep at least one reference segment');
   const defaults = new Set(entriesOf(chosen).map((entry) => entry.id));
   const missing = version.defaultSegments.find((id) => !defaults.has(id));
-  if (missing !== undefined) throw invalid('defaultSegment', `${JSON.stringify(missing)} 这次没进参考集，当不了默认参考段`);
+  if (missing !== undefined) throw invalid('defaultSegment', `${JSON.stringify(missing)} did not make it into the reference set this time, so it cannot be a default segment`);
   for (const dropped of chosen.unused) items.find((item) => item.id === dropped.id).unused = { reason: dropped.reason, details: {} };
   const roleOf = new Map([...chosen.references.map((id) => [id, 'reference']), ...chosen.holdouts.map((id) => [id, 'holdout'])]);
   const mainExtra = extra.get(languageKey(chosen.defaultLanguage)) ?? {};

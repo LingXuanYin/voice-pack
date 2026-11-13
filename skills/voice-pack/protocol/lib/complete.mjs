@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 补全：只有角色部分的包，在环境里找不到可用的基础部分时，把官方基础部分取回来，验签，放进包里的 voice-pack/，变成完整包。
-// 规则和理由的正本是 protocol/FORMAT.md 的「补全」一节，这里写程序怎么做、抛什么。
+// 规则和理由的正本是 protocol/FORMAT.md 的「Complete」一节，这里写程序怎么做、抛什么。
 // 属于核心层：每个部分都带着它，只拿到一个角色部分也能补全；只 import 核心层，网络读取全走注入的 env.fetch，不碰文件系统
 // （读目录、写目录是命令行层的事：protocol/cli/completing.mjs）。
 //
@@ -16,13 +16,13 @@
 //     索引只读一次。读索引、取 zip、核对验签这几步只有 release-fetch.mjs 一份，补全和 app 导出完整包共用，这里不重写。
 //     退路：索引是名单外的钥匙签的（signature_untrusted_key。官方换过钥匙，包里的名单只有旧公钥，认不得现在的索引），就不信它、不挑版本，
 //     改取包要求的最低版本本身（fetchOfficialVersionDirect：直接取那个版本的 zip 和签名，不经索引）：版本 zip 发布以后不再重签，旧名单认得它的签名。
-//     只有 signature_untrusted_key 才退，别的读索引的问题照样报错；退回去以后 zip 的任何问题也照样报错。规则和理由见 RELEASES.md「私钥丢了或泄露了」
+//     只有 signature_untrusted_key 才退，别的读索引的问题照样报错；退回去以后 zip 的任何问题也照样报错。规则和理由见 RELEASES.md「A lost or leaked private key」
 //   5 放进 voice-pack/ 以后，对完整的包再做一次检查和互相校验（验签、每个文件对清单、外部资源、协议版本、基础部分的版本、所需能力）：通过才算补全成功（outcome: 'completed'）
 // 任何一步不过都报错，不兜底，不换别的版本。库不碰文件系统，所以失败不会留下东西；写进包里的事由命令行层做（先在临时目录里做好，最后一步再挪进去）。
 // 同一个环境里几个包要的版本不同：每个包补进自己的 voice-pack/，环境共用的那一份（candidates）从来不改，所以互不干扰。
 //
 // 选项：
-//   trustList     信任名单（protocol/trust.json 的内容，含官方地址 official_url）。用正在运行的这份协议核心自带的那份，不取被补全的包里带的（SIGNATURES.md「谁用哪份公钥」）。必须给
+//   trustList     信任名单（protocol/trust.json 的内容，含官方地址 official_url）。用正在运行的这份协议核心自带的那份，不取被补全的包里带的（SIGNATURES.md「Who uses which public key」）。必须给
 //   env           注入的运行环境，用它的 fetch 读官方地址和角色部分的外部资源。步骤 2、3 不联网，到步骤 4 才取
 //   candidates    环境里已有的基础部分，每份 { location, manifest, signature, coreManifest, coreSignature }：位置（给人看的字符串），加基础部分的清单和签名、
 //                 它里面协议核心的清单和签名（字节，没有的是 null）。别的文件补全不看
@@ -56,7 +56,7 @@
 // 名单、选项的类型不对是调用方写错了，抛 TypeError。
 //
 // fetch 的用法（protocol/README.md 要求用到它的模块自己写明）：全走 release-fetch.mjs 和 check.mjs，它们用注入的 env.fetch：
-//   版本索引和它的签名读的时候带 cacheBust（地址后面加新的 cb 参数）：它们会被覆盖，前面有 CDN（缓存多久、cb 穿不穿得过 CDN，看托管，RELEASES.md「缓存」）；
+//   版本索引和它的签名读的时候带 cacheBust（地址后面加新的 cb 参数）：它们会被覆盖，前面有 CDN（缓存多久、cb 穿不穿得过 CDN，看托管，RELEASES.md「Caching」）；
 //   版本 zip 和它的签名不可变，用原地址读，让缓存起作用。角色部分的外部资源由 checkPart 逐个取回来核对。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -72,14 +72,14 @@ import { officialUrlOf, officialFileUrl, baseZipName } from './releases.mjs';
 import { assessBasePart, inPackCandidate, selectBaseVersion, describeRejection } from './base-choice.mjs';
 
 const STAGE_LABEL = {
-  in_pack: '检查包里的基础部分',
-  index: '读官方的版本索引',
-  select: '挑版本',
-  download: '取官方的基础部分',
-  whole_pack: '检查补全后的整个包',
+  in_pack: 'checking the base part in the pack',
+  index: 'reading the official version index',
+  select: 'choosing a version',
+  download: 'fetching the official base part',
+  whole_pack: 'checking the whole pack after completion',
 };
 
-const fail = (code, stage, message, details) => new VoicePackError(code, `补全不成（${STAGE_LABEL[stage]}）：${message}`, { details: { ...details, stage } });
+const fail = (code, stage, message, details) => new VoicePackError(code, `Complete failed (${STAGE_LABEL[stage]}): ${message}`, { details: { ...details, stage } });
 
 /** 做 work，抛出来的 VoicePackError 换成补全的：code 和 details 不变，加 details.stage 点名是哪一步，文字前面加「补全不成（…）」，原错误作为 cause。 */
 async function inStage(stage, work) {
@@ -87,14 +87,14 @@ async function inStage(stage, work) {
     return await work();
   } catch (error) {
     if (!isVoicePackError(error)) throw error;
-    throw new VoicePackError(error.code, `补全不成（${STAGE_LABEL[stage]}）：${error.message}`, { details: { ...error.details, stage }, cause: error });
+    throw new VoicePackError(error.code, `Complete failed (${STAGE_LABEL[stage]}): ${error.message}`, { details: { ...error.details, stage }, cause: error });
   }
 }
 
 /** 检查报告里有问题：code 是补全的，所有问题放在 details.problems，文字里写第一个。 */
 function reportFailure(code, stage, report) {
   const [first] = report.problems;
-  const more = report.problems.length > 1 ? `（共 ${report.problems.length} 处问题）` : '';
+  const more = report.problems.length > 1 ? ` (${report.problems.length} problems in total)` : '';
   return fail(code, stage, `${first.message}${more}`, { problems: report.problems });
 }
 
@@ -118,8 +118,8 @@ async function fetchOfficialBase(env, trustList, requires, fetchOptions) {
   const { entry, considered } = selectBaseVersion(index, requires);
   if (entry === null) {
     const wanted = { baseMin: requires.baseMin, protocolMajor: requires.protocolMajor, range: `^${requires.baseMin}` };
-    const have = considered.length === 0 ? '版本索引里一个版本都没有列' : `现有的版本是 ${considered.map((item) => `${item.version}（协议 ${item.protocol}）`).join('、')}`;
-    throw fail('base_version_unavailable', 'select', `角色部分要的基础部分是协议主版本 ${wanted.protocolMajor}、${wanted.range}（同一个主版本里不低于 ${wanted.baseMin}），官方地址上没有符合的：${have}`, { required: wanted, available: considered });
+    const have = considered.length === 0 ? 'the version index lists no version at all' : `the versions available are ${considered.map((item) => `${item.version} (protocol ${item.protocol})`).join(', ')}`;
+    throw fail('base_version_unavailable', 'select', `The role part needs a base part with protocol major version ${wanted.protocolMajor}, ${wanted.range} (within the same major version, not lower than ${wanted.baseMin}); the official address has none that fits: ${have}`, { required: wanted, available: considered });
   }
   return { fetched: await inStage('download', () => fetchOfficialEntry(env, trustList, entry, fetchOptions)), entry };
 }
@@ -132,16 +132,16 @@ async function fetchOfficialBase(env, trustList, requires, fetchOptions) {
  */
 export async function completeRolePart(roleFiles, options) {
   assertFileSet(roleFiles);
-  if (options === null || typeof options !== 'object') throw new TypeError('options 要是对象，至少要有 trustList');
+  if (options === null || typeof options !== 'object') throw new TypeError('options must be an object with at least trustList');
   const { trustList, env, candidates = [], limits: given, readOptions, retryDelayMs } = options;
-  if (!Array.isArray(candidates)) throw new TypeError('candidates 要是数组');
+  if (!Array.isArray(candidates)) throw new TypeError('candidates must be an array');
   const limits = resolveLimits(given);
 
   // 1 角色部分的清单：里面写了对基础部分的要求
   const manifestBytes = roleFiles.get(MANIFEST_FILE);
-  if (manifestBytes === undefined) throw new VoicePackError('manifest_missing', `角色部分里没有 ${MANIFEST_FILE}：补全要先读它里面对基础部分的要求`, { details: { path: MANIFEST_FILE } });
+  if (manifestBytes === undefined) throw new VoicePackError('manifest_missing', `The role part has no ${MANIFEST_FILE}: complete has to read the requirements it states for the base part first`, { details: { path: MANIFEST_FILE } });
   const role = parseManifest(manifestBytes, { limits });
-  if (role.part !== 'role') throw new VoicePackError('complete_not_role_part', `补全的对象是角色部分，这份清单说它是 ${role.part}`, { details: { part: role.part } });
+  if (role.part !== 'role') throw new VoicePackError('complete_not_role_part', `Complete works on a role part, but this manifest says it is ${role.part}`, { details: { part: role.part } });
   const { requires } = role;
   const directory = baseDirectoryOf(role.protocol); // 基础部分放在包里的哪个目录，跟角色部分自己的协议版本走（names.mjs 的表）
   const verifySignature = createSignatureVerifier(trustList);
@@ -152,7 +152,7 @@ export async function completeRolePart(roleFiles, options) {
   if ([...roleFiles.keys()].some((path) => path.startsWith(`${directory}/`))) {
     const verdict = await assessBasePart(inPackCandidate(roleFiles, role.protocol), requires, verifySignature);
     if (verdict.usable) return { outcome: 'in_pack', directory, base: summary('pack', verdict), rejected };
-    throw fail('in_pack_base_unusable', 'in_pack', `${describeRejection(withoutVerdictFlag(verdict))}。不覆盖包里已有的东西：要重新补全，先把它移走`, withoutVerdictFlag(verdict));
+    throw fail('in_pack_base_unusable', 'in_pack', `${describeRejection(withoutVerdictFlag(verdict))}. Whatever is already in the pack is not overwritten: to complete again, move it away first`, withoutVerdictFlag(verdict));
   }
 
   // 3 环境里已有的基础部分：第一个可用的就用它
@@ -169,7 +169,7 @@ export async function completeRolePart(roleFiles, options) {
   const whole = new Map([...roleFiles, ...withPrefix(directory, fetched.files)]);
   const report = await checkPart(whole, { verifySignature, env, limits });
   if (!report.ok) throw reportFailure('completed_pack_invalid', 'whole_pack', report);
-  if (!report.mutual.checked) throw fail('completed_pack_invalid', 'whole_pack', `基础部分放进 ${directory}/ 以后互相校验没做成（${report.mutual.reason}）：它没有落在该在的位置，补全没有成功`, { reason: 'mutual_not_checked', mutual: report.mutual, problems: [] });
+  if (!report.mutual.checked) throw fail('completed_pack_invalid', 'whole_pack', `Mutual verification was not carried out after the base part was placed in ${directory}/ (${report.mutual.reason}): it did not land where it should, so the completion did not succeed`, { reason: 'mutual_not_checked', mutual: report.mutual, problems: [] });
   return {
     outcome: 'completed',
     directory,

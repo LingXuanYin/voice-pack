@@ -12,7 +12,7 @@
 //     模型要写出开头，只能靠听。收音校验另有折过写法的那一次，一个数占的词数变了，比到的可能少几个词，也可能多比到交给模型的那一截（日文的「１，０００」），
 //     所以它交回两次里小的那个（见 afterOpening 的说明）。
 //   问法要逐分句标：每个分句开头一条，cue 里放这个分句的情绪，从固定词表选一到两个词（用逗号分开）；同一条里可以再加尾音拖长、尾音上扬。笑、叹气、吸气、哽咽真听到才写，单独一条，写在那个字前面（SOUND_CUES），没有的不写，不为了细而编。
-//     词表（EMOTION_WORDS）约 30 个词，听得到的情绪和声音状态，一律英文，台词什么语言都一样（models/scene3.md「参考的文字和提示标注」）；认情绪按这一份。
+//     词表（EMOTION_WORDS）约 30 个词，听得到的情绪和声音状态，一律英文，台词什么语言都一样（models/scene3.md「Reference text and cue annotation.」）；认情绪按这一份。
 //   答：固定格式，不让模型把整句写出来（现成文章做的包，服务商会拦下「把原话写出来」的回答；挑默认段那一次也是这样，lib/default-pick.mjs 的文件头）：
 //     一个 JSON 对象（可以包在一个代码块里）{ "opening": "…", "cues": [{ "cue": "[laughs]", "before": "呵呵" }], "name": "平常" }
 //     opening 是它听到的开头几个词；cues 是一组提示，cue 是一个方括号提示（问的是词表里的英文词，模型写了词表以外的也照收），before 是这条提示后面紧跟着的一小段原文（几个字到几个词）。
@@ -22,7 +22,11 @@
 //     做包拿它当这段参考的音色基底标签（lib/make-pack-tags.mjs）。不为一个名字另调一次：它和提示标注是同一次问、同一个回答。
 //     name 缺了、不是字符串、只有空白（判法同清单检查的 text_blank），就是没给名字，提示标注照常，不算回答读不懂；去掉两头空白，超过 REFERENCE_TAG_MAX（64）个码点的截到 64。
 //     回答里多出来的键不管；没要名字时回答里的 name 也不管。
-//   收音校验：opening 和逐字稿的开头比（lib/fidelity.mjs 的 openingErrorRate），错误率超过上限就作废，同挑默认段那一次和盲听。
+//   收音校验：opening 和逐字稿的开头比（lib/fidelity.mjs 的 openingErrorRate）。opening 是空的（它自己说什么都没听到）：作废（listening_check_failed）。
+//     opening 不是空的、错误率超过上限（开头对不上）：不整份作废，这一段照常标；但 opening 不再用来定位（placeCues 不给 opening），提示只按 before 在逐字稿里原样找到的地方放，
+//     找不到的丢掉（照 droppedCues 报），这一段记着开头的错误率（openingErrorRate）。依据（2026-11-12，t03/t11）：正式的设计声音的包 9 次里 4 次因为这个作废（另 1 次是回答读不懂，不在这里管），作废时模型写的开头都是录音里真有的字，
+//     只是跳过了被盖住的开头（从交给它的那截写起、或者从被盖住的那截中间写起），或者数字的写法不一样（「260」写成「二六零」），整份提示标注因为这个丢掉。
+//     这样的段没有「模型真听到了」的凭证：模型没拿到音频、照着交给它的那截抄开头，也是这样；留下的提示只是它写的，再加量出来的停顿和快慢。挑默认段（lib/default-pick.mjs）和盲听（lib/fidelity.mjs）的校验照旧。
 //   定位（placeCues）：照 cues 的次序，在 text 里从上一条提示的位置往后找 before 第一次出现的地方；同一个 before 连着两条（都不是一下子的声音）说的是下一处，后面没有了才放在一处。
 //     也到这次回答的 opening 里找，按词的序号（tokenSpans）换算回 text，听错了字（把「嗨」听成「哎」）也落在同一个词上；换算出来的不排在上一条前面，而且 text 里没找到、或者找到的在被盖住的开头以外，就用它（找到的在被盖住的开头里，用找到的：模型的开头可能词数不同）。
 //   拼（insertCues）：照 cues 的次序定位（同上，不看 opening），把 cue 插在那里。
@@ -48,11 +52,12 @@
 //
 // 返回（annotateSegment）：
 //   另外都带 measured（写了量的结果没有）、measureReason?（没量上的原因，lib/point-measure.mjs 的文件头）、measureErrorRate?（原因是 not_aligned 又对过字时才有：对字的错误率，看得出差多少；转写可用的块太少没对字、切不出一条路的、量上了的都不带）、chunks（转写了几块）。
-//   { status: 'annotated', annotatedText, cues, droppedCues?, name?, model? }   标上了：cues 是写进去的听出来的提示条数（不算量出来的标记），droppedCues 是找不到 before、丢掉的条数（没有丢的不写）
-//   { status: 'no_cues', name?, model? }                                  听到了，没有提示、量出来也没有要写的：没有提示标注，不算没标上
+//   { status: 'annotated', annotatedText, cues, droppedCues?, openingErrorRate?, name?, model? }   标上了：cues 是写进去的听出来的提示条数（不算量出来的标记），droppedCues 是找不到 before、丢掉的条数（没有丢的不写）；
+//                                                                         openingErrorRate 只在开头对不上（错误率超过上限）时有，值是这个错误率
+//   { status: 'no_cues', openingErrorRate?, name?, model? }                听到了，没有提示、量出来也没有要写的：没有提示标注，不算没标上
 //   name 是整理过的名字（见上「答」），要了名字、模型也给了才有；作废、没听成的没有名字（这一段没标上，名字也不用）
 //   { status: 'voided', reason, errorRate?, problem?, stopReason?, droppedCues?, model? }   作废，这一段只留逐字稿。reason：
-//       listening_check_failed       收音校验没过（errorRate 是开头的错误率）
+//       listening_check_failed       收音校验没过：opening 是空的（errorRate 是开头的错误率）
 //       annotation_answer_invalid    回答不是固定格式，读不懂（problem 说哪里不对；拼出来的提示标注超过格式的长度上限也算，problem 写明）
 //       annotation_answer_unusable   回答没正常结束（能力标 details.unusable；problem 是 stop_reason，带 stopReason，写法是 lib/capability-calls.mjs 的 unusableDetails）
 //       provider_blocked             回答被模型的服务商拦下了（能力抛 provider_blocked，写法见 vocab/capability-signatures.md）
@@ -133,7 +138,7 @@ export const shownTranscript = (text) => `…${afterOpening(text)}`;
 const CUE = /^\[[^[\]\r\n]+\]$/u;
 export const isCue = (text) => typeof text === 'string' && CUE.test(text) && text.slice(1, -1).trim() !== '';
 
-const invalidAnswer = (reason, reply) => new VoicePackError('annotation_answer_invalid', `标提示标注的回答不符合固定格式（${reason}），不猜，这一段只留逐字稿`, { details: { reason, reply: reportable(reply) } });
+const invalidAnswer = (reason, reply) => new VoicePackError('annotation_answer_invalid', `the answer to the cue annotation does not match the fixed format (${reason}); not guessing, this segment keeps only the verbatim transcript`, { details: { reason, reply: reportable(reply) } });
 
 /**
  * 把模型的回答解析出来。整段回答必须是一个 JSON 对象（可以包在一个代码块里）：opening 是字符串，cues 是 { cue, before } 的数组，
@@ -146,15 +151,15 @@ export function parseAnnotationAnswer(reply) {
   try {
     data = JSON.parse(answerBody(reply));
   } catch {
-    throw invalidAnswer('不是 JSON', reply);
+    throw invalidAnswer('not JSON', reply);
   }
-  if (!isPlainObject(data)) throw invalidAnswer('不是 JSON 对象', reply);
-  if (typeof data.opening !== 'string') throw invalidAnswer('opening 必须是字符串', reply);
-  if (!Array.isArray(data.cues)) throw invalidAnswer('cues 必须是数组', reply);
+  if (!isPlainObject(data)) throw invalidAnswer('not a JSON object', reply);
+  if (typeof data.opening !== 'string') throw invalidAnswer('opening must be a string', reply);
+  if (!Array.isArray(data.cues)) throw invalidAnswer('cues must be an array', reply);
   const cues = data.cues.map((entry, index) => {
-    if (!isPlainObject(entry) || typeof entry.cue !== 'string' || typeof entry.before !== 'string') throw invalidAnswer(`cues[${index}] 必须是 { cue, before }，两个都是字符串`, reply);
+    if (!isPlainObject(entry) || typeof entry.cue !== 'string' || typeof entry.before !== 'string') throw invalidAnswer(`cues[${index}] must be { cue, before }, both strings`, reply);
     const cue = entry.cue.trim();
-    if (!isCue(cue)) throw invalidAnswer(`cues[${index}].cue 不是一个方括号提示`, reply);
+    if (!isCue(cue)) throw invalidAnswer(`cues[${index}].cue is not a cue in square brackets`, reply);
     return { cue, before: entry.before };
   });
   return { opening: data.opening, cues, ...(typeof data.name === 'string' ? { name: data.name } : {}) };
@@ -311,7 +316,7 @@ async function listenOnce(listen, parts, text, { maxErrorRate, attempts, wait, o
   }
   if ('error' in outcome) return { failure: { status: 'not_heard', error: summarizeError(outcome.error), attempts: outcome.attempts } };
   const reply = outcome.result;
-  if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', 'text_missing', '必须返回 { text: 字符串, model?: 字符串 }');
+  if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', 'text_missing', 'must return { text: string, model?: string }');
   const model = typeof reply.model === 'string' ? { model: reply.model } : {};
   let answer;
   try {
@@ -321,13 +326,15 @@ async function listenOnce(listen, parts, text, { maxErrorRate, attempts, wait, o
     throw error;
   }
   const errorRate = openingErrorRate(text, answer.opening);
-  if (errorRate > maxErrorRate) return { failure: { status: 'voided', reason: 'listening_check_failed', errorRate, ...model } };
+  if (answer.opening.trim() === '') return { failure: { status: 'voided', reason: 'listening_check_failed', errorRate, ...model } };
+  const openingMismatch = errorRate > maxErrorRate ? { openingErrorRate: errorRate } : {};
   // 要了名字、模型也给了才带（整理过的，见 nameOf）
   const name = nameLanguage === undefined ? undefined : nameOf(answer.name);
   const named = name === undefined ? {} : { name };
-  const { places, dropped } = placeCues(text, answer.cues, answer.opening);
+  // 开头对不上：opening 不用来定位（按词序号换算，错位了会把提示放到别的字上），只按 before 在逐字稿里找
+  const { places, dropped } = placeCues(text, answer.cues, errorRate > maxErrorRate ? undefined : answer.opening);
   if (answer.cues.length > 0 && places.length === 0) return { failure: { status: 'voided', reason: 'cues_unmatched', ...(dropped === 0 ? {} : { droppedCues: dropped }), ...model } };
-  return { hearing: { places, dropped, ...named, ...model } };
+  return { hearing: { places, dropped, ...openingMismatch, ...named, ...model } };
 }
 
 /**
@@ -341,7 +348,7 @@ async function listenOnce(listen, parts, text, { maxErrorRate, attempts, wait, o
  * @returns {Promise<object>} 见文件头
  */
 export async function annotateSegment(env, segment, { maxErrorRate = DEFAULT_MAX_ERROR_RATE, attempts = 1, wait, onRetry, nameLanguage, measure } = {}) {
-  if (nameLanguage !== undefined && !Object.hasOwn(NAME_WORDS, nameLanguage)) throw new TypeError(`nameLanguage 要是 ${Object.keys(NAME_WORDS).join('、')} 之一，或者不给，收到 ${JSON.stringify(nameLanguage)}`);
+  if (nameLanguage !== undefined && !Object.hasOwn(NAME_WORDS, nameLanguage)) throw new TypeError(`nameLanguage must be one of ${Object.keys(NAME_WORDS).join(', ')}, or omitted; got ${JSON.stringify(nameLanguage)}`);
   const listen = requireCapability(env, 'audio-text-to-text');
   const parts = [{ text: annotationPrompt(nameLanguage) }, { text: `逐字稿：${shownTranscript(segment.text)}` }, { text: '录音：' }, { audio: segment.audio }];
   const [outcome, measuring] = await Promise.all([
@@ -349,16 +356,16 @@ export async function annotateSegment(env, segment, { maxErrorRate = DEFAULT_MAX
     measure === undefined ? { measured: false, reason: 'not_requested', chunks: 0 } : measure(),
   ]);
   if ('failure' in outcome) return { ...outcome.failure, measured: false, chunks: measuring.chunks ?? 0 };
-  const { places: cues, dropped, name, model } = outcome.hearing;
+  const { places: cues, dropped, openingErrorRate: openingMismatch, name, model } = outcome.hearing;
   const measuredFields = { measured: measuring.measured === true, ...(measuring.measured === true ? {} : { measureReason: measuring.reason, ...(measuring.errorRate === undefined ? {} : { measureErrorRate: measuring.errorRate }) }) };
   const named = name === undefined ? {} : { name };
   const modelled = model === undefined ? {} : { model };
-  const common = { ...measuredFields, chunks: measuring.chunks ?? 0 };
+  const common = { ...measuredFields, chunks: measuring.chunks ?? 0, ...(openingMismatch === undefined ? {} : { openingErrorRate: openingMismatch }) };
   const { annotatedText, cues: written } = assembleAnnotation(segment.text, cues, measuring.measured === true ? measuring : null);
   const droppedCues = dropped === 0 ? {} : { droppedCues: dropped };
   if (annotatedText === null) return { status: 'no_cues', ...common, ...named, ...modelled };
   // 拼好去掉方括号必须和 text 一字不差、不超过长度上限，不合就作废，退回只存逐字稿（见文件头「拼」）
-  if (withoutBrackets(annotatedText) !== withoutBrackets(segment.text)) return { status: 'voided', reason: 'annotation_answer_invalid', problem: '拼出来的提示标注去掉方括号以后和逐字稿对不上', ...droppedCues, ...common, ...modelled };
-  if ([...annotatedText].length > ANNOTATED_TEXT_MAX) return { status: 'voided', reason: 'annotation_answer_invalid', problem: `拼出来的提示标注超过 ${ANNOTATED_TEXT_MAX} 个字符`, ...common, ...modelled };
+  if (withoutBrackets(annotatedText) !== withoutBrackets(segment.text)) return { status: 'voided', reason: 'annotation_answer_invalid', problem: 'the assembled cue annotation does not match the verbatim transcript once the square brackets are removed', ...droppedCues, ...common, ...modelled };
+  if ([...annotatedText].length > ANNOTATED_TEXT_MAX) return { status: 'voided', reason: 'annotation_answer_invalid', problem: `the assembled cue annotation is longer than ${ANNOTATED_TEXT_MAX} characters`, ...common, ...modelled };
   return { status: 'annotated', annotatedText, cues: written, ...droppedCues, ...common, ...named, ...modelled };
 }

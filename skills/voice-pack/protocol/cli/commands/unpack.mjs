@@ -19,18 +19,18 @@ import { writeDirectory } from '../disk.mjs';
 import { parseOptions } from '../signing.mjs';
 import { formatReport, partTitle } from '../report.mjs';
 
-export const summary = '把分享文件解成包目录：先检查（含验签和互相校验），通过了才写盘，不覆盖已有的目录';
-export const usage = `unpack <分享文件> [--out <目录>] ${CHECK_USAGE} [--json]`;
+export const summary = 'Unpack a share file into a pack directory: check first (including signature verification and mutual verification), write to disk only if the check passes; an existing directory is never overwritten';
+export const usage = `unpack <share-file> [--out <dir>] ${CHECK_USAGE} [--json]`;
 
 export async function run(args, ctx) {
   const options = parseOptions(args, { values: ['out', ...CHECK_OPTIONS.values], flags: CHECK_OPTIONS.flags });
-  if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
+  if (options.problem !== undefined) { ctx.stderr(`Usage error: ${options.problem}\nUsage: ${usage}\n`); return 2; }
   const [target, ...extra] = options.positional;
-  if (target === undefined) { ctx.stderr(`用法错误：要指定分享文件\n用法：${usage}\n`); return 2; }
-  if (extra.length > 0) { ctx.stderr(`用法错误：一次只解一个，多出来的是 ${extra.join(' ')}\n用法：${usage}\n`); return 2; }
+  if (target === undefined) { ctx.stderr(`Usage error: give the share file\nUsage: ${usage}\n`); return 2; }
+  if (extra.length > 0) { ctx.stderr(`Usage error: unpack takes one share file at a time; the extra argument is ${extra.join(' ')}\nUsage: ${usage}\n`); return 2; }
 
   const { kind, report, files, directory } = await inspectTarget(target, ctx, checkSettings(options));
-  if (kind !== 'file') { ctx.stderr(`用法错误：unpack 要的是分享文件（.voicepack.zip），${target} 是目录；检查目录用 check\n用法：${usage}\n`); return 2; }
+  if (kind !== 'file') { ctx.stderr(`Usage error: unpack takes a share file (.voicepack.zip), but ${target} is a directory; check a directory with check\nUsage: ${usage}\n`); return 2; }
   if (!report.ok) {
     ctx.stdout(ctx.json ? `${JSON.stringify(report)}\n` : formatReport(report, target));
     return 1;
@@ -40,6 +40,6 @@ export async function run(args, ctx) {
   writeDirectory(dest, files);
   const manifest = parseManifest(files.get('manifest.json'));
   const summaryInfo = { directory: dest, files: files.size, part: manifest.part, ...(manifest.part === 'role' ? { id: manifest.id } : {}), version: manifest.version };
-  ctx.stdout(ctx.json ? `${JSON.stringify(summaryInfo)}\n` : `已解包：${dest}（${files.size} 个文件，${partTitle(manifest.part, manifest.id, manifest.version)}）\n`);
+  ctx.stdout(ctx.json ? `${JSON.stringify(summaryInfo)}\n` : `Unpacked: ${dest} (${files.size} ${files.size === 1 ? 'file' : 'files'}, ${partTitle(manifest.part, manifest.id, manifest.version)})\n`);
   return 0;
 }

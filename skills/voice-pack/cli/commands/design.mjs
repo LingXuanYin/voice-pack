@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// design 命令：按一段描述和一段试听文本，用 voice-design 设计一个候选声音（用户没有录音时的第一步）。流程的正本是 SKILL.md 第 2 节「设计」和 references/make-pack.md「设计出来的声音怎么做包」。
+// design 命令：按一段描述和一段试听文本，用 voice-design 设计一个候选声音（用户没有录音时的第一步）。流程的正本是 SKILL.md 第 2 节「Voice design」和 references/make-pack.md「Making a pack from a designed voice」。
 //   @capability voice-design  签名见 vocab/capability-signatures.md
 //
 //   node cli.mjs design (--description <描述> | --description-file <文件>) (--text <试听文本> | --text-file <文件>) --out <新目录> --adapter <适配器> [--dry-run] [--json]
 //
-// 一次一个候选。再要一个：换一个 --out 再跑（不满意时怎么改描述，见 references/character-voice.md「不问人做完一轮，和换一个」）。
+// 一次一个候选。再要一个：换一个 --out 再跑（不满意时怎么改描述，见 references/character-voice.md「Finishing a round without asking, and switching to another」）。
 // --out 是一个新目录，存在就报 file_exists，一次能力都不调。写出三个文件，接得上后面的做包：
 //   intro.<扩展名>        设计出来的试听（扩展名按内容认）
 //   material.json         临时的包的素材：{ segments: [{ id: 'intro', audio, text }] }，text 是试听文本原文
@@ -33,8 +33,8 @@ import { designedPackSteps } from '../../lib/designed-pack-steps.mjs';
 import { ADAPTER_USAGE, applyAdapters, billingSentence, describeRequests, moneySentence, takeAdapterArguments } from '../adapters.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 
-export const summary = '造声音：按描述和试听文本用 voice-design 设计一个候选，写出试听和接着做包要用的文件';
-export const usage = `design (--description <描述> | --description-file <文件>) (--text <试听文本> | --text-file <文件>) --out <新目录> ${ADAPTER_USAGE} [--dry-run] [--json]`;
+export const summary = 'Design a voice: design one candidate with voice-design from a description and a design audition text, and write the audition and the files needed to carry on making the pack';
+export const usage = `design (--description <description> | --description-file <file>) (--text <design audition text> | --text-file <file>) --out <new directory> ${ADAPTER_USAGE} [--dry-run] [--json]`;
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = { description: 'string', 'description-file': 'string', text: 'string', 'text-file': 'string', out: 'string', 'dry-run': 'boolean' };
@@ -54,20 +54,20 @@ export async function run(args, ctx) {
   if (taken.problem) return usageProblem(ctx, usage, taken.problem);
   const parsed = parseArgs(taken.rest, FLAGS);
   if (parsed.problem) return usageProblem(ctx, usage, parsed.problem);
-  if (parsed.positional.length > 0) return usageProblem(ctx, usage, `不要位置参数，多给了：${parsed.positional.join(' ')}`);
+  if (parsed.positional.length > 0) return usageProblem(ctx, usage, `No positional arguments are accepted; extra given: ${parsed.positional.join(' ')}`);
   const { options } = parsed;
   for (const name of ['description', 'text']) {
-    if (options[name] !== undefined && options[`${name}-file`] !== undefined) return usageProblem(ctx, usage, `--${name} 和 --${name}-file 只能给一个`);
+    if (options[name] !== undefined && options[`${name}-file`] !== undefined) return usageProblem(ctx, usage, `Give only one of --${name} and --${name}-file`);
   }
   const dryRun = options['dry-run'] === true;
-  if (!dryRun && options.out === undefined) return usageProblem(ctx, usage, '要给 --out <新目录>（试听和接着做包要用的文件写在这里）；只想看规划用 --dry-run');
+  if (!dryRun && options.out === undefined) return usageProblem(ctx, usage, 'Give --out <new directory> (the audition and the files needed to carry on making the pack are written there); to see only the plan, use --dry-run');
   const description = textOption(ctx, options, 'description');
   const text = textOption(ctx, options, 'text');
-  if (!description) return usageProblem(ctx, usage, '要给 --description 或 --description-file（这个声音的音色，一两句，写法见 SKILL.md 第 2 节「设计」）');
-  if (!text) return usageProblem(ctx, usage, '要给 --text 或 --text-file（试听文本，写法见 references/character-voice.md「设计时的试听文本」）');
+  if (!description) return usageProblem(ctx, usage, 'Give --description or --description-file (the timbre of this voice, one or two sentences; how to write it is in SKILL.md section 2「Voice design」)');
+  if (!text) return usageProblem(ctx, usage, 'Give --text or --text-file (the design audition text; how to write it is in references/character-voice.md「Design audition text when designing」)');
 
   const out = options.out === undefined ? null : path.resolve(ctx.cwd, options.out);
-  if (out !== null && fs.existsSync(out)) throw new VoicePackError('file_exists', `${out} 已经存在，不往已有的目录里写：换一个新目录名`, { details: { file: out } });
+  if (out !== null && fs.existsSync(out)) throw new VoicePackError('file_exists', `${out} already exists, and nothing is written into an existing directory: use a new directory name`, { details: { file: out } });
 
   const { env, adapters } = await applyAdapters(ctx, ctx.env, taken.requests);
   const design = requireCapability(env, CAPABILITY);
@@ -83,22 +83,22 @@ export async function run(args, ctx) {
       return 0;
     }
     ctx.stdout([
-      '规划：不设计，没调任何所需能力',
-      `  描述：${description}`,
-      `  试听文本：${text}`,
-      `  ${CAPABILITY} 1 次（暂时出错最多再来 ${MAX_ATTEMPTS - 1} 次）`,
+      'Plan: nothing is designed, and no required capability is called',
+      `  description: ${description}`,
+      `  design audition text: ${text}`,
+      `  ${CAPABILITY} 1 call (at most ${MAX_ATTEMPTS - 1} retries after a temporary error)`,
       ...notes.map((note) => `  ${note.message}`),
       '',
     ].join('\n'));
     return 0;
   }
 
-  if (billing !== null && !ctx.json) ctx.stderr(`${billing}：\n  设计 1 次（${CAPABILITY}，暂时出错最多再来 ${MAX_ATTEMPTS - 1} 次）\n  ${money}\n`);
+  if (billing !== null && !ctx.json) ctx.stderr(`${billing}:\n  design: 1 call (${CAPABILITY}, at most ${MAX_ATTEMPTS - 1} retries after a temporary error)\n  ${money}\n`);
   const outcome = await callWithRetries(() => design({ text, voice_prompt: description }));
   if ('error' in outcome) throw outcome.error;
   const { result, attempts } = outcome;
   const sniffed = sniffAudio(result.bytes);
-  if (sniffed === null) throw new VoicePackError('design_audio_unrecognized', '设计能力返回的不是认得出的音频（wav、mp3、flac、ogg、m4a），什么都没写', { details: { mimeType: result.mimeType } });
+  if (sniffed === null) throw new VoicePackError('design_audio_unrecognized', 'The design capability returned something that is not recognizable audio (wav, mp3, flac, ogg, m4a), and nothing was written', { details: { mimeType: result.mimeType } });
 
   const audioName = `intro.${sniffed.format}`;
   const designSource = {
@@ -121,14 +121,14 @@ export async function run(args, ctx) {
     return 0;
   }
   ctx.stdout([
-    `候选写到了 ${out}${typeof result.model === 'string' ? `（模型 ${result.model}）` : ''}：`,
-    `  ${audioName.padEnd('design-source.json    '.length)}试听：给使用者听，由使用者定要不要这个声音`,
-    '  material.json         下面第 a 步的素材',
-    '  design-source.json    设计来源，下面第 c 步用',
+    `Candidate written to ${out}${typeof result.model === 'string' ? ` (model ${result.model})` : ''}:`,
+    `  ${audioName.padEnd('design-source.json    '.length)}audition: for the user to listen to; the user decides whether to use this voice`,
+    '  material.json         the material for step a below',
+    '  design-source.json    the design source, used in step c below',
     '',
-    `不满意：改描述，换一个 --out 再跑一次（references/character-voice.md「不问人做完一轮，和换一个」）。`,
+    `Not satisfied: change the description and run again with a different --out (references/character-voice.md「Finishing a round without asking, and switching to another」).`,
     '',
-    '满意了，接下来：',
+    'If you are satisfied, next:',
     ...designedPackSteps({ material: materialFile, designSource: designSourceFile, adapter: describeRequests(taken.requests) }),
     '',
   ].join('\n'));

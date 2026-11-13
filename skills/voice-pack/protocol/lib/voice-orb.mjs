@@ -85,7 +85,7 @@ const escapeXml = (text) => String(text).replace(/[&<>"']/g, (ch) => ({ '&': '&a
  * @throws {TypeError} id 不是字符串
  */
 export function voiceOrbDesign(id) {
-  if (typeof id !== 'string') throw new TypeError('voiceOrbDesign 的 id 必须是字符串');
+  if (typeof id !== 'string') throw new TypeError('the id of voiceOrbDesign must be a string');
   const { color, heights } = designOf(id);
   const bars = heights.map((level, index) => {
     const height = BAR_MIN_HEIGHT + level;
@@ -105,10 +105,10 @@ export function voiceOrbDesign(id) {
  * @throws {VoicePackError} orb_size_invalid：size 不是正整数
  */
 export function voiceOrbSvg(id, options = {}) {
-  if (typeof id !== 'string') throw new TypeError('voiceOrbSvg 的 id 必须是字符串');
+  if (typeof id !== 'string') throw new TypeError('the id of voiceOrbSvg must be a string');
   const size = options.size ?? CANVAS;
   if (!Number.isInteger(size) || size <= 0) {
-    throw new VoicePackError('orb_size_invalid', `配图的边长要是正整数，收到 ${JSON.stringify(options.size)}`, { details: { size: options.size } });
+    throw new VoicePackError('orb_size_invalid', `The side length of the image must be a positive integer, got ${JSON.stringify(options.size)}`, { details: { size: options.size } });
   }
   const { canvas, corner, fill, ink, bars } = voiceOrbDesign(id);
   const title = options.title ?? DEFAULT_TITLE;

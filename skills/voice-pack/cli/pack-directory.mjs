@@ -29,14 +29,14 @@ function directorySource(root) {
         stat = fs.lstatSync(target);
       } catch (cause) {
         if (cause?.code === 'ENOENT' || cause?.code === 'ENOTDIR') return null;
-        throw new VoicePackError('file_unreadable', `读不了 ${target}（${cause?.code ?? '未知原因'}）`, { details: { file: target, what: '包里的文件' } });
+        throw new VoicePackError('file_unreadable', `Cannot read ${target} (${cause?.code ?? 'unknown reason'})`, { details: { file: target, what: 'pack file' } });
       }
-      if (stat.isSymbolicLink()) throw new VoicePackError('symlink_not_allowed', `${JSON.stringify(relative)} 是符号链接：音色包里不允许符号链接（它可能指到包外面去）`, { details: { path: relative } });
+      if (stat.isSymbolicLink()) throw new VoicePackError('symlink_not_allowed', `${JSON.stringify(relative)} is a symbolic link: symbolic links are not allowed in a voice pack (they could point outside the pack)`, { details: { path: relative } });
       if (!stat.isFile()) return null;
       try {
         return new Uint8Array(fs.readFileSync(target));
       } catch (cause) {
-        throw new VoicePackError('file_unreadable', `读不了 ${target}（${cause?.code ?? '未知原因'}）`, { details: { file: target, what: '包里的文件' } });
+        throw new VoicePackError('file_unreadable', `Cannot read ${target} (${cause?.code ?? 'unknown reason'})`, { details: { file: target, what: 'pack file' } });
       }
     },
   };
@@ -49,7 +49,7 @@ export async function openPackDirectory(ctx, argument, { env } = {}) {
     dir = fs.realpathSync(requested);
     if (!fs.statSync(dir).isDirectory()) throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' });
   } catch (cause) {
-    throw new VoicePackError('file_unreadable', `读不了包目录：${requested}（${cause?.code ?? '未知原因'}）`, { details: { file: requested, what: '包目录' } });
+    throw new VoicePackError('file_unreadable', `Cannot read pack directory: ${requested} (${cause?.code ?? 'unknown reason'})`, { details: { file: requested, what: 'pack directory' } });
   }
   return { pack: await openVoicePack(directorySource(dir), { env }), dir };
 }

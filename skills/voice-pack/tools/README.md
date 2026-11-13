@@ -1,45 +1,45 @@
-# 官方小工具
+# Official small tools
 
-只做计算、不用模型的小工具。agent 环境里配音、做包和 app 都用它们。
+Small tools that only compute and use no model. In the agent environment, dubbing, making a pack, and the app all use them.
 
-| 工具 | 文件 | 命令 | 规则和说明的正本 |
+| Tool | File | Command | Authoritative source for rules and notes |
 |---|---|---|---|
-| 台本标记解析 | `markup.mjs` | `markup` | 文件头：语法、输出的形状 |
-| 分句 | `sentences.mjs` | `sentences` | 文件头：规则和取舍 |
-| 音频解码 | `audio-decode.mjs`、`wav.mjs` | 经 `quality` | `audio-decode.mjs` 文件头：怎么解、ffmpeg 运行时的签名；`wav.mjs` 文件头：WAV 解到什么程度，以及只想知道多长、什么格式时用的 `wavInfo`（只读文件头，不解采样值） |
-| 音质检查 | `audio-quality.mjs` | `quality` | 文件头：量什么、阈值和依据、结论的形状 |
-| 长录音按能量切段 | `silence-split.mjs` | 无（库函数） | 文件头：怎么切、选项、返回的形状 |
-| 统一响度（含预读限幅器） | `loudness-normalize.mjs` | 无（库函数；做包流程用） | 文件头：目标和峰值上限、增益怎么取、限幅器的做法和参数依据、状态、写成 16 位 WAV 要留的刻度 |
-| 音频指纹 | `audio-fingerprint.mjs` | 无（库函数；查重用，经 `../lib/duplicate-check.mjs`） | 文件头：方法（地标哈希加位置差投票）、抗什么、抗不了什么（变速、变调、倒放）、返回的形状、每个数的依据 |
+| Script markup parsing | `markup.mjs` | `markup` | File header: syntax, shape of the output |
+| Sentence splitting | `sentences.mjs` | `sentences` | File header: rules and trade-offs |
+| Audio decoding | `audio-decode.mjs`, `wav.mjs` | via `quality` | `audio-decode.mjs` file header: how it decodes, the signature of the ffmpeg runtime; `wav.mjs` file header: how far WAV is decoded, and `wavInfo` for when you only want to know the length and format (it reads only the file header, not the sample values) |
+| Audio quality check | `audio-quality.mjs` | `quality` | File header: what is measured, the thresholds and their basis, the shape of the verdict |
+| Split a long recording into segments by energy | `silence-split.mjs` | none (library function) | File header: how it splits, options, shape of the return value |
+| Loudness normalization (with a look-ahead limiter) | `loudness-normalize.mjs` | none (library function; used by the make-pack flow) | File header: target and peak ceiling, how the gain is chosen, how the limiter works and the basis for its parameters, status, the scale to leave when writing a 16-bit WAV |
+| Audio fingerprint | `audio-fingerprint.mjs` | none (library function; used by the duplicate check, via `../lib/duplicate-check.mjs`) | File header: the method (landmark hashing plus voting on position differences), what it resists and what it does not (speed change, pitch change, reversal), the shape of the return value, the basis for each number |
 
-规则只在正本里写一遍，这里不重复。命令的用法：`node cli.mjs help`、`node cli.mjs <命令> --help`；命令的实现在 `../cli/commands/`。
+Rules are written once, in the authoritative source, and not repeated here. Command usage: `node cli.mjs help`, `node cli.mjs <command> --help`; the command implementations are in `../cli/commands/`.
 
-## 写法
+## How tools are written
 
-- `.mjs`，写法见 `../protocol/README.md` 的「模块约定」：只用平台自带的 API，浏览器和 Node 都能跑。
-- 不取所需能力（`env.capabilities`）：这里的东西不用模型。
-- 可以用 `../protocol/lib/`（核心层）。
-- 用到的平台 API 里有 `Intl.Segmenter`（分句）：Chrome 87、Firefox 125、Safari 14.1 起才有。没有它，分句抛 `segmenter_missing`（没有退路，按标点硬切会切坏缩写和小数）。
+- `.mjs`, written as described in `../protocol/README.md`「Module conventions」: only the platform's own APIs, so they run in both the browser and Node.
+- They do not read the required capability (`env.capabilities`): nothing here uses a model.
+- They may use `../protocol/lib/` (the core layer).
+- Among the platform APIs used is `Intl.Segmenter` (sentence splitting): it exists only from Chrome 87, Firefox 125, Safari 14.1. Without it, sentence splitting throws `segmenter_missing` (there is no fallback: cutting hard on punctuation would break abbreviations and decimals).
 
-## 运行时
+## Runtime
 
-小工具向运行环境要的命令行工具只有一个：**ffmpeg**，而且是可选的：
+The only command-line tool the small tools ask the runtime environment for is **ffmpeg**, and it is optional:
 
-- 用在解码 WAV 以外的音频（mp3、flac、ogg、m4a、webm、opus……），以及 WAV 里自己不会解的编码（8 位、ADPCM……）。PCM 16、24、32 位整数和 32 位浮点的 WAV 自己解，不需要它。
-- 环境没有就抛核心层的 `runtime_missing`（`details.runtime` 是 `ffmpeg`），只有用到它的功能报错，其他照常。
-- 签名在 `audio-decode.mjs` 文件头的 `@runtime ffmpeg`（办法是：运行时登记在第一个调用它的模块的文件头里，在基础部分的根目录里 `grep -rn "@runtime" .` 就能找全；登记和调用要保持一致）。
-- 命令行里，ffmpeg 从本机 `PATH` 上找（`../cli/node-runtimes.mjs`），由 `../cli/environment.mjs` 接进命令的运行环境。
+- It is used for audio other than WAV (mp3, flac, ogg, m4a, webm, opus, ...), and for WAV encodings the tool cannot decode itself (8-bit, ADPCM, ...). WAV with 16-, 24-, and 32-bit integer PCM and 32-bit float is decoded by the tool itself and does not need it.
+- If the environment does not have it, the core layer's `runtime_missing` is thrown (`details.runtime` is `ffmpeg`); only the features that use it report an error, and the rest work as usual.
+- The signature is in `@runtime ffmpeg` in the file header of `audio-decode.mjs` (the method: a runtime is registered in the file header of the first module that calls it; run `grep -rn "@runtime" .` in the root of the base part to find them all; the registration and the calls must stay consistent).
+- On the command line, ffmpeg is looked up on the machine's `PATH` (`../cli/node-runtimes.mjs`), and `../cli/environment.mjs` connects it into the command's runtime environment.
 
-基础部分的清单在 `runtimes` 里登记了这一项（`ffmpeg`，可选）：登记的内容放在根上的 `manifest-fields.json`，写法见 `../protocol/FORMAT.md` 4.3。
+The base part's manifest registers this item in `runtimes` (`ffmpeg`, optional): the registered content is in `manifest-fields.json` at the root; for how to write it see `../protocol/FORMAT.md` 4.3.
 
-## 台本标记的标准用例
+## Standard cases for script markup
 
-`cases/markup.json` 是台本标记解析的标准用例，**每一份实现都拿它来对**：基础部分的 `markup.mjs` 是一份；嵌入这个库的 app 要是自己带了解析器（例如在浏览器里解析台本），那是另一份。同一份契约的两份实现，一个结果不一致就是有一边错了：先定哪个对，再一起改，不为了迁就一边把另一边写错。
+`cases/markup.json` is the standard set of cases for script markup parsing, and **every implementation is checked against it**: the base part's `markup.mjs` is one; if an app that embeds this library carries its own parser (for example, parsing the script in the browser), that is another. Two implementations of one contract: if one result differs, one side is wrong. Decide which is right first, then change both together; do not write the other side wrong to accommodate one side.
 
-- 验证：每一份实现都要把这份用例全跑一遍，结果和 `expected` 一样；用 2 万条随机台本逐条比较两份实现的输出，能补上标准用例想不到的组合（随机比较的程序不随基础部分发布）。
-- 加用例：在 `cases/markup.json` 里加一条 `{ name, input, options?, expected }`，`expected` 里省略等于默认值的字段（默认值在文件开头的 `defaults`）；用例名不重复；不可见的字符写成 `\uXXXX`。语法有变，先改 `markup.mjs` 文件头，再改两份实现和用例。
-- `vocab/markup.json` 是台本标记的词表（现在只有 `pause` 和 `voice`，章节标题不是方括号的标记，不在词表里）；词表里的每个词在每一份解析器里都要生效，词表加了新词，每一份解析器都要实现它。词表以外的方括号都是提示，原样留在文字里。
+- Verification: every implementation runs this whole set of cases, and the results equal `expected`; compare the outputs of the two implementations one by one on 20,000 random scripts, which covers combinations the standard cases did not think of (the program for the random comparison is not shipped with the base part).
+- Adding a case: add an entry `{ name, input, options?, expected }` to `cases/markup.json`; in `expected`, omit fields equal to the default (the defaults are in `defaults` at the start of the file); case names must not repeat; write invisible characters as `\uXXXX`. If the syntax changes, change the `markup.mjs` file header first, then the two implementations and the cases.
+- `vocab/markup.json` is the vocabulary of script markup (for now only `pause` and `voice`; a chapter heading is not a square-bracket markup and is not in the vocabulary); every word in the vocabulary must work in every parser, and when a new word is added to the vocabulary, every parser must implement it. Any square bracket outside the vocabulary is a cue and stays in the text as it is.
 
-## 测试
+## Tests
 
-这些小工具的测试不随基础部分发布。测试里的音频除了一处全是现场生成的，没有音频文件：例外是音频指纹的测试，它要真人说话的录音才测得出「同一个人说的另一句话不算复用」，用了几段公开语料里的录音（共 600 KB）。用到真 ffmpeg 的几节在没有 ffmpeg 的机器上会跳过并说明。
+The tests for these small tools are not shipped with the base part. Apart from one place, all audio in the tests is generated on the spot, and there are no audio files. The exception is the audio fingerprint test: it needs recordings of real people speaking to show that "another sentence by the same person does not count as reuse", and it uses a few recordings from public corpora (600 KB in total). The sections that use a real ffmpeg are skipped, with an explanation, on machines that do not have ffmpeg.

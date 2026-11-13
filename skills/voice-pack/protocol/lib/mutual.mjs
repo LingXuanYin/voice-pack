@@ -4,7 +4,7 @@
 // 纯函数，不碰文件系统和网络。什么时候做、结果怎么放进检查报告，是 check.mjs 的事（选项 mutual）。
 //
 // 查三件事：
-//   1 协议主版本兼容    角色部分的 requires.protocolMajor 等于基础部分的协议主版本。次版本不管：同一个主版本内兼容（FORMAT.md「版本」）。
+//   1 协议主版本兼容    角色部分的 requires.protocolMajor 等于基础部分的协议主版本。次版本不管：同一个主版本内兼容（FORMAT.md「4.6 Version」）。
 //   2 基础部分够新      基础部分的版本不低于角色部分的 requires.baseMin。按 semver 的次序比：预发布版低于对应的正式版，构建信息不参与。
 //   3 所需能力都认得    角色部分每个功能要的所需能力，都在基础部分的能力词表（vocab/capabilities.json）里。
 //                       词表读不懂的时候，说词表的问题，不把每项能力都报成缺。
@@ -78,13 +78,13 @@ export function mutualProblems(role, base, vocabulary, options) {
   const requiredMajor = role.requires.protocolMajor;
   const baseMajor = protocolMajor(base.protocol);
   if (requiredMajor !== baseMajor) {
-    add('protocol_incompatible', `角色部分要求基础部分的协议主版本是 ${requiredMajor}，${BASE_MANIFEST_PATH} 按协议 ${base.protocol} 写（主版本 ${baseMajor}）：不兼容`, '', {
+    add('protocol_incompatible', `the role part requires protocol major version ${requiredMajor} of the base part, but ${BASE_MANIFEST_PATH} was written for protocol ${base.protocol} (major version ${baseMajor}): incompatible`, '', {
       path: ROLE_MANIFEST_PATH, pointer: '/requires/protocolMajor', required: requiredMajor, actual: baseMajor, basePath: BASE_MANIFEST_PATH, baseProtocol: base.protocol,
     });
   }
 
   if (compareSemver(base.version, role.requires.baseMin) < 0) {
-    add('base_too_old', `角色部分要求基础部分不低于 ${role.requires.baseMin}，${BASE_MANIFEST_PATH} 是 ${base.version}：太旧了`, '', {
+    add('base_too_old', `the role part requires a base part not older than ${role.requires.baseMin}, but ${BASE_MANIFEST_PATH} is ${base.version}: too old`, '', {
       path: ROLE_MANIFEST_PATH, pointer: '/requires/baseMin', required: role.requires.baseMin, actual: base.version, basePath: BASE_MANIFEST_PATH,
     });
   }
@@ -92,7 +92,7 @@ export function mutualProblems(role, base, vocabulary, options) {
   if (options.vocabularyReported === true) return out;
   const read = readNames(vocabulary, options.maxJsonBytes);
   if (read.names === undefined) {
-    add('capability_vocabulary_invalid', `基础部分的能力词表 ${VOCABULARY_PATH} 读不懂（${read.reason}）：没法核对角色部分要的所需能力`, BASE_DIRECTORY, { path: VOCABULARY_PATH, reason: read.reason });
+    add('capability_vocabulary_invalid', `the capability vocabulary ${VOCABULARY_PATH} of the base part cannot be understood (${read.reason}): the required capabilities of the role part cannot be checked`, BASE_DIRECTORY, { path: VOCABULARY_PATH, reason: read.reason });
     return out;
   }
 
@@ -106,7 +106,7 @@ export function mutualProblems(role, base, vocabulary, options) {
     }
   }
   for (const [capability, features] of wantedBy) {
-    add('capability_unknown', `功能 ${features.join('、')} 要所需能力 ${capability}，基础部分的能力词表（${VOCABULARY_PATH}）里没有它`, '', {
+    add('capability_unknown', `the required capability ${capability} (needed by feature ${features.join(', ')}) is not in the capability vocabulary of the base part (${VOCABULARY_PATH})`, '', {
       path: ROLE_MANIFEST_PATH, capability, features, vocabulary: VOCABULARY_PATH,
     });
   }

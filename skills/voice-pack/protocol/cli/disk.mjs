@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 命令行层读写磁盘：目录和文件集（Map<路径, Uint8Array>）互转，写出单个文件。库不碰文件系统（protocol/README.md「模块约定」第 4 条），
+// 命令行层读写磁盘：目录和文件集（Map<路径, Uint8Array>）互转，写出单个文件。库不碰文件系统（protocol/README.md「Module conventions」第 4 条），
 // 要读写目录的命令（pack、unpack、check、seal）都走这里，所以「目录里什么算一个文件」只在这一处定。
 //
 // readDirectory(root, { limits })  →  { files, problems }
@@ -38,7 +38,7 @@ import { compareUtf8, assertPackPath } from '../lib/paths.mjs';
 
 const MAX_PROBLEMS = 50; // 一个满是链接的目录不会刷出海量的报告
 
-const unreadable = (file, what, cause) => new VoicePackError('file_unreadable', `读不了${what}：${file}（${cause?.code ?? '未知原因'}）`, { details: { file: String(file), what } });
+const unreadable = (file, what, cause) => new VoicePackError('file_unreadable', `Cannot read the ${what}: ${file} (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file), what } });
 
 /**
  * @param {string} root 要读的目录
@@ -52,9 +52,9 @@ export function readDirectory(root, options = {}) {
   try {
     stat = fs.statSync(base); // 跟着 root 本身的链接走
   } catch (cause) {
-    throw unreadable(base, '目录', cause);
+    throw unreadable(base, 'directory', cause);
   }
-  if (!stat.isDirectory()) throw new VoicePackError('file_unreadable', `不是目录：${base}`, { details: { file: base, what: '目录' } });
+  if (!stat.isDirectory()) throw new VoicePackError('file_unreadable', `Not a directory: ${base}`, { details: { file: base, what: 'directory' } });
 
   const files = new Map();
   const problems = [];
@@ -71,7 +71,7 @@ export function readDirectory(root, options = {}) {
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch (cause) {
-      throw unreadable(dir, '目录', cause);
+      throw unreadable(dir, 'directory', cause);
     }
     entries.sort((a, b) => compareUtf8(a.name, b.name));
     for (const entry of entries) {
@@ -79,11 +79,11 @@ export function readDirectory(root, options = {}) {
       const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
       const full = path.join(dir, entry.name);
       if (entry.isSymbolicLink()) {
-        add('symlink_not_allowed', `${JSON.stringify(rel)} 是符号链接：音色包里不允许符号链接（它可能指到包外面去）`, { path: rel });
+        add('symlink_not_allowed', `${JSON.stringify(rel)} is a symbolic link: a voice pack must not contain symbolic links (it could point outside the pack)`, { path: rel });
       } else if (entry.isDirectory()) {
         walk(full, rel);
       } else if (!entry.isFile()) {
-        add('file_type_unsupported', `${JSON.stringify(rel)} 不是普通文件（设备、管道或套接字）：音色包里只能有普通文件`, { path: rel });
+        add('file_type_unsupported', `${JSON.stringify(rel)} is not a regular file (it is a device, pipe or socket): a voice pack may contain only regular files`, { path: rel });
       } else {
         members += 1;
         if (members > limits.maxMembers) {
@@ -95,7 +95,7 @@ export function readDirectory(root, options = {}) {
         try {
           size = fs.lstatSync(full).size;
         } catch (cause) {
-          throw unreadable(full, '文件', cause);
+          throw unreadable(full, 'file', cause);
         }
         if (size > limits.maxMemberBytes) {
           addLimit(memberSizeProblem(rel, size, limits));
@@ -111,7 +111,7 @@ export function readDirectory(root, options = {}) {
         try {
           bytes = fs.readFileSync(full);
         } catch (cause) {
-          throw unreadable(full, '文件', cause);
+          throw unreadable(full, 'file', cause);
         }
         files.set(rel, new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
       }
@@ -132,10 +132,10 @@ export function writeDirectory(dest, files) {
   try {
     fs.lstatSync(root); // lstat：悬空的符号链接也算存在
   } catch (cause) {
-    if (cause?.code !== 'ENOENT') throw new VoicePackError('file_unwritable', `写不了 ${root}（${cause?.code ?? '未知原因'}）`, { details: { file: root } });
+    if (cause?.code !== 'ENOENT') throw new VoicePackError('file_unwritable', `Cannot write ${root} (${cause?.code ?? 'unknown cause'})`, { details: { file: root } });
     exists = false;
   }
-  if (exists) throw new VoicePackError('file_exists', `${root} 已存在，不往已有的目录里写：换一个位置，或者先自己挪走旧的`, { details: { file: root } });
+  if (exists) throw new VoicePackError('file_exists', `${root} already exists, and nothing is written into an existing directory: choose another location, or move the old one away first`, { details: { file: root } });
 
   const targets = [];
   for (const [rel, data] of files) {
@@ -143,7 +143,7 @@ export function writeDirectory(dest, files) {
     const target = path.resolve(root, ...rel.split('/'));
     const within = path.relative(root, target);
     if (within === '' || within === '..' || within.startsWith(`..${path.sep}`) || path.isAbsolute(within)) {
-      throw new VoicePackError('path_unsafe', `文件名不能要（解出来会跑到目录外面）：${JSON.stringify(rel)}`, { details: { path: rel, reason: 'escapes' } });
+      throw new VoicePackError('path_unsafe', `File name rejected (unpacked, it would land outside the directory): ${JSON.stringify(rel)}`, { details: { path: rel, reason: 'escapes' } });
     }
     targets.push({ rel, target, data });
   }
@@ -156,7 +156,7 @@ export function writeDirectory(dest, files) {
     }
   } catch (cause) {
     fs.rmSync(root, { recursive: true, force: true }); // 只清这一趟自己创建的目录：上面确认过它原来不存在
-    throw new VoicePackError('file_unwritable', `写不了 ${root}（${cause?.code ?? '未知原因'}），已把写了一半的目录清掉`, { details: { file: root }, cause });
+    throw new VoicePackError('file_unwritable', `Cannot write ${root} (${cause?.code ?? 'unknown cause'}); the half-written directory has been removed`, { details: { file: root }, cause });
   }
 }
 
@@ -170,13 +170,13 @@ export function writeNewFile(file, bytes, options = {}) {
     fs.mkdirSync(path.dirname(path.resolve(String(file))), { recursive: true });
   } catch (cause) {
     // 建不出它所在的目录（路径上有一段是文件、没有权限……）：说的是目录建不出来，不是文件已经存在，所以不报 file_exists
-    throw new VoicePackError('file_unwritable', `写不了 ${file}：建不出它所在的目录（${cause?.code ?? '未知原因'}）`, { details: { file: String(file) }, cause });
+    throw new VoicePackError('file_unwritable', `Cannot write ${file}: its directory cannot be created (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file) }, cause });
   }
   try {
     fs.writeFileSync(file, bytes, { flag: options.overwrite ? 'w' : 'wx' });
   } catch (cause) {
-    if (cause?.code === 'EEXIST') throw new VoicePackError('file_exists', `${file} 已存在，不覆盖：换一个位置，或者先自己挪走旧的`, { details: { file: String(file) } });
-    throw new VoicePackError('file_unwritable', `写不了 ${file}（${cause?.code ?? '未知原因'}）`, { details: { file: String(file) }, cause });
+    if (cause?.code === 'EEXIST') throw new VoicePackError('file_exists', `${file} already exists and is not overwritten: choose another location, or move the old one away first`, { details: { file: String(file) } });
+    throw new VoicePackError('file_unwritable', `Cannot write ${file} (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file) }, cause });
   }
 }
 
@@ -194,5 +194,5 @@ export function pathKind(target, what) {
   }
   if (stat.isDirectory()) return 'directory';
   if (stat.isFile()) return 'file';
-  throw new VoicePackError('file_unreadable', `${what}既不是文件也不是目录：${target}`, { details: { file: String(target), what } });
+  throw new VoicePackError('file_unreadable', `The ${what} is neither a file nor a directory: ${target}`, { details: { file: String(target), what } });
 }

@@ -59,7 +59,7 @@
 //            一处提示里可以既有情绪又有风格（（生气地大喊））；同一类里有几个，取最前面的一个。
 //            认词：拉丁字母整词匹配、不分大小写（danger 里的 anger 不算），汉字和假名按子串匹配；重叠时取最长的（微笑是 happy，不是 laugh）。
 //   停顿     （停顿）算在前一段的后面；在一行开头就算在第一段的前面。停多久：括号里写了时长的按写的时长停，没写的每个停顿的词 600 毫秒
-//            （见「停顿的时长」）。挨着的几处停顿加起来，和台本标记 [pause] 一样，没有上限。放慢、加快设的是语速（speed）：一行里从它出现起，管到下一个放慢、加快或者行尾，情绪或风格变了也不清，停顿（包括 [pause …] 切开的段）也不清。配音不用它：放慢、加快在配音里只是写给模型的提示（cuesInPlace）。
+//            （见「停顿的时长」）。挨着的几处停顿加起来，和台本标记 [pause] 一样，没有上限。放慢、加快设的是语速（speed）：一行里从它出现起，管到下一个放慢、加快或者行尾，情绪或风格变了也不清，停顿（包括 [pause …] 切开的段）也不清。配音不用它：配音里只有快慢的舞台说明不写提示（cuesInPlace）。
 //            一行里只有停顿（单独一行的（停顿 3 秒），可以夹着别的提示，没有要念的话）时，停顿放在前一句的后面（前一句可以在上一行），
 //            没有前一句就放在后一句的前面，两种选法都一样；几行这样的行挨着，加起来。整段台词里一句要念的话都没有、只有停顿时，pieces 是空的，
 //            停顿一共多少毫秒写在返回值的 unattachedPauseMs 里，没处可挂，调用方自己挂到相邻的一句上（lib/dub.mjs 就这么做）；有要念的话时它总是 0。
@@ -169,7 +169,7 @@ function findCues(text, onlyKinds = KINDS) {
  * @returns {string}
  */
 export function canonicalLabel(kind, tag) {
-  if (kind !== 'emotion' && kind !== 'style') throw new TypeError(`kind 必须是 emotion 或 style，收到 ${JSON.stringify(kind)}`);
+  if (kind !== 'emotion' && kind !== 'style') throw new TypeError(`kind must be emotion or style, got ${JSON.stringify(kind)}`);
   const plain = normalizeText(tag).trim().replace(/\s+/g, ' ');
   const first = findCues(plain, [kind])[0];
   return first === undefined ? plain : first.owners.find((owner) => owner.kind === kind).id;
@@ -183,7 +183,7 @@ export function canonicalLabel(kind, tag) {
  * @returns {string|null}
  */
 export function wholeLabel(kind, tag) {
-  if (kind !== 'emotion' && kind !== 'style') throw new TypeError(`kind 必须是 emotion 或 style，收到 ${JSON.stringify(kind)}`);
+  if (kind !== 'emotion' && kind !== 'style') throw new TypeError(`kind must be emotion or style, got ${JSON.stringify(kind)}`);
   const plain = normalizeText(tag).trim().replace(/\s+/g, ' ');
   const first = findCues(plain, [kind])[0];
   return first !== undefined && first.start === 0 && first.end === plain.length ? first.owners.find((owner) => owner.kind === kind).id : null;
@@ -328,10 +328,10 @@ const isRecognized = (meaning) => meaning.emotion !== null || meaning.style !== 
  * @throws {TypeError} 选项不是对象、有不认识的键、unrecognized 不是 'keep' 或 'remove'：不悄悄当成默认值（配音靠它选「拿掉」，键写错了不能悄悄变成「保留」）
  */
 export function readDirectionOptions(options = {}) {
-  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError("选项必须是对象：{ unrecognized?: 'keep' | 'remove' }");
-  for (const key of Object.keys(options)) if (key !== 'unrecognized') throw new TypeError(`不认识的选项 ${JSON.stringify(key)}：只有 unrecognized（'keep' 或 'remove'）`);
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError("options must be an object: { unrecognized?: 'keep' | 'remove' }");
+  for (const key of Object.keys(options)) if (key !== 'unrecognized') throw new TypeError(`unknown option ${JSON.stringify(key)}: the only option is unrecognized ('keep' or 'remove')`);
   const unrecognized = options.unrecognized === undefined ? 'keep' : options.unrecognized;
-  if (!UNRECOGNIZED.includes(unrecognized)) throw new TypeError(`unrecognized 必须是 'keep' 或 'remove'，收到 ${JSON.stringify(options.unrecognized)}`);
+  if (!UNRECOGNIZED.includes(unrecognized)) throw new TypeError(`unrecognized must be 'keep' or 'remove', got ${JSON.stringify(options.unrecognized)}`);
   return { unrecognized };
 }
 
@@ -388,7 +388,7 @@ function withPlace(error, script) {
 }
 
 function readDirectionsOf(text, options, carried) {
-  if (typeof text !== 'string') throw new TypeError('台词必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('The line must be a string');
   const { unrecognized } = readDirectionOptions(options);
   const pieces = [];
   const directions = [];
@@ -475,15 +475,36 @@ const PHONEME_WORD = String.fromCodePoint(0xfffc);
  * 包住的是另一种语言的字，不是这句话的语言（中文句子里的一句日文不能让这句认成日文）；估念多长时少算了它们，只会往短里估。去掉以后留下的连续空格并成一个。
  */
 export const wordsOf = (text) => text.replace(CUE_RE, '').replace(LANGUAGE_BLOCK_RE, PHONEME_WORD).replace(PHONEME_MARKER_RE, PHONEME_WORD).replace(TAG_RE, '').replace(/[ \t]{2,}/g, ' ').trim();
-/** 舞台说明写成的提示：括号里的字放进方括号；字里的方括号去掉（不然会提前结束这个提示）。 */
+/** 括号里的字原样放进方括号；字里的方括号去掉（不然会提前结束这个提示）。 */
 const cueOf = (words) => `[${words.replace(/[[\]]/g, '')}]`;
+/** 词表里说法（style）的名字写进英文提示时用的词；情绪（emotion）的名字本身就是英文的词，原样写。 */
+const STYLE_IN_CUE = Object.freeze({ whisper: 'whispering', shout: 'shouting', laugh: 'laughs', sigh: 'sighs', breath: 'deep breath', cough: 'coughs', 'clear-throat': 'clears throat', gasp: 'gasps', pant: 'panting', moan: 'moans', snort: 'snorts' });
+/** 拉丁字母以外的字母（汉字、假名、谚文……）：舞台说明里有一个，就不是英文写的。 */
+const NOT_LATIN_RE = /(?!\p{Script=Latin})\p{L}/u;
+/**
+ * 舞台说明写成的提示。提示一律写英文（models/scene3.md「What to write」）：
+ *   只有快慢的（（慢慢地）、(slowly)）  不写提示：快慢写进提示会漏词（models/scene3.md「Speed and pauses: conclusions from listening」）
+ *   拉丁字母写的                        括号里的字原样放进方括号：(angrily) 是 [angrily]
+ *   别的文字写的、整个都是词表里的词    写成词表里的意思，情绪在前、说法在后：（生气地大喊）是 [angry, shouting]，*笑* 是 [laughs]（「整个都是」同文件头「哪些算」的 keep）
+ *   别的文字写的、别的                  括号里的字原样放进方括号，交给写台本的人改成英文：（画外音）是 [画外音]（词表一个词也没有，recognized 为 false），
+ *                                       （他眼睛一亮，满脸堆笑）原样（只认出「笑」，不把它读成 [laughs]；recognized 为 true）。两种的 directions 项都有 notEnglish: true（别的没有这个键），
+ *                                       lib/dub.mjs 把它们和 recognized 为 false 的拉丁字母写的（(Table 2)）一起列进 unrecognized_directions，叫写台本的人改成英文提示
+ * @param {string} words 括号里的字
+ * @param {{ emotion: string|null, style: string|null, actions: string[] }} meaning readCue 读出的意思（有停顿的不到这里）
+ * @param {boolean} whole readCue 的 whole：括号里整个都是词表里的词和连接成分
+ */
+function cueFor(words, meaning, whole) {
+  if (meaning.emotion === null && meaning.style === null && meaning.actions.length > 0) return '';
+  if (!NOT_LATIN_RE.test(words) || !whole || !isRecognized(meaning)) return cueOf(words);
+  return `[${[meaning.emotion, meaning.style === null ? null : STYLE_IN_CUE[meaning.style]].filter((word) => word !== null).join(', ')}]`;
+}
 
 /**
  * 配音读台词（lib/dub.mjs）：舞台说明换成同样意思的提示，留在它原来的位置交给模型；读成停顿的照旧是停顿。规则只在这里写：
  *   哪些算舞台说明   同上面「括号」和「哪些算」的「拿掉」：30 个字以内的（…）、(…)、【…】、*…*（**…** 是强调，去掉星号，字照念；
  *                    星号和字之间有空白的 3 * 4 * 5、* 笑 * 不是舞台说明，原样交给模型）。
- *   换成提示         括号里的字原样写进方括号，放在括号原来的位置：「（耳语）过来，*笑*我告诉你」是「[耳语]过来，[笑]我告诉你」。前后的字一个不动，不在那里切开。
- *                    方括号本来就是提示（tools/markup.mjs 的文件头「提示」），原样留着；放慢、加快、笑、叹气、咳嗽、吸一口气……都一样，只是写给模型的一句话，配音不另外处理。
+ *   换成提示         换成英文的方括号提示（写法见 cueFor），放在括号原来的位置：「（耳语）过来，*笑*我告诉你」是「[whispering]过来，[laughs]我告诉你」。前后的字一个不动，不在那里切开。
+ *                    只有快慢的舞台说明不写提示。方括号本来就是提示（tools/markup.mjs 的文件头「提示」），原样留着，不翻译；笑、叹气、咳嗽、吸一口气……都只是写给模型的一句话，配音不另外处理。
  *   停顿             括号里有停顿的词（词表 actions 的 pause：（停顿 2 秒）、（沉默）……；呼吸、咳嗽这类一下子的声音不在里面，是上面的提示）的，是停顿，不写进文字：在那里切开（同一段话里短的，配音再并回一次请求，见 lib/dub.mjs 第 5c 步），时长和挂法同上面「停顿」
  *                    （算在前一段的后面；一行开头的算在后一段前面；跨过 [pause …] 的同一行，挂在前一段后面，见 headPauseMs）。时长是 0 的，什么都不留，也不切开。
  *                    括号里有停顿的词、又有情绪或风格的（（叹了口气，停顿 2 秒）），也只是停顿：情绪和风格不写进文字。
@@ -501,7 +522,7 @@ const cueOf = (words) => `[${words.replace(/[[\]]/g, '')}]`;
  *   pieces: { text: string, words: string, hints: { emotion: string|null, style: string|null }, directions: object[], line: number, pauseBeforeMs: number, pauseAfterMs: number }[],
  *   directions: object[], unattachedPauseMs: number, headPauseMs: number,
  *   carry: { mood: { emotion: string|null, style: string|null }, hasPiece: boolean, gap: object[] }, pauseLines: number[]
- * }} text 是交给模型的文字（提示在原位）；words 是去掉所有提示（方括号里的）以后要念的字；directions 同 readDirections（这一段前面和里面的舞台说明）；
+ * }} text 是交给模型的文字（提示在原位）；words 是去掉所有提示（方括号里的）以后要念的字；directions 同 readDirections（这一段前面和里面的舞台说明），发出去的提示里还有拉丁字母以外的字的，多一个键 notEnglish: true（写法见 cueFor）；
  *   unattachedPauseMs、headPauseMs 同 readDirections。
  */
 export function cuesInPlace(text, carried = null, where = {}) {
@@ -513,7 +534,7 @@ export function cuesInPlace(text, carried = null, where = {}) {
 }
 
 function cuesInPlaceOf(text, carried) {
-  if (typeof text !== 'string') throw new TypeError('台词必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('The line must be a string');
   const pauseLines = [];
   const pieces = [];
   const directions = [];
@@ -547,7 +568,7 @@ function cuesInPlaceOf(text, carried) {
     for (const m of line.matchAll(DIRECTION_RE)) {
       const words = (m[1] ?? m[2] ?? m[3]).trim();
       if (words === '') continue; // 括号里只有空白：不是舞台说明，留在台词里
-      const { meaning, durations } = readCue(words, m[2] === undefined, m[0]);
+      const { meaning, whole, durations } = readCue(words, m[2] === undefined, m[0]);
       sent += line.slice(last, m.index);
       last = m.index + m[0].length;
       const direction = { raw: words, recognized: isRecognized(meaning), emotion: meaning.emotion, style: meaning.style, actions: meaning.actions, line: lineNumber };
@@ -562,7 +583,11 @@ function cuesInPlaceOf(text, carried) {
           else if (before !== null && before.hasPiece && pieces.length === 0) headPauseMs += pause;
           else pendingPause += pause;
         }
-      } else sent += cueOf(words);
+      } else {
+        const cue = cueFor(words, meaning, whole);
+        if (NOT_LATIN_RE.test(cue)) direction.notEnglish = true; // 提示里还有拉丁字母以外的字：发出去的不是英文提示（lib/dub.mjs 把它列进 unrecognized_directions）
+        sent += cue;
+      }
       own.push(direction);
       const oneShot = meaning.style !== null && ONE_SHOT_STYLES.has(meaning.style);
       if (meaning.emotion !== null || (meaning.style !== null && !oneShot)) mood = { emotion: meaning.emotion, style: oneShot ? null : meaning.style };
@@ -644,7 +669,7 @@ const LANGUAGES_OF = {
  * @returns {{ script: string, languages: string[] } | null} script 是文字系统（Han、Latin……，假名和算日文的汉字是 Japanese）；languages 是可能的主语言；认不出给 null
  */
 export function detectLanguages(text) {
-  if (typeof text !== 'string') throw new TypeError('文字必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('The text must be a string');
   const counts = new Map();
   let kana = 0;
   let han = 0;

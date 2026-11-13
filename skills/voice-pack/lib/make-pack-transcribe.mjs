@@ -75,7 +75,7 @@ export async function transcribe(env, items, { concurrency, wait }) {
       return;
     }
     const { result } = outcome;
-    if (result === null || typeof result !== 'object' || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', '必须返回 { text: 字符串, language?: 字符串, model?: 字符串 }');
+    if (result === null || typeof result !== 'object' || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'must return { text: string, language?: string, model?: string }');
     if (typeof result.model === 'string' && !step.models.includes(result.model)) step.models.push(result.model);
     item.text = result.text.trim();
     item.textSource = 'transcription';
