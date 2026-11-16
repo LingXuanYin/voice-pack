@@ -477,8 +477,8 @@ const PHONEME_WORD = String.fromCodePoint(0xfffc);
 export const wordsOf = (text) => text.replace(CUE_RE, '').replace(LANGUAGE_BLOCK_RE, PHONEME_WORD).replace(PHONEME_MARKER_RE, PHONEME_WORD).replace(TAG_RE, '').replace(/[ \t]{2,}/g, ' ').trim();
 /** 括号里的字原样放进方括号；字里的方括号去掉（不然会提前结束这个提示）。 */
 const cueOf = (words) => `[${words.replace(/[[\]]/g, '')}]`;
-/** 词表里说法（style）的名字写进英文提示时用的词；情绪（emotion）的名字本身就是英文的词，原样写。吸气、倒吸气、呻吟用 scene 3 实测出声的写法（models/scene3.md「Non-verbal sounds: which writing comes out (2026-11-16)」）。 */
-const STYLE_IN_CUE = Object.freeze({ whisper: 'whispering', shout: 'shouting', laugh: 'laughs', sigh: 'sighs', breath: 'shaky breath', cough: 'coughs', 'clear-throat': 'clears throat', gasp: 'gasping', pant: 'panting', moan: 'moaning', snort: 'snorts' });
+/** 词表里说法（style）的名字写进英文提示时用的词；情绪（emotion）的名字本身就是英文的词，原样写。倒吸气、呻吟用 scene 3 实测出声的写法（models/scene3.md「Non-verbal sounds: which writing comes out (2026-11-16)」）。 */
+const STYLE_IN_CUE = Object.freeze({ whisper: 'whispering', shout: 'shouting', laugh: 'laughs', sigh: 'sighs', breath: 'deep breath', cough: 'coughs', 'clear-throat': 'clears throat', gasp: 'gasping', pant: 'panting', moan: 'moaning', snort: 'snorts' });
 /** 拉丁字母以外的字母（汉字、假名、谚文……）：舞台说明里有一个，就不是英文写的。 */
 const NOT_LATIN_RE = /(?!\p{Script=Latin})\p{L}/u;
 /**
