@@ -40,13 +40,13 @@ export function parseOptions(args, { values = [], flags = [] } = {}) {
     if (!arg.startsWith('--')) { out.positional.push(arg); continue; }
     const name = arg.slice(2);
     if (values.includes(name)) {
-      if (i + 1 >= args.length || args[i + 1].startsWith('--')) return { ...out, problem: `选项 --${name} 后面要跟一个值` };
-      if (name in out.values) return { ...out, problem: `选项 --${name} 重复了` };
+      if (i + 1 >= args.length || args[i + 1].startsWith('--')) return { ...out, problem: `option --${name} needs a value after it` };
+      if (name in out.values) return { ...out, problem: `option --${name} was given more than once` };
       out.values[name] = args[++i];
     } else if (flags.includes(name)) {
       out.flags.add(name);
     } else {
-      return { ...out, problem: `未知选项 ${arg}` };
+      return { ...out, problem: `unknown option ${arg}` };
     }
   }
   return out;
@@ -57,7 +57,7 @@ export function readFileBytes(file, what) {
   try {
     return new Uint8Array(fs.readFileSync(file));
   } catch (cause) {
-    throw new VoicePackError('file_unreadable', `读不了${what}：${file}（${cause?.code ?? '未知原因'}）`, { details: { file: String(file), what } });
+    throw new VoicePackError('file_unreadable', `Cannot read the ${what}: ${file} (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file), what } });
   }
 }
 
@@ -67,8 +67,8 @@ export function readFileBytes(file, what) {
  * @throws {VoicePackError} file_unreadable、private_key_invalid
  */
 export function readPrivateKeyFile(file) {
-  const bytes = readFileBytes(file, '私钥文件');
-  const invalid = () => new VoicePackError('private_key_invalid', `私钥文件不是 Ed25519 的 PKCS8 私钥：${file}`, { details: { file: String(file) } });
+  const bytes = readFileBytes(file, 'private key file');
+  const invalid = () => new VoicePackError('private_key_invalid', `The private key file is not an Ed25519 PKCS8 private key: ${file}`, { details: { file: String(file) } });
   const text = new TextDecoder('utf-8').decode(bytes);
   if (!text.includes('-----BEGIN')) return bytes; // 当 DER 用；不对的话 signature.mjs 导入时会报 private_key_invalid
   const match = text.match(new RegExp(`-----BEGIN ${PEM_LABEL}-----([\\s\\S]*?)-----END ${PEM_LABEL}-----`));
@@ -96,15 +96,15 @@ export function writePrivateKeyFile(file, der) {
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   } catch (cause) {
     // 建不出它所在的目录（路径上有一段是文件、没有权限……）：目录的事，不是私钥文件已经存在，不报 file_exists
-    throw new VoicePackError('file_unwritable', `写不了私钥文件：${file}，建不出它所在的目录（${cause?.code ?? '未知原因'}）`, { details: { file: String(file) } });
+    throw new VoicePackError('file_unwritable', `Cannot write the private key file: ${file}; its directory cannot be created (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file) } });
   }
   try {
     fs.writeFileSync(file, privateKeyToPem(der), { flag: 'wx', mode: 0o600 });
   } catch (cause) {
     if (cause?.code === 'EEXIST') {
-      throw new VoicePackError('file_exists', `${file} 已存在，不覆盖：确实要换钥匙就先自己挪走旧的`, { details: { file: String(file) } });
+      throw new VoicePackError('file_exists', `${file} already exists and is not overwritten: if you really want to replace the key, move the old one away first`, { details: { file: String(file) } });
     }
-    throw new VoicePackError('file_unwritable', `写不了私钥文件：${file}（${cause?.code ?? '未知原因'}）`, { details: { file: String(file) } });
+    throw new VoicePackError('file_unwritable', `Cannot write the private key file: ${file} (${cause?.code ?? 'unknown cause'})`, { details: { file: String(file) } });
   }
 }
 
@@ -113,10 +113,10 @@ export function writePrivateKeyFile(file, der) {
  * @throws {VoicePackError} file_unreadable、trust_list_invalid
  */
 export function readTrustListFile(file) {
-  const bytes = readFileBytes(file, '信任名单');
+  const bytes = readFileBytes(file, 'trust list');
   try {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch (cause) {
-    throw new VoicePackError('trust_list_invalid', `信任名单不是合法的 JSON：${file}`, { details: { file: String(file), field: 'trust_list' }, cause });
+    throw new VoicePackError('trust_list_invalid', `The trust list is not valid JSON: ${file}`, { details: { file: String(file), field: 'trust_list' }, cause });
   }
 }

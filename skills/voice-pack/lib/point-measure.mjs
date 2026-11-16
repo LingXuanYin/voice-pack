@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 量一段参考录音每个点位的特征（流程层）：切语音块、每块转写一次、把块对到逐字稿的字上、算每块前面的停顿和每个分句每秒几个字，换算成提示标注里的停顿和快慢标记。
+// 量一段参考录音每个点位的特征（流程层）：切语音块、每块转写一次、把块对到逐字稿的字上、算每块前面的停顿，换算成提示标注里的停顿标记。
 //   @capability automatic-speech-recognition  每块转写一次（签名在 vocab/capability-signatures.md）
-// 只做计算和转写，不判好坏：写出来的是量到的事，好不好由听的人定。标提示标注的第二半在这里（第一半是听，lib/segment-annotation.mjs），由 lib/make-pack-annotation.mjs 接起来。
+// 只做计算和转写，不判好坏：写出来的是量到的事，好不好由听的人定。不写快慢标记（[faster]、[slower]）：同一个包的两版参考标注（只差这两个标记）各配同样的台词，语速和时长的差比随机小，听的模型两两比自然也没有看出差别，所以这一步不量快慢（CHANGELOG.md 的 3.1.0 一条有读数）。标提示标注的第二半在这里（第一半是听，lib/segment-annotation.mjs），由 lib/make-pack-annotation.mjs 接起来。
 // 下面的门槛（标着「从一段参考定的」）都是从一段参考录音定的，别的声音、别的语言没有量过。
 // 太短的块、转写和时长不相称、可用的块太少这几项（CHUNK_MIN_SECONDS、CHUNK_TOKENS_SLACK、CHUNK_TOKENS_PER_SECOND_MAX、ALIGN_USABLE_MIN）是从四个声音的量到的块推断的：
 //   0.01 秒的尖峰被转写成一句话，0.11 秒的块被转写成十几个字，一块的回答是拒答。英文这类按词数的语言，每秒 12 个词宽得多，只拦得住编造的转写，没有在英文上量过。
 //
 // 怎么量（measurePoints；一段的第一步是 decodeAudio，混成单声道）：
+//   先调响度：options.loudness 给了（做包用的调响度设置，lib/make-pack-loudness.mjs 的 adjustedAudio），先在内存里把这一段调到目标响度再切块、转写：下面的静音门槛是固定的电平，
+//     在原电平上，小声的录音（林岚的默认段 −35.5 LUFS）字和字之间都被当成停顿，切成 11 块、写了 9 处 [short pause]；调到 −20 LUFS 是 7 块（t03 的读数）。不给（关了调响度，--no-loudness）就照原电平。
 //   切块（speechChunks）：SILENCE_WINDOW_SECONDS（5 毫秒）一窗，窗里的峰值低于 SILENCE_PEAK_DBFS（-30 dBFS）算静音；连续静音 ≥ SILENCE_MIN_SECONDS（0.05 秒）才算停顿，切开前后两块；两头的静音不算停顿。
 //     门槛比 tools/silence-split.mjs 严（那边切的是句，这里要切开词之间短到 0.29 秒的停顿：「却懂得｜怜香惜玉」）。
 //     太短的块不是语音：短于 CHUNK_MIN_SECONDS（0.05 秒）的块在切块时就去掉，不转写，它前后两块之间的静音（前一块的末尾到后一块的开头）算成一段停顿；在两头的，那头的静音照旧不算停顿。
@@ -20,20 +22,18 @@
 //     和时长明显不相称的转写不算（transcriptUsable）：转写的词数大于 CHUNK_TOKENS_SLACK（2）+ 这块的秒数 × CHUNK_TOKENS_PER_SECOND_MAX（12）的，是模型编出来的（0.11 秒的块回了十四个字，一块回的是拒答），
 //     空的转写也不算；这样的块记成转写不可用，对字时只靠时长：代价只有上面「词数之差」那一项，不算编辑距离，也不进错误率。一块编造的转写不该打穿整段。
 //     逐字稿里有汉字时，一串数字一位算一个词（2024 是四个词，写成汉字的数字：转写常写成「二零二四」，也可能是 2024，两边一样折），四个词都指着这串数字在原文里的位置（measureSpans）：
-//     一串数字当一个词，字数差得太多，别的字就对错了地方，快慢也算错。切口落在一串数字中间的，挪到这串数字开头（pointsOf）。逐字稿里没有汉字的，照词算。
+//     一串数字当一个词，字数差得太多，别的字就对错了地方，停顿的位置也算错。切口落在一串数字中间的，挪到这串数字开头（pointsOf）。逐字稿里没有汉字的，照词算。
 //     转写可用的块的时长加起来，不到全部块时长的 ALIGN_USABLE_MIN（0.5），这一段不用量的结果（不对字：大半靠时长对的不算量过）。
 //     总的编辑错误（转写可用的块，每片和这块转写的编辑距离加起来）除以这些块分到的词数，超过 ALIGN_ERROR_MAX（0.6）算对不上，这一段不用量的结果。短块的转写错得很厉害（「散伙」写成「撒谎」、「却」写成「去」），
 //     一段切得对的参考错误率也有 0.41，所以门槛放得宽；挡的是整段对不上的（转写和这段录音无关），不是错字多的。
-//   算：每块前面的停顿（这块和上一块之间的静音，秒）；一个分句每秒几个词（pointsOf）：分句是标点隔开的一小句（标点是 Unicode 的标点；句号、问号、叹号、省略号、换行算句末，别的算逗号类），
-//     写出 [short pause] 的地方也算分界（见下）。块内部的词按时长平均分（块里再细就量不到了）；时长只算说话的时间，块之间的静音不算。单字的分句不算快慢。
+//   算：每块前面的停顿（这块和上一块之间的静音，秒）；分句（pointsOf）：标点隔开的一小句（标点是 Unicode 的标点；句号、问号、叹号、省略号、换行算句末，别的算逗号类），
+//     写出 [short pause] 的地方也算分界（见下）；分句的开头是提示标注里情绪、尾音挪到的位置（lib/segment-annotation.mjs）。
 //
 // 量出来怎么换成标记（pointsOf；门槛都是从一段参考定的）：
 //   逗号类标点后面停 ≥ COMMA_PAUSE_SECONDS（0.40 秒）                写 [pause]，在标点后面
 //   没有标点的地方停 ≥ BARE_PAUSE_SECONDS（0.20 秒）                  写 [short pause]，写在那里，也算分句的分界
 //   句末                                                              不写（句末标点自己带停顿）
-//   分句每秒字数 ≥ 全段中位数 × FAST_RATIO（1.2）                     [faster]
-//   分句每秒字数 ≤ 全段中位数 × SLOW_RATIO（0.85）                    [slower]
-//   中文、日文按字，别的按词（同 tokenizeTranscript）；一处停顿的位置是停顿后面那个词的开头。全段中位数是能算快慢的分句（两个字以上、有时长）的每秒字数的中位数，只有不到两个分句能算时不写快慢。
+//   中文、日文按字，别的按词（同 tokenizeTranscript）；一处停顿的位置是停顿后面那个词的开头。
 //
 // 量失败不挡标注，返回 { measured: false, reason, chunks, ... }，这一段只用听出来的提示（lib/segment-annotation.mjs），报告写明原因：
 //   capability_missing     环境没有 automatic-speech-recognition
@@ -45,8 +45,8 @@
 //   not_aligned            逐字稿和这几块的转写对不上（转写可用的块太少，或者切不出一条路，或者错误率超过上限）；带 errorRate（只有对过字、错误率超过上限的才有；可用的块太少不对字，切不出一条路的也没有，都不带）
 //
 // 返回（measurePoints）：
-//   { measured: true, chunks, pauses, paces, clauseStarts }   pauses、paces 是要写的标记 [{ at, mark, ... }]（at 是逐字稿里的 UTF-16 下标，标记写在这个字前面，mark 是方括号标记），
-//                                                              pauses 另带 seconds，paces 另带 rate（每秒几个字）；clauseStarts 是每个分句开头的下标，含写出 [short pause] 的地方。
+//   { measured: true, chunks, pauses, clauseStarts }   pauses 是要写的标记 [{ at, mark, ... }]（at 是逐字稿里的 UTF-16 下标，标记写在这个字前面，mark 是方括号标记），
+//                                                              pauses 另带 seconds；clauseStarts 是每个分句开头的下标，含写出 [short pause] 的地方。
 //   { measured: false, reason, chunks, ... }                  chunks 是这一段真转写过的块数（报告的 steps.annotation.chunks 加的是它）
 //
 // 抛出的错误：环境给的能力抛的、这里认不出的错（keepsThrowing：调用方中止、凭据被拒）、options.wait 抛的错，原样往上抛；别的都不抛（见上）。
@@ -58,6 +58,7 @@ import { encodeWav } from '../tools/wav.mjs';
 import { tokenSpans, tokenizeTranscript } from './fidelity.mjs';
 import { summarizeError, badResult, pool, keepsThrowing, isPlainObject } from './capability-calls.mjs';
 import { callWithRetries } from './call-attempts.mjs';
+import { adjustedAudio } from './make-pack-loudness.mjs';
 
 /** 一段录音最多切成几块（超过就并最短的停顿）。规划按它算转写的上限（lib/make-pack-plan.mjs）。 */
 export const POINT_CHUNKS_MAX = 24;
@@ -85,13 +86,6 @@ export const ALIGN_LENGTH_WEIGHT = 0.5;
 export const COMMA_PAUSE_SECONDS = 0.4;
 /** 没有标点的地方停多久写 [short pause]（秒，从一段参考定的）。 */
 export const BARE_PAUSE_SECONDS = 0.2;
-/** 分句每秒字数到全段中位数的多少倍写快（从一段参考定的）。 */
-export const FAST_RATIO = 1.2;
-/** 分句每秒字数到全段中位数的多少倍写慢（从一段参考定的）。 */
-export const SLOW_RATIO = 0.85;
-
-/** 快慢标记（照提示标注的语言写：en 用英文，别的用中文，同 lib/segment-annotation.mjs 的词表）。 */
-const PACE_MARKS = { fast: '[faster]', slow: '[slower]' };
 
 const HAS_PUNCTUATION = /\p{P}/u;
 const HAS_HAN = /\p{Script=Han}/u;
@@ -205,7 +199,7 @@ function editDistance(a, b) {
 }
 
 /** 中位数（没有数是 null）。 */
-function median(values) {
+export function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((x, y) => x - y);
   const middle = Math.floor(sorted.length / 2);
@@ -226,7 +220,7 @@ export function clauseStartsOf(text, extra = []) {
   return [...starts].sort((a, b) => a - b);
 }
 
-/** 对字、算快慢用的词：tokenSpans，逐字稿有汉字时一串数字拆成一位一个词（见文件头「对字」）；拆出来的带 number（这串数字第一位的下标）。 */
+/** 对字、算停顿用的词：tokenSpans，逐字稿有汉字时一串数字拆成一位一个词（见文件头「对字」）；拆出来的带 number（这串数字第一位的下标）。 */
 export function measureSpans(text) {
   const spans = tokenSpans(text);
   if (!HAS_HAN.test(text)) return spans;
@@ -265,7 +259,7 @@ export function clauseFinder(text, clauseStarts) {
  * @param {string} text
  * @param {{ seconds: number, gapBefore: number }[]} chunks
  * @param {number[]} boundaries alignChunks 的 boundaries
- * @returns {{ pauses: { at: number, mark: string, seconds: number }[], paces: { at: number, mark: string, rate: number }[], clauseStarts: number[] }}
+ * @returns {{ pauses: { at: number, mark: string, seconds: number }[], clauseStarts: number[] }}
  */
 export function pointsOf(text, chunks, boundaries) {
   const spans = measureSpans(text);
@@ -291,46 +285,17 @@ export function pointsOf(text, chunks, boundaries) {
     }
   }
   const clauseStarts = clauseStartsOf(text, shortBreaks);
-  // 每个词分到的时长：块内部按词数平均分（空的块没有词，时长不算给谁）
-  const seconds = new Float64Array(count);
-  chunks.forEach((chunk, index) => {
-    const from = boundaries[index];
-    const to = boundaries[index + 1];
-    for (let token = from; token < to; token++) seconds[token] = chunk.seconds / (to - from);
-  });
-  // 分句的每秒字数：两个字以上、有时长的才算
-  const clauseOfToken = spans.map((span) => {
-    let clause = 0;
-    for (let i = 0; i < clauseStarts.length; i++) if (clauseStarts[i] <= span.start) clause = i;
-    return clause;
-  });
-  const clauses = clauseStarts.map(() => ({ tokens: 0, seconds: 0 }));
-  clauseOfToken.forEach((clause, token) => {
-    clauses[clause].tokens += 1;
-    clauses[clause].seconds += seconds[token];
-  });
-  const rates = clauses.map((clause) => (clause.tokens >= 2 && clause.seconds > 0 ? clause.tokens / clause.seconds : null));
-  const rated = rates.filter((rate) => rate !== null);
-  const middle = rated.length >= 2 ? median(rated) : null;
-  const paces = [];
-  if (middle !== null) {
-    rates.forEach((rate, clause) => {
-      if (rate === null) return;
-      if (rate >= middle * FAST_RATIO) paces.push({ at: clauseStarts[clause], mark: PACE_MARKS.fast, rate });
-      else if (rate <= middle * SLOW_RATIO) paces.push({ at: clauseStarts[clause], mark: PACE_MARKS.slow, rate });
-    });
-  }
-  return { pauses, paces, clauseStarts };
+  return { pauses, clauseStarts };
 }
 
 /**
  * 量一段录音（规则见文件头）。
  * @param {object} env 注入的运行环境
  * @param {{ audio: { bytes: Uint8Array, mimeType: string }, text: string, language?: string }} segment
- * @param {{ concurrency?: number, wait?: (ms: number) => Promise<void> }} [options]
+ * @param {{ concurrency?: number, wait?: (ms: number) => Promise<void>, loudness?: { targetLufs: number, peakCeilingDbfs: number, limiter: { maxDb: number } | null } | null }} [options] loudness：先调响度再量（见文件头「先调响度」），不给或 null 就照原电平
  * @returns {Promise<object>} 见文件头「返回」
  */
-export async function measurePoints(env, { audio, text, language }, { concurrency = 1, wait } = {}) {
+export async function measurePoints(env, { audio, text, language }, { concurrency = 1, wait, loudness } = {}) {
   const notMeasured = (reason, chunks = 0, details = {}) => ({ measured: false, reason, chunks, ...details });
   const spans = measureSpans(text);
   if (spans.length === 0) return notMeasured('text_empty');
@@ -343,10 +308,11 @@ export async function measurePoints(env, { audio, text, language }, { concurrenc
     if (kind === null) throw error;
     return notMeasured(kind, 0, { error: summarizeError(error) });
   }
+  const samples = loudness === undefined || loudness === null ? decoded.samples : adjustedAudio(decoded, loudness).audio.samples;
   const mono = new Float32Array(decoded.frames);
   for (let i = 0; i < decoded.frames; i++) {
     let sum = 0;
-    for (let channel = 0; channel < decoded.channels; channel++) sum += decoded.samples[channel][i];
+    for (let channel = 0; channel < decoded.channels; channel++) sum += samples[channel][i];
     mono[i] = sum / decoded.channels;
   }
   const chunks = speechChunks(mono, decoded.sampleRate);
@@ -372,7 +338,7 @@ export async function measurePoints(env, { audio, text, language }, { concurrenc
     const clip = { bytes: encodeWav({ sampleRate: decoded.sampleRate, samples: [mono.slice(Math.max(0, chunk.start - padding), Math.min(mono.length, chunk.end + padding))] }), mimeType: 'audio/wav' };
     const ask = async () => {
       const result = await recognize({ audio: clip, ...(language ? { language } : {}) });
-      if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', '必须返回 { text: 字符串, language?: 字符串, model?: 字符串 }');
+      if (!isPlainObject(result) || typeof result.text !== 'string') throw badResult('automatic-speech-recognition', 'text_missing', 'must return { text: string, language?: string, model?: string }');
       return result;
     };
     let outcome;

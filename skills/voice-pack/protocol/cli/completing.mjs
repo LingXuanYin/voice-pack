@@ -126,12 +126,12 @@ async function renameInto(rename, from, to) {
       return;
     } catch (cause) {
       // 改名前一刻还不存在的目标现在存在了：别的进程（同一个包同时在补全）抢先放好了。说实话，不当成「被占着」重试，也不去覆盖它
-      if (pathExists(to)) throw new VoicePackError('file_exists', `${to} 已经存在（别的进程刚补好了？）：这一趟写好的临时目录已清掉，没有覆盖它。先用 check 看看它是不是完整的`, { details: { file: to }, cause });
+      if (pathExists(to)) throw new VoicePackError('file_exists', `${to} already exists (did another process just complete it?): the temporary directory written this time has been removed, and nothing was overwritten. Run check first to see whether it is complete`, { details: { file: to }, cause });
       if (RENAME_RETRY_CODES.has(cause?.code) && attempt < RENAME_ATTEMPTS) {
         await sleep(RENAME_RETRY_MS * attempt);
         continue;
       }
-      throw new VoicePackError('file_unwritable', `最后一步把写好的基础部分改名成 ${to} 没成（${cause?.code ?? '未知原因'}），临时目录已清掉，包目录和补全之前一样`, { details: { file: to }, cause });
+      throw new VoicePackError('file_unwritable', `the last step, renaming the written base part to ${to}, failed (${cause?.code ?? 'unknown cause'}); the temporary directory has been removed, and the pack directory is as it was before the completion`, { details: { file: to }, cause });
     }
   }
 }
@@ -154,16 +154,16 @@ export async function installBasePart(packDir, files, { rename = fs.renameSync, 
   } catch {
     // 不存在，或者读不了：下面一并报
   }
-  if (!isDirectory) throw new VoicePackError('file_unwritable', `${pack} 不是一个已存在的目录：补全是往已有的包目录里放基础部分，不新建包目录`, { details: { file: pack } });
+  if (!isDirectory) throw new VoicePackError('file_unwritable', `${pack} is not an existing directory: complete puts the base part into an existing pack directory and does not create one`, { details: { file: pack } });
   const destination = path.join(pack, directory);
   let exists = true;
   try {
     fs.lstatSync(destination); // lstat：悬空的符号链接也算存在
   } catch (cause) {
-    if (cause?.code !== 'ENOENT') throw new VoicePackError('file_unwritable', `读不了 ${destination}（${cause?.code ?? '未知原因'}）`, { details: { file: destination } });
+    if (cause?.code !== 'ENOENT') throw new VoicePackError('file_unwritable', `cannot read ${destination} (${cause?.code ?? 'unknown cause'})`, { details: { file: destination } });
     exists = false;
   }
-  if (exists) throw new VoicePackError('file_exists', `${destination} 已存在，不往里写，也不覆盖：先自己把它移走，再补全`, { details: { file: destination } });
+  if (exists) throw new VoicePackError('file_exists', `${destination} already exists, and nothing is written into it or over it: move it away yourself, then complete again`, { details: { file: destination } });
 
   const staging = path.join(pack, `.${directory}.completing-${toHex(globalThis.crypto.getRandomValues(new Uint8Array(4)))}`);
   writeDirectory(staging, files); // 写不下去时它自己把这一趟创建的目录清掉

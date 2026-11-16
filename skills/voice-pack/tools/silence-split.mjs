@@ -89,36 +89,36 @@ const round = (x, digits) => {
 };
 
 function readOptions(options) {
-  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options 必须是对象，例如 { minSeconds: 4 }');
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options must be an object, for example { minSeconds: 4 }');
   const known = [...Object.keys(DEFAULTS), 'forcedMinSeconds', 'thresholdDbfs'];
   for (const key of Object.keys(options)) {
-    if (!known.includes(key)) throw new TypeError(`不认识的选项 ${key}（有：${known.join('、')}）`);
+    if (!known.includes(key)) throw new TypeError(`Unknown option ${key} (options: ${known.join(', ')})`);
   }
   const merged = { ...DEFAULTS };
   for (const key of Object.keys(DEFAULTS)) {
     if (options[key] === undefined) continue;
-    if (typeof options[key] !== 'number' || !Number.isFinite(options[key]) || options[key] < 0) throw new TypeError(`${key} 必须是不小于 0 的有限数（秒），收到 ${JSON.stringify(options[key])}`);
+    if (typeof options[key] !== 'number' || !Number.isFinite(options[key]) || options[key] < 0) throw new TypeError(`${key} must be a finite number of at least 0 (seconds); got ${JSON.stringify(options[key])}`);
     merged[key] = options[key];
   }
   if (options.thresholdDbfs !== undefined) {
-    if (typeof options.thresholdDbfs !== 'number' || !Number.isFinite(options.thresholdDbfs)) throw new TypeError(`thresholdDbfs 必须是有限数（dBFS），收到 ${JSON.stringify(options.thresholdDbfs)}`);
+    if (typeof options.thresholdDbfs !== 'number' || !Number.isFinite(options.thresholdDbfs)) throw new TypeError(`thresholdDbfs must be a finite number (dBFS); got ${JSON.stringify(options.thresholdDbfs)}`);
     merged.thresholdDbfs = options.thresholdDbfs;
   }
   if (options.forcedMinSeconds !== undefined && !(typeof options.forcedMinSeconds === 'number' && Number.isFinite(options.forcedMinSeconds) && options.forcedMinSeconds > 0)) {
-    throw new TypeError(`forcedMinSeconds 必须是大于 0 的有限数（秒），收到 ${JSON.stringify(options.forcedMinSeconds)}`);
+    throw new TypeError(`forcedMinSeconds must be a finite number greater than 0 (seconds); got ${JSON.stringify(options.forcedMinSeconds)}`);
   }
   merged.forcedMinSeconds = options.forcedMinSeconds ?? merged.minSeconds;
   const forcedBound = (merged.maxSeconds - 2 * merged.paddingSeconds) / 2; // 第 5 条：两段都够长的最大下限
   if (options.forcedMinSeconds !== undefined && merged.forcedMinSeconds > forcedBound) {
-    throw new TypeError(`forcedMinSeconds（${merged.forcedMinSeconds}）不能超过 (maxSeconds - 2 * paddingSeconds) 的一半（${forcedBound}）：超长的说话区间切不成每段都够长的`);
+    throw new TypeError(`forcedMinSeconds (${merged.forcedMinSeconds}) cannot exceed half of (maxSeconds - 2 * paddingSeconds) (${forcedBound}): an over-long speech region cannot be cut into segments that are all long enough`);
   }
-  if (!(merged.minSeconds > 0)) throw new TypeError('minSeconds 必须大于 0');
-  if (!(merged.maxSeconds > merged.minSeconds)) throw new TypeError(`maxSeconds（${merged.maxSeconds}）必须大于 minSeconds（${merged.minSeconds}）`);
-  if (merged.shortestSeconds > merged.minSeconds) throw new TypeError(`shortestSeconds（${merged.shortestSeconds}）不能比 minSeconds（${merged.minSeconds}）长`);
-  if (merged.maxSeconds - 2 * merged.paddingSeconds < merged.minSeconds) throw new TypeError(`paddingSeconds（${merged.paddingSeconds}）太大：前后各留这么多，maxSeconds 里放不下 minSeconds`);
-  if (!(merged.minPauseSeconds > 0)) throw new TypeError('minPauseSeconds 必须大于 0');
-  if (merged.minPauseSeconds > merged.sentencePauseSeconds) throw new TypeError(`minPauseSeconds（${merged.minPauseSeconds}）不能比 sentencePauseSeconds（${merged.sentencePauseSeconds}）长`);
-  if (merged.sentencePauseSeconds > merged.joinGapSeconds) throw new TypeError(`sentencePauseSeconds（${merged.sentencePauseSeconds}）不能比 joinGapSeconds（${merged.joinGapSeconds}）长`);
+  if (!(merged.minSeconds > 0)) throw new TypeError('minSeconds must be greater than 0');
+  if (!(merged.maxSeconds > merged.minSeconds)) throw new TypeError(`maxSeconds (${merged.maxSeconds}) must be greater than minSeconds (${merged.minSeconds})`);
+  if (merged.shortestSeconds > merged.minSeconds) throw new TypeError(`shortestSeconds (${merged.shortestSeconds}) cannot be longer than minSeconds (${merged.minSeconds})`);
+  if (merged.maxSeconds - 2 * merged.paddingSeconds < merged.minSeconds) throw new TypeError(`paddingSeconds (${merged.paddingSeconds}) is too large: with that much kept on each side, minSeconds does not fit in maxSeconds`);
+  if (!(merged.minPauseSeconds > 0)) throw new TypeError('minPauseSeconds must be greater than 0');
+  if (merged.minPauseSeconds > merged.sentencePauseSeconds) throw new TypeError(`minPauseSeconds (${merged.minPauseSeconds}) cannot be longer than sentencePauseSeconds (${merged.sentencePauseSeconds})`);
+  if (merged.sentencePauseSeconds > merged.joinGapSeconds) throw new TypeError(`sentencePauseSeconds (${merged.sentencePauseSeconds}) cannot be longer than joinGapSeconds (${merged.joinGapSeconds})`);
   return merged;
 }
 
@@ -358,11 +358,11 @@ export function splitBySilence(audio, options = {}) {
  */
 export function segmentSpeechRegions(audio, regions, options = {}) {
   const o = readOptions(options);
-  if (!Array.isArray(regions)) throw new TypeError('regions 必须是数组：[{ start_sec, end_sec }]');
+  if (!Array.isArray(regions)) throw new TypeError('regions must be an array: [{ start_sec, end_sec }]');
   let previousEnd = 0;
   regions.forEach((r, i) => {
     const ok = r !== null && typeof r === 'object' && Number.isFinite(r.start_sec) && Number.isFinite(r.end_sec) && r.start_sec >= previousEnd && r.end_sec > r.start_sec;
-    if (!ok) throw new TypeError(`regions[${i}] 必须是 { start_sec, end_sec }，0 <= start_sec < end_sec，并且不早于上一个区间的结束`);
+    if (!ok) throw new TypeError(`regions[${i}] must be { start_sec, end_sec } with 0 <= start_sec < end_sec, and not earlier than the end of the previous region`);
     previousEnd = r.end_sec;
   });
   return analyse(audio, o, regions);

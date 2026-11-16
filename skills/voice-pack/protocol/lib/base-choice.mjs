@@ -3,7 +3,7 @@
 // 用哪一份基础部分：补全（complete.mjs）要做的两个判断，都是纯函数，不碰网络、不碰文件系统。
 //   assessBasePart     一份已经在手里的基础部分（环境里原有的、包里自带的）能不能用
 //   selectBaseVersion  官方地址的版本索引里，挑哪一个版本去下载
-// 规则和理由的正本是 protocol/FORMAT.md 的「补全」一节；这里写程序怎么做、抛什么。
+// 规则和理由的正本是 protocol/FORMAT.md 的「Complete」一节；这里写程序怎么做、抛什么。
 //
 // 「可用」三条都成立：
 //   官方版本   基础部分和它里面的协议核心，两份清单旁边的签名都是信任名单里的公钥签的
@@ -12,7 +12,7 @@
 // 环境里原有的这一份只看两份清单和它们的签名，不逐个文件重算哈希（环境里原有的那一部分不重新算哈希；每个部分只在进入环境的时候校验一次）。
 //
 // 挑版本：同一个主版本里、不低于最低版本、协议主版本对得上的最高版本，也就是语义化版本的 ^最低版本；预发布版本不候选（最低版本自己是预发布版时，同一个 主.次.修订 的预发布版除外）。
-// 只在读到了可信的索引时挑：索引是名单外的钥匙签的（官方换过钥匙）时不走这里，补全退到最低版本本身（complete.mjs 第 4 步，RELEASES.md「私钥丢了或泄露了」）。
+// 只在读到了可信的索引时挑：索引是名单外的钥匙签的（官方换过钥匙）时不走这里，补全退到最低版本本身（complete.mjs 第 4 步，RELEASES.md「A lost or leaked private key」）。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { readManifest, partName, MANIFEST_FILE, SIGNATURE_FILE, PROTOCOL_DIRECTORY } from './manifest.mjs';
@@ -24,13 +24,13 @@ const isBytes = (value) => value instanceof Uint8Array;
 // ---------------------------------------------------------------- 一份基础部分能不能用
 
 const REASON_TEXT = {
-  manifest_missing: () => '没有基础部分的清单（manifest.json）',
-  manifest_invalid: (r) => `基础部分的清单读不懂（${r.code}）`,
-  not_base_part: (r) => `清单不是基础部分的（它说自己是 ${r.actual}）`,
-  not_official: (r) => `${r.part === 'protocol' ? `里面的${partName('protocol')}` : partName('base')}不是官方版本（${r.code}）`,
-  protocol_core_missing: () => '没有协议核心的清单（protocol/manifest.json）',
-  protocol_incompatible: (r) => `协议主版本是 ${r.actual}，角色部分要的是 ${r.required}`,
-  too_old: (r) => `版本 ${r.actual} 比角色部分要求的最低版本 ${r.required} 低`,
+  manifest_missing: () => 'the base part has no manifest (manifest.json)',
+  manifest_invalid: (r) => `the base part's manifest cannot be read (${r.code})`,
+  not_base_part: (r) => `the manifest is not a base part's (it says it is ${r.actual})`,
+  not_official: (r) => `${r.part === 'protocol' ? `the ${partName('protocol')} inside it` : `the ${partName('base')}`} is not an official version (${r.code})`,
+  protocol_core_missing: () => 'the protocol core has no manifest (protocol/manifest.json)',
+  protocol_incompatible: (r) => `the protocol major version is ${r.actual}, but the role part needs ${r.required}`,
+  too_old: (r) => `version ${r.actual} is lower than the minimum version ${r.required} the role part requires`,
 };
 
 /**
@@ -39,7 +39,7 @@ const REASON_TEXT = {
  */
 export function describeRejection(rejection) {
   const text = Object.hasOwn(REASON_TEXT, rejection.reason) ? REASON_TEXT[rejection.reason](rejection) : rejection.reason;
-  return `${rejection.location}：${text}`;
+  return `${rejection.location}: ${text}`;
 }
 
 /**
@@ -61,8 +61,8 @@ export function describeRejection(rejection) {
  * @throws {TypeError} candidate、verifySignature 的类型不对（调用方写错了，不是基础部分不好）
  */
 export async function assessBasePart(candidate, requires, verifySignature) {
-  if (candidate === null || typeof candidate !== 'object' || typeof candidate.location !== 'string') throw new TypeError('candidate 要是 { location, manifest, signature, coreManifest, coreSignature }，location 是字符串');
-  if (typeof verifySignature !== 'function') throw new TypeError('verifySignature 要是函数（official.mjs 的 createSignatureVerifier 造的）');
+  if (candidate === null || typeof candidate !== 'object' || typeof candidate.location !== 'string') throw new TypeError('candidate must be { location, manifest, signature, coreManifest, coreSignature }, and location must be a string');
+  if (typeof verifySignature !== 'function') throw new TypeError('verifySignature must be a function (made by createSignatureVerifier in official.mjs)');
   const { location } = candidate;
   const no = (reason, extra = {}) => ({ usable: false, location, reason, ...extra });
 
@@ -130,7 +130,7 @@ function exclusionOf(item, { baseMin, protocolMajor: wantedMajor }) {
 }
 
 /**
- * 在版本索引里挑一个版本：同一个主版本里、不低于最低版本、协议主版本对得上的最高版本（语义化版本的 ^最低版本）。理由见 protocol/FORMAT.md「补全」。
+ * 在版本索引里挑一个版本：同一个主版本里、不低于最低版本、协议主版本对得上的最高版本（语义化版本的 ^最低版本）。理由见 protocol/FORMAT.md「Complete」。
  * 协议主版本看索引里这一项的 protocol，不用下载就能挑；索引里的次序不重要（按版本号比，不按排的位置）。
  * @param {{ versions: { version: string, protocol: string }[] }} index parseVersionIndex 读出来的索引（releases.mjs；读索引要先验签，见 release-fetch.mjs 的 readVersionIndex）
  * @param {{ protocolMajor: number, baseMin: string }} requires 角色部分清单里的 requires

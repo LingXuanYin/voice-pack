@@ -1,272 +1,272 @@
-# 官方签名
+# Official signatures
 
-基础部分的清单、协议核心的清单、发布出去的基础部分 zip，以及官方地址上的版本索引，都由官方用 Ed25519 签名；运行环境只认官方版本。这份文件写签名文件的格式、信任名单、命令，以及这样定的依据。第三方照着它，装一个 minisign 就能验官方签名。
+The manifest of the base part, the manifest of the protocol core, the published base part zip, and the version index at the official address are all signed by the official side with Ed25519; the runtime environment accepts only official versions. This file describes the format of the signature files, the trust list, the commands, and the grounds for deciding it this way. A third party can verify the official signature by following it, with minisign installed.
 
-一份内容怎么算「官方版本」、两个部分怎么互相校验，在这份文件的「接进检查」和「互相校验」两节；格式本身的规则（清单、文件、哈希）在 `FORMAT.md`，检查的次序在它的「检查」一节。
+How a piece of content counts as an "official version" and how the two parts verify each other are in the sections "Wiring into the check" and "Mutual verification of the pack" of this file; the rules of the format itself (manifest, files, hashes) are in `FORMAT.md`, and the order of the check is in its section "Check".
 
-## 签什么
+## What is signed
 
-| 被签的东西 | 签名文件 | 谁来验 |
+| What is signed | Signature file | Who verifies |
 |---|---|---|
-| 基础部分的清单 | 清单旁边，`<清单文件名>.minisig` | 每个部分自带的协议核心；app 用自己带的信任名单 |
-| 协议核心的清单 | 协议核心的清单旁边，同上 | 同上 |
-| 发布出去的基础部分 zip（每个版本一个，补全、app 导出完整包时下载） | zip 旁边，`<zip 文件名>.minisig` | 补全时用协议核心里的信任名单验；app 用自己带的 |
-| 官方地址上的版本索引 `index.json`（每发布一个版本由当时的钥匙重签） | 旁边的 `index.json.minisig` | 补全、app 导出完整包读索引时，先用信任名单验签再信（补全用协议核心里的，app 用自己带的；`RELEASES.md`「版本索引」） |
+| Manifest of the base part | Next to the manifest, `<manifest file name>.minisig` | The protocol core that every part carries; the app uses its own trust list |
+| Manifest of the protocol core | Next to the manifest of the protocol core, same as above | Same as above |
+| The published base part zip (one per version, downloaded by complete and when the app exports a full pack) | Next to the zip, `<zip file name>.minisig` | In complete, verified with the trust list in the protocol core; the app uses its own |
+| The version index `index.json` at the official address (re-signed by the key of the time with every published version) | `index.json.minisig` next to it | In complete and when the app exports a full pack, the index is read only after its signature is verified with the trust list (complete uses the one in the protocol core, the app its own; `RELEASES.md`「Official releases: official address, file layout, version index」) |
 
-签名只管被签文件的**原始字节**，不做换行转换，不解码再编码。
+A signature covers only the **original bytes** of the signed file: no newline conversion, no decoding and re-encoding.
 
-## 签名文件的格式
+## Signature file format
 
-就是 minisign 的签名文件，四行，末尾一个换行：
-
-```
-untrusted comment: <一行说明，不参与签名>
-<base64，74 字节：算法标识 `Ed` 2 字节 + key id 8 字节 + 签名 64 字节>
-trusted comment: <一行说明，参与签名>
-<base64，64 字节：global signature>
-```
-
-- 签名：对被签文件的原始字节直接做 Ed25519。
-- global signature：对「上面那 64 字节签名 + trusted comment 的 UTF-8 字节」做 Ed25519。所以 trusted comment 被改了也验得出来；我们用它写 `file:<文件名>`，人一眼看得出这份签名是给谁签的。
-- key id：8 字节。我们生成的钥匙取公钥 SHA-256 的前 8 个字节；别人用 minisign 自己生成的钥匙，key id 是随机的，信任名单一样认。显示时和 minisign 一样，8 个字节按小端读成一个整数，写成 16 位大写十六进制。
-- 同一份内容、同一把私钥、同一个 trusted comment，签两次，得到的字节完全相同（Ed25519 是确定性的，trusted comment 里默认不带时间戳）。发布时可以拿它和已经发布的文件比字节。
-- 读签名文件时，换行 `\n` 和 `\r\n` 都认，末尾多出来的空行也不算。
-
-公钥写成 minisign 的 `.pub` 文件第二行那串 base64，42 字节：`Ed` + key id 8 字节 + 公钥 32 字节。
-
-## 为什么用 minisign 的旧模式，而不是自己定格式
-
-此前的结论是「WebCrypto 没有 BLAKE2b，所以和 minisign 不能互验」。这只对 minisign 的**预哈希模式**（算法标识 `ED`，默认的签名模式）成立：它先对文件算 BLAKE2b-512，再对哈希值签名。minisign 还有**旧模式**（算法标识 `Ed`，`minisign -S -l` 生成）：直接对文件字节做 Ed25519，trusted comment 的 global signature 也只是 Ed25519，两者都用不到 BLAKE2b，WebCrypto 做得了。
-
-依据，分来源写：
-
-- **读源码**（`jedisct1/minisign` 的 `src/minisign.c`，默认分支 `b6de4fe`，2026-10-11；发布版 0.12，2025-01-15，两份的验签逻辑一样）：
-  - `sig_load` 认两个算法标识，`Ed` 的 `hashed = 0`，`ED` 的 `hashed = 1`；
-  - `verify` 只有在带了 `-H` 且 `hashed == 0` 时才拒绝（输出 `Legacy (non-prehashed) signature found`），默认 `allow_legacy = 1`，所以**默认不带额外参数就接受 `Ed` 签名**；
-  - `message_load(…, hashed)` 在 `hashed == 0` 时读整个文件原样当消息，没有哈希；
-  - 公钥只认 `Ed`（`pubkey_load_string` 用 `memcmp(pubkey_struct->sig_alg, SIGALG, …) != 0` 拒绝其他），所以我们的公钥写法就是 minisign 的公钥写法。
-- **真跑**（2026-10-14，minisign 0.12 的官方发布版 Windows 二进制）：
-  - minisign 用 `-S -l` 签的文件，我们的 `signature.mjs` 验得过，trusted comment 也验过；
-  - 我们的代码签的文件，`minisign -V -p <公钥文件> -m <文件>` 默认参数验得过，退出 0，`Signature and comment signature verified`；公钥不落文件、用 `-P <公钥>` 内联也验得过；
-  - 带 `-H`（要求预哈希）时，同一份旧模式签名被拒：`Legacy (non-prehashed) signature found`，退出 1。**要让第三方用 `-H` 验，我们就得用预哈希模式，办不到；所以文档里给第三方的命令不带 `-H`**；
-  - 文件改一个字节，minisign 报 `Signature verification failed`，退出 1；
-  - trusted comment 是中文、带制表符、长到 1000 字节、换行符是 CRLF，minisign 都验得过。
-
-结论：**用 minisign 的公钥和签名文件格式（旧模式，`Ed`）**。这个格式有现成的第三方实现，不需要我们另起一套。代价只有一个：minisign 的新版本哪天不再默认接受旧模式，第三方就要给命令加参数；我们这边不受影响，因为验签是我们自己的代码。
-
-遇到预哈希（`ED`）的签名，我们的验签不假装能验，明确报 `signature_algorithm_unsupported`，并告诉对方改用 `minisign -S -l`。
-
-### 第三方怎么验官方签名
+It is exactly a minisign signature file: four lines, with one newline at the end:
 
 ```
-minisign -V -P <官方公钥> -m <被签文件>
+untrusted comment: <a line of description, not part of the signature>
+<base64, 74 bytes: algorithm id `Ed` 2 bytes + key id 8 bytes + signature 64 bytes>
+trusted comment: <a line of description, part of the signature>
+<base64, 64 bytes: global signature>
 ```
 
-`<官方公钥>` 就是 `protocol/trust.json` 里 `public_key` 的那串 base64（minisign 的 `-P` 直接收它，不用先落成文件）；要用文件的话，写成 `.pub` 格式：第一行 `untrusted comment: minisign public key <key id>`，第二行就是那串 base64，然后 `-p <公钥文件>`。签名文件默认是 `<被签文件>.minisig`，放在被签文件旁边；不在旁边的话加 `-x <签名文件>`。不要加 `-H`。
+- Signature: Ed25519 applied directly to the original bytes of the signed file.
+- Global signature: Ed25519 over "the 64 signature bytes above + the UTF-8 bytes of the trusted comment". So a changed trusted comment is also detected; we use it to write `file:<file name>`, so a person can see at a glance whom this signature was made for.
+- Key id: 8 bytes. For a key we generate, it is the first 8 bytes of the SHA-256 of the public key; for a key someone else generated with minisign, the key id is random, and the trust list accepts it just the same. When displayed, as in minisign, the 8 bytes are read as one little-endian integer and written as 16 upper-case hexadecimal digits.
+- The same content, the same private key and the same trusted comment signed twice give exactly the same bytes (Ed25519 is deterministic, and the trusted comment carries no timestamp by default). When publishing, you can compare it byte for byte with the file already published.
+- When reading a signature file, both `\n` and `\r\n` newlines are accepted, and extra blank lines at the end do not count.
 
-## 信任名单
+A public key is written as the base64 string on the second line of a minisign `.pub` file, 42 bytes: `Ed` + key id 8 bytes + public key 32 bytes.
 
-`protocol/trust.json`，每个部分的协议核心都带一份，验签只认这份名单里的公钥。app 自己带一份同样形状的名单。
+## Why minisign's legacy mode and not a format of our own
+
+The earlier conclusion was "WebCrypto has no BLAKE2b, so we cannot verify each other with minisign". That holds only for minisign's **prehashed mode** (algorithm id `ED`, the default signing mode): it first computes BLAKE2b-512 of the file and then signs the hash. minisign also has a **legacy mode** (algorithm id `Ed`, produced by `minisign -S -l`): it applies Ed25519 directly to the file bytes, and the global signature of the trusted comment is also just Ed25519; neither needs BLAKE2b, and WebCrypto can do it.
+
+The grounds, written by source:
+
+- **Reading the source** (`src/minisign.c` of `jedisct1/minisign`, default branch `b6de4fe`, 2026-10-11; release 0.12, 2025-01-15; the verification logic of the two is the same):
+  - `sig_load` accepts two algorithm ids: `Ed` has `hashed = 0`, `ED` has `hashed = 1`;
+  - `verify` refuses only when `-H` is given and `hashed == 0` (it prints `Legacy (non-prehashed) signature found`), and by default `allow_legacy = 1`, so **by default, with no extra parameters, an `Ed` signature is accepted**;
+  - `message_load(…, hashed)` with `hashed == 0` reads the whole file as the message as it is, with no hash;
+  - a public key accepts only `Ed` (`pubkey_load_string` rejects anything else with `memcmp(pubkey_struct->sig_alg, SIGALG, …) != 0`), so our way of writing a public key is minisign's way of writing a public key.
+- **Actually running it** (2026-10-14, the official release Windows binary of minisign 0.12):
+  - a file signed by minisign with `-S -l` is verified by our `signature.mjs`, and the trusted comment is verified too;
+  - a file signed by our code is verified by `minisign -V -p <public key file> -m <file>` with default parameters, exit 0, `Signature and comment signature verified`; with the public key not in a file and given inline with `-P <public key>`, it also verifies;
+  - with `-H` (requiring prehashing), the same legacy-mode signature is rejected: `Legacy (non-prehashed) signature found`, exit 1. **For a third party to verify with `-H`, we would have to use prehashed mode, which cannot be done; so the commands in the docs for third parties do not use `-H`**;
+  - with one byte of the file changed, minisign reports `Signature verification failed`, exit 1;
+  - a trusted comment that is Chinese, contains a tab, is as long as 1000 bytes, or has CRLF newlines is verified by minisign in all cases.
+
+Conclusion: **use minisign's public key and signature file format (legacy mode, `Ed`)**. This format has existing third-party implementations, and we do not need to start a separate one. There is only one cost: if some day a new version of minisign no longer accepts legacy mode by default, third parties will have to add a parameter to the command; we are not affected, because verification is our own code.
+
+When we meet a prehashed (`ED`) signature, our verification does not pretend it can verify it; it reports `signature_algorithm_unsupported` clearly and tells the other side to use `minisign -S -l` instead.
+
+### How a third party verifies the official signature
+
+```
+minisign -V -P <official public key> -m <signed file>
+```
+
+`<official public key>` is the base64 string of `public_key` in `protocol/trust.json` (minisign's `-P` takes it directly, with no need to save it to a file first); if you want to use a file, write it in `.pub` format: the first line `untrusted comment: minisign public key <key id>`, the second line that base64 string, and then `-p <public key file>`. The signature file is by default `<signed file>.minisig`, placed next to the signed file; if it is not next to it, add `-x <signature file>`. Do not add `-H`.
+
+## Trust list
+
+`protocol/trust.json`; the protocol core of every part carries one, and verification accepts only the public keys in this list. The app carries its own list of the same shape.
 
 ```json
 {
   "version": "1.0",
   "keys": [
-    { "public_key": "<minisign 的 .pub 第二行那串 base64>", "comment": "说明，可省" }
+    { "public_key": "<the base64 string on the second line of minisign's .pub>", "comment": "description, may be omitted" }
   ]
 }
 ```
 
-- `public_key`：minisign 的 `.pub` 第二行那串 base64（上一节）。
-- 按签名里的 key id 去名单里找公钥，找不到就是「不是官方签名」，不会拿别的公钥去试。key id 只是找公钥的线索：签名里写了官方的 key id、实际用别的钥匙签的，照样验不过，因为验的是名单里那把公钥。
-- 名单可以有多把公钥。换了密钥以后，新公钥加进来，**旧公钥留在名单里**，旧版本的签名就照样能验；名单里两把公钥的 key id 不能相同。
-- 名单为空时验签一律失败（`trust_list_empty`），不放行：名单被清空不会变成「不查了」。
-- `version` 是名单自己的版本，「主.次」；其他字段（例如官方地址，补全用）验签不看，原样放过。
+- `public_key`: the base64 string on the second line of minisign's `.pub` (previous section).
+- The public key is looked up in the list by the key id in the signature; if it is not found, the result is "not an official signature", and no other public key is tried. The key id is only a clue for finding the public key: a signature that states the official key id but was actually signed with another key still fails verification, because what is verified against is the public key in the list.
+- The list may hold several public keys. After a key change, the new public key is added and **the old public key stays in the list**, so signatures of old versions can still be verified; two public keys in the list must not have the same key id.
+- When the list is empty, verification always fails (`trust_list_empty`) and nothing passes: a cleared list does not turn into "no check".
+- `version` is the version of the list itself, "major.minor"; other fields (for example the official address, used by complete) are not looked at by verification and are passed through unchanged.
 
-### 官方公钥
+### Official public key
 
-`trust.json` 里现在有第一把官方公钥。
+`trust.json` now holds the first official public key.
 
-- **来历**：voice-pack 的发布者生成这把钥匙，私钥由发布者保管，不进 git，也不进任何包。进仓库的只有公钥。换了官方地址（1.x 时代在 Cohub 公开文件上，2.0 起在 voice-pack 自己的 GitHub Pages 上），公钥没有换：旧版本的签名照样验得过。
-- **指纹**：原始 32 字节公钥的 SHA-256，小写十六进制。交接和核对时用它：`trust.json` 里的 `public_key` 解码后，去掉头 10 个字节（算法标识 2 字节 + key id 8 字节），剩下的 32 字节就是原始公钥。
-- **key id 怎么来的**：我们的钥匙，key id 由公钥算出来，取原始公钥 SHA-256 的前 8 个字节，显示时按小端写成 16 位大写十六进制。minisign 自己生成的钥匙，key id 是随机的，不是这样算的，信任名单一样认；`signature.mjs` 的 `publicKeyFromRaw` 把原始公钥写成名单里的那一项，同一个原始公钥永远得到同一项，所以名单里的内容随时能重新算出来核对。
-- **确认私钥和名单里的公钥是一对**（生成钥匙之后、第一次签名之前做一遍）：`node protocol/cli.mjs keygen --key <私钥文件> --json`，输出里的 `publicKey` 必须和 `trust.json` 里的 `public_key` 一字不差；更直接的做法是用这把私钥给一份文件签名，再用默认的信任名单验：`sign <文件> --key <私钥文件>`、`verify <文件>`，通过才说明一对。
+- **Provenance**: the publisher of voice-pack generated this key; the private key is kept by the publisher and does not enter git or any pack. Only the public key goes into the repository. The official address changed (in the 1.x era it was on Cohub public files; from 2.0 it is on voice-pack's own GitHub Pages), but the public key did not change: signatures of old versions still verify.
+- **Fingerprint**: the SHA-256 of the raw 32-byte public key, in lower-case hexadecimal. Use it for handover and for checking: decode the `public_key` in `trust.json`, drop the first 10 bytes (algorithm id 2 bytes + key id 8 bytes), and the remaining 32 bytes are the raw public key.
+- **Where the key id comes from**: for our keys, the key id is computed from the public key, taking the first 8 bytes of the SHA-256 of the raw public key and writing them, when displayed, as 16 upper-case hexadecimal digits in little-endian order. For a key generated by minisign itself, the key id is random and not computed this way, and the trust list accepts it just the same; `publicKeyFromRaw` in `signature.mjs` writes a raw public key as an entry of the list, and the same raw public key always gives the same entry, so the content of the list can be recomputed and checked at any time.
+- **Confirm that the private key and the public key in the list are a pair** (do it once after generating the key and before the first signing): `node protocol/cli.mjs keygen --key <private key file> --json`, and the `publicKey` in the output must be exactly the same as the `public_key` in `trust.json`; a more direct way is to sign a file with this private key and verify it with the default trust list: `sign <file> --key <private key file>`, `verify <file>`; only if it passes is it a pair.
 
-### 私钥丢了或泄露了
+### A lost or leaked private key
 
-只能发新版本、换公钥：新密钥签下一个版本，下一个版本的协议核心带新公钥，信任名单里旧公钥留着；已经流出去的旧包里是旧公钥，旧版本照样能验。旧版本的 zip 和签名一直留在官方地址上，用旧版本做的包照样能补全：版本索引每发布一次由当时的钥匙重签，换钥匙以后旧包里的名单（只有旧公钥）认不得它，补全这时不信索引，退回去直接取包要求的最低版本本身，它的 zip 和签名用旧名单验得过（这条退路的规则写在 `RELEASES.md`「私钥丢了或泄露了」，不在这里重复）。官方地址上的文件怎么摆，见 `RELEASES.md`。
+The only way is to release a new version and change the public key: the new key signs the next version, the protocol core of the next version carries the new public key, and the old public key stays in the trust list; old packs that have already gone out contain the old public key, and old versions can still be verified. The zip and signature of old versions stay at the official address, and packs made with an old version can still be completed: the version index is re-signed with the key of the time with every published version, and after a key change the list in an old pack (holding only the old public key) does not recognise it, so complete does not trust the index at that point and falls back to fetching directly the lowest version the pack requires, whose zip and signature verify with the old list (the rule of this fallback is written in `RELEASES.md`「A lost or leaked private key」 and is not repeated here). How the files at the official address are laid out is in `RELEASES.md`.
 
-## 命令
+## Commands
 
-都在协议核心的命令行里（只有协议核心时也能跑）：`node protocol/cli.mjs <命令>`；基础部分根上的 `node cli.mjs <命令>` 一样能用。
+All are in the command line of the protocol core (they work even when only the protocol core is present): `node protocol/cli.mjs <command>`; `node cli.mjs <command>` at the root of the base part works the same.
 
-| 命令 | 做什么 |
+| Command | What it does |
 |---|---|
-| `keygen --out <私钥文件>` | 生成一把 Ed25519 钥匙。私钥写成 PKCS8 的 PEM（和 `openssl genpkey -algorithm ed25519` 一样，能互相读），权限只给自己（0600）。**文件已存在就拒绝**，不悄悄覆盖。输出公钥和 key id，不输出私钥 |
-| `keygen --key <私钥文件>` | 由已有的私钥报出公钥和 key id：得到要写进信任名单的那一项，也用来确认私钥和名单里的公钥是一对（见「官方公钥」） |
-| `sign <文件> --key <私钥文件> [--sig <签名文件>] [--trusted-comment <一行>]` | 给文件签名。默认写到 `<文件>.minisig`；trusted comment 默认是 `file:<文件名>` |
-| `verify <文件> [--sig <签名文件>] [--trust <信任名单.json>]` | 验签。默认用协议核心自带的 `protocol/trust.json`；`--trust` 给测试和第三方换一份名单用。通过输出 key id 和 trusted comment；不通过退出 1 并报 code |
+| `keygen --out <private key file>` | Generates an Ed25519 key. The private key is written as PKCS8 PEM (the same as `openssl genpkey -algorithm ed25519`, readable by each other), with permissions for the owner only (0600). **It refuses if the file already exists** and does not overwrite silently. It prints the public key and the key id, and does not print the private key |
+| `keygen --key <private key file>` | Reports the public key and key id from an existing private key: gives the entry to write into the trust list, and is also used to confirm that the private key and the public key in the list are a pair (see "Official public key") |
+| `sign <file> --key <private key file> [--sig <signature file>] [--trusted-comment <one line>]` | Signs a file. By default it writes to `<file>.minisig`; the trusted comment is by default `file:<file name>` |
+| `verify <file> [--sig <signature file>] [--trust <trust list.json>]` | Verifies a signature. By default it uses the `protocol/trust.json` carried by the protocol core; `--trust` swaps in another list for tests and third parties. On success it prints the key id and the trusted comment; on failure it exits 1 and reports the code |
 
-私钥文件 PEM 和 DER 都认。给了 `--json`，输出和错误都是一行 JSON。
+A private key file may be PEM or DER. With `--json`, both output and errors are one line of JSON.
 
-**私钥的值绝不进输出、日志、错误信息**：读私钥文件失败只说路径和系统给的原因；格式不对只说「不是 Ed25519 的 PKCS8 私钥」，不回显内容，也不把底层错误作为 `cause` 带出去。调用方（发布用的脚本）同样不要把私钥放进命令行参数、环境变量的打印里；路径可以写，内容不行。
+**The private key value never enters output, logs or error messages**: when reading the private key file fails, only the path and the reason the system gave are stated; if the format is wrong, only "not an Ed25519 PKCS8 private key" is stated, the content is not echoed, and the underlying error is not carried out as `cause`. The caller (the script used for publishing) must likewise not put the private key in command-line arguments or in printed environment variables; the path may be written, the content must not.
 
-## 库的接口
+## Library interface
 
-`protocol/lib/signature.mjs`，只用平台自带的 WebCrypto，浏览器和 Node 都能跑。所有二进制参数都是 `Uint8Array`（原始字节），不收字符串：字符串会悄悄换一次编码，签的就不是文件的原始字节了。
+`protocol/lib/signature.mjs`, using only the platform's own WebCrypto, so it runs in browsers and in Node. All binary parameters are `Uint8Array` (raw bytes); strings are not accepted: a string would silently pass through one encoding, and then what is signed would not be the raw bytes of the file.
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `generateSigningKey()` | 生成钥匙：`{ privateKey: Uint8Array（PKCS8 DER）, publicKey: string（minisign 写法）, keyId: string }` |
-| `publicKeyOf(privateKey)` | 由私钥推出 `{ publicKey, keyId }` |
-| `publicKeyFromRaw(rawPublicKey)` | 把 raw 公钥（32 字节）写成名单里的写法，key id 由公钥算出：`{ publicKey, keyId }` |
-| `signMessage(message, privateKey, { trustedComment?, untrustedComment? })` | 返回签名文件的文本 |
-| `verifyMessage(message, signatureText, trustList)` | 通过返回 `{ keyId, trustedComment, untrustedComment }`；不通过抛错 |
-| `parseTrustList(trustList)` | 读并检查信任名单，返回 `{ version, keys: [{ keyId, publicKey, comment? }] }` |
-| `parsePublicKey(text)` | 读 minisign 的公钥（`.pub` 文件整份文本，或第二行那串 base64），返回 `{ keyId, publicKey: Uint8Array（32 字节）}` |
+| `generateSigningKey()` | Generates a key: `{ privateKey: Uint8Array (PKCS8 DER), publicKey: string (minisign form), keyId: string }` |
+| `publicKeyOf(privateKey)` | Derives `{ publicKey, keyId }` from a private key |
+| `publicKeyFromRaw(rawPublicKey)` | Writes a raw public key (32 bytes) in the form used in the list, with the key id computed from the public key: `{ publicKey, keyId }` |
+| `signMessage(message, privateKey, { trustedComment?, untrustedComment? })` | Returns the text of the signature file |
+| `verifyMessage(message, signatureText, trustList)` | On success returns `{ keyId, trustedComment, untrustedComment }`; on failure throws |
+| `parseTrustList(trustList)` | Reads and checks a trust list, returns `{ version, keys: [{ keyId, publicKey, comment? }] }` |
+| `parsePublicKey(text)` | Reads a minisign public key (the whole text of a `.pub` file, or the base64 string on its second line), returns `{ keyId, publicKey: Uint8Array (32 bytes)}` |
 | `SIGNATURE_SUFFIX` | `'.minisig'` |
 
-### 报错（`VoicePackError` 的 code）
+### Errors (codes of `VoicePackError`)
 
-| code | 什么时候 |
+| code | When |
 |---|---|
-| `ed25519_unavailable` | 运行环境没有 Ed25519：没有 `crypto.subtle`（浏览器里不是安全上下文），或者 `crypto.subtle` 不认 Ed25519（Chrome/Edge 137、Firefox 129、Safari 17 以前，Node 16.17 以前）。**签名和验签都报这个，绝不静默放行** |
-| `trust_list_invalid` | 信任名单的形状不对（没有版本号、keys 不是数组、公钥读不出来、key id 重复）；命令行读的信任名单文件不是合法 JSON 也是这个 code |
-| `trust_list_empty` | 名单里一把公钥也没有 |
-| `signature_malformed` | 签名文件的格式不对：行数、前缀、base64、长度。`details.line` 是出问题的行 |
-| `signature_algorithm_unsupported` | 算法标识不是 `Ed`。预哈希（`ED`）单独说明：它要 BLAKE2b-512，WebCrypto 没有 |
-| `signature_untrusted_key` | 签名用的钥匙不在信任名单里：不是官方签名。`details.keyId`、`details.trusted` |
-| `signature_invalid` | 签名和这份内容对不上：内容被改过，或者签名不是给它签的 |
-| `signature_comment_invalid` | trusted comment 和它的签名对不上：签名文件被改过 |
-| `private_key_invalid` | 私钥不是 Ed25519 的 PKCS8 |
-| `public_key_invalid` | 公钥读不出来：长度、算法标识、base64 |
-| `key_id_invalid` | key id 不是 16 位十六进制 |
-| `comment_invalid` | 签名里的注释有换行、是空的，或者太长（上限 1000 字节） |
-| `file_unreadable`、`file_unwritable`、`file_exists` | 命令行读写文件（私钥、信任名单、被签的文件、签名文件）出问题 |
+| `ed25519_unavailable` | The runtime environment has no Ed25519: there is no `crypto.subtle` (in a browser, not a secure context), or `crypto.subtle` does not recognise Ed25519 (before Chrome/Edge 137, Firefox 129, Safari 17, before Node 16.17). **Both signing and verifying report this, and never pass silently** |
+| `trust_list_invalid` | The shape of the trust list is wrong (no version number, keys is not an array, a public key cannot be read, a duplicate key id); a trust list file read by the command line that is not valid JSON is also this code |
+| `trust_list_empty` | The list has no public key at all |
+| `signature_malformed` | The format of the signature file is wrong: number of lines, prefix, base64, length. `details.line` is the line with the problem |
+| `signature_algorithm_unsupported` | The algorithm id is not `Ed`. Prehashed (`ED`) is explained separately: it needs BLAKE2b-512, which WebCrypto does not have |
+| `signature_untrusted_key` | The key used for the signature is not in the trust list: not an official signature. `details.keyId`, `details.trusted` |
+| `signature_invalid` | The signature does not match this content: the content was changed, or the signature was not made for it |
+| `signature_comment_invalid` | The trusted comment does not match its signature: the signature file was changed |
+| `private_key_invalid` | The private key is not an Ed25519 PKCS8 |
+| `public_key_invalid` | The public key cannot be read: length, algorithm id, base64 |
+| `key_id_invalid` | The key id is not 16 hexadecimal digits |
+| `comment_invalid` | A comment in the signature has a newline, is empty, or is too long (limit 1000 bytes) |
+| `file_unreadable`, `file_unwritable`, `file_exists` | A problem when the command line reads or writes a file (private key, trust list, the signed file, signature file) |
 
-## 谁用哪份公钥
+## Who uses which public key
 
-- **agent 环境里**：用包里自带的协议核心（`protocol/trust.json`）验。整个包连同协议核心一起被改过的话，查不出来：这是这套校验的边界。命令行的做法是：信任名单取**正在运行的这份协议核心**自带的 `protocol/trust.json`（运行 `node protocol/cli.mjs` 的那份），不取被检查的包里带的那份：包里的名单是包的作者写的，不能拿来认这个包。
-- **嵌入这个库的 app**：用自己带的一份信任名单验，不依赖包里的那份。
-- **接收分享文件的服务端**：用它自己部署的那份基础部分自带的 `protocol/trust.json`，不读上传的分享文件里的名单（见「谁怎么传」）。
-- **补全**：下载官方地址上的基础部分 zip 和它的签名，用协议核心里的信任名单验；验不过就报错，不兜底。
+- **In an agent environment**: verify with the protocol core that comes with the pack (`protocol/trust.json`). If the whole pack together with its protocol core was changed, this cannot be detected: this is the boundary of this verification. What the command line does: the trust list is taken from the `protocol/trust.json` carried by **the protocol core that is running** (the one running `node protocol/cli.mjs`), and not from the pack being checked: the list in a pack was written by the author of the pack and cannot be used to recognise that pack.
+- **Apps that embed this library**: verify with a trust list they carry themselves, not depending on the one in the pack.
+- **Servers that receive share files**: use the `protocol/trust.json` carried by the base part they have deployed themselves, and do not read the list inside the uploaded share file (see "Who passes what").
+- **Complete**: downloads the base part zip at the official address and its signature, and verifies with the trust list in the protocol core; if it does not verify, it reports an error, with no fallback.
 
-## 接进检查
+## Wiring into the check
 
-检查一个包的时候（`check`、`pack`、`unpack`，库里是 `checkPart`、`checkShareFile`、`inspectShareFile` 加 `lib/official.mjs`），官方签名这样用：
+When checking a pack (`check`, `pack`, `unpack`; in the library `checkPart`, `checkShareFile`, `inspectShareFile` plus `lib/official.mjs`), the official signature is used like this:
 
-| 部分 | 要不要验 | 怎么验 |
+| Part | Verified? | How |
 |---|---|---|
-| 基础部分的清单 | 要 | 清单旁边必须有 `manifest.json.minisig`，是信任名单里某把公钥签的，签的就是这份清单的字节 |
-| 协议核心的清单（完整包里有两份：角色部分的 `protocol/`，基础部分里的 `voice-pack/protocol/`） | 要 | 同上，每份各验各的 |
-| 角色部分的清单 | 不验 | 作者身份交给社区账号；角色部分旁边有没有签名文件、写什么，都不影响检查 |
+| Manifest of the base part | Yes | `manifest.json.minisig` must be next to the manifest, signed by one of the public keys in the trust list, and what it signs is the bytes of this manifest |
+| Manifest of the protocol core (a full pack has two: `protocol/` of the role part, and `voice-pack/protocol/` in the base part) | Yes | Same as above, each verified on its own |
+| Manifest of the role part | No | The identity of the author is left to the community account; whether there is a signature file next to the role part and what it says do not affect the check |
 
-**为什么验清单就够了**：清单列出部分里每个文件的 SHA-256，检查会逐个核对；清单是官方签的，等于官方担保了清单列出的每个文件的内容。改了文件而没改清单，哈希逮住（`file_modified`）；改了清单而没换签名，验签逮住（`signature_invalid`）；连签名都换成自己钥匙签的，信任名单逮住（`signature_untrusted_key`）。三层各逮一种，所以「协议核心被改」不管怎么改都过不了，除非连运行中的那份协议核心和它的信任名单一起被换掉（这套校验的边界，见上）。
+**Why verifying the manifest is enough**: the manifest lists the SHA-256 of every file in the part, and the check compares them one by one; the manifest is signed by the official side, which amounts to the official side vouching for the content of every file the manifest lists. Change a file without changing the manifest, and the hash catches it (`file_modified`); change the manifest without changing the signature, and verification catches it (`signature_invalid`); even replace the signature with one made by your own key, and the trust list catches it (`signature_untrusted_key`). Each of the three layers catches one kind, so a "modified protocol core" cannot pass however it is modified, unless the running protocol core and its trust list are replaced together (the boundary of this verification, see above).
 
-没有签名文件的基础部分或协议核心，默认拒绝（`signature_missing`）。`allowUnsigned`（命令行里是 `--allow-unsigned`）只放过「没有签名文件」的部分，报告里写明没验（`skipped: 'unsigned'`），是本地开发和测试用的：改基础部分的代码、还没发布签名的时候能跑通。有签名文件的照验，签得不对照样拒绝；名单为空照样不放行。**这不是关掉验签**，但它是个逃生口：用它放行的包没有被验过，不是官方版本，所以用户说明（基础部分的 `SKILL.md`、角色部分 `SKILL.md` 和 README 的模板）里一个字都不提它：改这些说明的人要守住这一条。
+A base part or protocol core with no signature file is refused by default (`signature_missing`). `allowUnsigned` (`--allow-unsigned` on the command line) lets through only parts that "have no signature file", and the report says that it was not verified (`skipped: 'unsigned'`); it is for local development and tests: so that things can run while the code of the base part is being changed and the signature has not been published yet. A part that has a signature file is verified as usual, and a wrong signature is still refused; an empty list still lets nothing through. **This is not turning verification off**, but it is an escape hatch: a pack let through with it has not been verified and is not an official version, so the user documentation (`SKILL.md` of the base part, the templates of `SKILL.md` and README of the role part) does not mention it by a single word: whoever edits those documents must hold to this.
 
-`check`、`pack`、`unpack` 的选项：
+Options of `check`, `pack`, `unpack`:
 
-| 选项 | 作用 |
+| Option | Effect |
 |---|---|
-| `--trust <信任名单.json>` | 换一份信任名单，给测试和第三方用；官方的检查不传它。读不了、形状不对，退出 1，不退回默认名单 |
-| `--allow-unsigned` | 见上 |
+| `--trust <trust list.json>` | Swaps in another trust list, for tests and third parties; the official check does not pass it. If it cannot be read or its shape is wrong, exit 1, with no fallback to the default list |
+| `--allow-unsigned` | See above |
 
-`seal` 不验签也不做互相校验：被封的部分此时还没有签名，签名在 `seal` 之后（封完、`sign`、再 `pack`）。重新 `seal` 会删掉旧签名（清单变了，旧签名就作废了）。
+`seal` neither verifies signatures nor does the mutual verification: the part being sealed has no signature yet, and the signature comes after `seal` (seal, `sign`, then `pack`). Sealing again deletes the old signature (the manifest changed, so the old signature is void).
 
-### 调用方必须选验签的策略
+### The caller must choose a signature verification policy
 
-库里处理从外面来的东西的入口，不替调用方定「验不验签」：调用方必须明确选，不选就报错。这是为了让嵌入库的 app（导入）、补全、接收分享文件的服务端这几处，没有哪一处因为忘了传，悄悄把非官方的基础部分或协议核心放进来。
+The library's entry points that handle things coming from outside do not decide "verify or not" for the caller: the caller must choose explicitly, and gets an error if it does not. This is so that none of the places that embed the library (the app's import), complete, and the server that receives share files can quietly let in a non-official base part or protocol core because someone forgot to pass it.
 
-| 入口 | 处理什么 | 要不要选策略 |
+| Entry | What it handles | Must a policy be chosen? |
 |---|---|---|
-| `checkShareFile`、`inspectShareFile`（`lib/share.mjs`） | 从外面来的分享文件 | 要 |
-| `checkPart`（`lib/check.mjs`） | 从外面来的包目录的文件集（补全以后的整包、服务端解开的包……） | 要 |
-| `openShareFile`（`lib/share.mjs`） | 只读 zip 的容器，不查清单、哈希、签名 | 不要：它不下结论。但它交出来的文件是没验过的，所以只有 `share.mjs` 自己引用它；要从分享文件里取文件，走 `inspectShareFile`，`opened.files` 是文件集，`report.ok` 为 `true` 才能用 |
-| `selfCheckPart`（`lib/check.mjs`） | 库内部自检：做包时对正在做的角色部分（`packRolePart`）、`seal` 对正在封的部分 | 不要：不验签、不做互相校验，也不收这些选项。检查的是自己刚做出来的东西；处理外来输入不许用 |
+| `checkShareFile`, `inspectShareFile` (`lib/share.mjs`) | A share file from outside | Yes |
+| `checkPart` (`lib/check.mjs`) | The file set of a pack directory from outside (the whole pack after complete, a pack unpacked on the server, ...) | Yes |
+| `openShareFile` (`lib/share.mjs`) | A container that only reads the zip, and does not check the manifest, hashes or signatures | No: it draws no conclusion. But the files it hands out have not been verified, so only `share.mjs` itself references it; to get files out of a share file, go through `inspectShareFile`, where `opened.files` is the file set and it may be used only when `report.ok` is `true` |
+| `selfCheckPart` (`lib/check.mjs`) | The library's internal self-check: the role part being made when making a pack (`packRolePart`), the part being sealed by `seal` | No: it does not verify signatures, does not do the mutual verification, and does not accept these options. What it checks is what was just made itself; it must not be used for handling outside input |
 
-选项（`verifySignature` 和 `allowUnsigned` 的组合）：
+Options (the combinations of `verifySignature` and `allowUnsigned`):
 
-| `verifySignature` | `allowUnsigned` | 怎么办 |
+| `verifySignature` | `allowUnsigned` | What happens |
 |---|---|---|
-| 给了 | 不写或 `false` | 严格：基础部分和协议核心每个都要有官方签名，验签函数说了算 |
-| 给了 | `true` | 验签，但放过没有签名文件的部分（命令行的 `--allow-unsigned`） |
-| 没给 | `true` | 没有验签的办法：没有签名文件的部分放过，有签名文件的没法验，报 `signature_unverifiable`，不当成通过 |
-| 没给 | 不写或 `false` | 抛 `signature_policy_missing`，在读任何输入之前（连文件集的形状、分享文件的字节都没看） |
+| Given | Not written or `false` | Strict: the base part and the protocol core must each have an official signature, and the verification function has the say |
+| Given | `true` | Verifies, but lets through parts that have no signature file (`--allow-unsigned` on the command line) |
+| Not given | `true` | There is no way to verify: parts with no signature file are let through, and a part with a signature file cannot be verified and reports `signature_unverifiable`, and is not counted as passed |
+| Not given | Not written or `false` | Throws `signature_policy_missing`, before reading any input (not even the shape of the file set or the bytes of the share file have been looked at) |
 
-`mutual` 在这些入口上默认打开，调用方可以明确写 `mutual: false`。`allowUnsigned` 只在入口的选项里，`createSignatureVerifier` 本身永远是严格的。
+`mutual` is on by default at these entries, and the caller may write `mutual: false` explicitly. `allowUnsigned` exists only in the options of the entries; `createSignatureVerifier` itself is always strict.
 
-### 谁怎么传
+### Who passes what
 
-名单从哪来：命令行用正在运行的这份协议核心自带的 `protocol/trust.json`；嵌入这个库的 app 用自己带的；接收分享文件的服务端用它自己部署的那份基础部分自带的。三处都**不取被检查的东西里别处带的名单**（那是包的作者写的，不能拿来认这个包）。app 和服务端在信任判断上不写 `allowUnsigned`：产品里没有「不验签」这个选择；只有一种情形可以有意这样写：打开一个只用来读、不当成可信内容用的文件（下面的「只读来比一比」）。命令行的 `--allow-unsigned` 是给本地开发用的。
+Where the list comes from: the command line uses the `protocol/trust.json` carried by the protocol core that is running; an app that embeds this library uses the one it carries itself; the server that receives share files uses the one carried by the base part it has deployed itself. In all three places, **no list carried elsewhere inside the thing being checked is used** (it was written by the author of the pack and cannot be used to recognise that pack). The app and the server do not write `allowUnsigned` in a trust decision: the product has no choice of "do not verify"; there is only one case where it may be written on purpose: opening a file that is used only to be read and is not treated as trusted content ("Read-only comparison" below). `--allow-unsigned` on the command line is for local development.
 
-- **嵌入这个库的 app（导入、导出）**：用 app 构建时带进去的信任名单。
+- **App embedding this library (import, export)**: uses the trust list built into the app.
   ```js
-  const verifySignature = createSignatureVerifier(appTrustList);       // appTrustList 随 app 的版本走，换密钥时旧公钥留着
-  const report = await checkShareFile(bytes, { verifySignature, env });   // mutual 不写，默认做
+  const verifySignature = createSignatureVerifier(appTrustList);       // appTrustList goes with the app's version, and the old public key stays when the key changes
+  const report = await checkShareFile(bytes, { verifySignature, env });   // mutual is not written, and is done by default
   ```
-  只有角色部分的包，报告的 `mutual` 是 `{ checked: false, reason: 'no_base' }`：app 导入时拿 app 自带的基础部分对一对，不补全、不联网。app 不必带整份基础部分，只带互相校验要用的三样：基础部分的版本（根上的 `manifest-fields.json`）、协议版本（库的 `PROTOCOL_VERSION`）、能力词表（`vocab/capabilities.json`）。对的时候用库自己的规则，不在 app 里另写一遍：
+  For a pack with only a role part, the `mutual` of the report is `{ checked: false, reason: 'no_base' }`: on import, the app checks against the base part the app itself carries, without completing and without going online. The app does not need to carry the whole base part, only the three things the mutual verification uses: the version of the base part (`manifest-fields.json` at the root), the protocol version (`PROTOCOL_VERSION` of the library), and the capability vocabulary (`vocab/capabilities.json`). When checking, use the library's own rule, and do not write it again in the app:
   ```js
   const problems = mutualProblems(roleManifest, { protocol, version }, capabilityVocabularyBytes, { maxJsonBytes });
-  // 问题的形状和检查报告里的一样：protocol_incompatible、base_too_old、capability_unknown、capability_vocabulary_invalid；有就拒绝，一个字节都不上传
+  // the shape of the problems is the same as in the check report: protocol_incompatible, base_too_old, capability_unknown, capability_vocabulary_invalid; if there is any, refuse, and upload not a single byte
   ```
-  导出完整包时，基础部分是 app 固定用的那一版，用 `fetchOfficialVersion`（`protocol/lib/release-fetch.mjs`）从官方地址取回：读版本索引，zip 和它的签名、里面的内容都验过；放进包里、出包以后，再用 app 的信任名单把整个文件检查一遍，过不了就不交出去。要拿分享文件里的文件（导入），用 `inspectShareFile`，报告通过了才用 `opened.files`；别引用 `openShareFile`（见上表）。
-- **补全**：下载的基础部分 zip 先用 `verifyMessage(zip 字节, 签名文本, 信任名单)` 验 zip 本身（这几步在 `lib/release-fetch.mjs` 的 `fetchOfficialEntry`：核对大小和 SHA-256、验 zip 的签名、用 `inspectShareFile` 检查里面的内容，补全和导出完整包共用）；放进角色部分的 `voice-pack/` 以后，**再整个包做一次互相校验**（`lib/complete.mjs`）：
+  When exporting a full pack, the base part is the version the app uses fixedly, and it is fetched back from the official address with `fetchOfficialVersion` (`protocol/lib/release-fetch.mjs`): the version index is read, and the zip, its signature and the content inside are all verified; after it is put into the pack and the pack is made, the whole file set is checked once more with the app's trust list, and if it does not pass, it is not handed out. To get a file out of a share file (import), use `inspectShareFile`, and use `opened.files` only after the report has passed; do not reference `openShareFile` (see the table above).
+- **Complete**: the downloaded base part zip is first verified itself with `verifyMessage(zip bytes, signature text, trust list)` (these steps are in `fetchOfficialEntry` of `lib/release-fetch.mjs`: check the size and SHA-256, verify the signature of the zip, check the content inside with `inspectShareFile`; complete and the export of a full pack share it); after it is put into `voice-pack/` of the role part, **do the mutual verification once more on the whole pack** (`lib/complete.mjs`):
   ```js
   const report = await checkPart(filesWithBase, { verifySignature: createSignatureVerifier(trustList) });
-  if (!report.ok || !report.mutual.checked) { /* 补全没成：报错，不兜底 */ }
+  if (!report.ok || !report.mutual.checked) { /* complete did not succeed: report an error, no fallback */ }
   ```
-  `trustList` 是正在运行的这份协议核心自带的 `protocol/trust.json`（agent 环境里就是包自带的那份协议核心，这是这套校验的边界，见上一节）。补全后 `mutual.checked` 必须是 `true`，不是就说明基础部分没有落到该在的位置，当作补全失败。从基础部分 zip 里取文件时，同样别引用 `openShareFile`（见上表）。
-- **接收分享文件的服务端**：用**服务端自己部署的这份基础部分自带的** `protocol/trust.json`，不读上传的分享文件里的名单。
+  `trustList` is the `protocol/trust.json` carried by the protocol core that is running (in an agent environment, it is the protocol core that comes with the pack, which is the boundary of this verification, see the previous section). After complete, `mutual.checked` must be `true`; if it is not, the base part has not landed where it should, and it is treated as a failed complete. When taking files out of the base part zip, likewise do not reference `openShareFile` (see the table above).
+- **Servers that receive share files**: use the `protocol/trust.json` **carried by the base part the server itself deployed**, and do not read the list in the uploaded share file.
   ```js
   const trustList = JSON.parse(await readFile(path.join(basePartDir, 'protocol', 'trust.json'), 'utf-8'));
   const report = await checkShareFile(bytes, { verifySignature: createSignatureVerifier(trustList), env: { fetch: serverFetch } });
   ```
-  `mutual` 默认做；只有角色部分的包做不了（`no_base`），接不接收由服务端自己定。外部资源用的 `env.fetch` 由服务端注入，要带上不指向内网这类网络策略（见 `FORMAT.md` 的「外部资源」）。
-- **只读来比一比**：打开来源包时写了 `allowUnsigned: true`，没给验签函数（和命令行做包时交来源包一样）。这是有意的，不是漏了验签：来源包只读来和新包比一遍（查重），内容不进新包、不展示、不拿来用，也不联网、不签名、不看检查报告的结论，所以这里不是信任判断。凡是要用分享文件里的东西（导入、补全、接收发布），仍然走上面各条的验签。
-- **命令行（`check`、`pack`、`unpack`）**：`cli/checking.mjs` 永远给验签函数、打开互相校验；`--allow-unsigned` 加上 `allowUnsigned: true`，也就是上表第二行。
+  `mutual` is done by default; a pack with only a role part cannot be done (`no_base`), and whether to accept it is decided by the server itself. The `env.fetch` used for external resources is injected by the server, and must carry network policy such as not pointing to the internal network (see `FORMAT.md`「External resources」).
+- **Read-only comparison**: when opening a source pack, `allowUnsigned: true` is written and no verification function is given (the same as when the command line hands in a source pack while making a pack). This is deliberate, not a forgotten verification: the source pack is only read to be compared with the new pack (duplicate check), its content does not enter the new pack, is not displayed and not used, and the flow does not go online, does not sign, and does not look at the conclusion of the check report, so this is not a trust decision. Whatever uses things from a share file (import, complete, receiving a release) still goes through the verification in the items above.
+- **Command line (`check`, `pack`, `unpack`)**: `cli/checking.mjs` always gives a verification function and turns the mutual verification on; `--allow-unsigned` adds `allowUnsigned: true`, which is the second row of the table above.
 
-库的接口（`protocol/lib/official.mjs`，只用平台自带的 API，浏览器和 Node 都能跑）：
+The interface of the library (`protocol/lib/official.mjs`, using only the platform's own API, so it runs in browsers and in Node):
 
 ```js
 import { createSignatureVerifier } from './protocol/lib/official.mjs';
 const verifySignature = createSignatureVerifier(trustList);
-const report = await checkPart(files, { verifySignature });   // mutual 默认就开
+const report = await checkPart(files, { verifySignature });   // mutual is on by default
 ```
 
-`createSignatureVerifier` 建的时候就检查信任名单（形状不对抛 `trust_list_invalid`），并且读下一份快照，之后调用方再改手里的名单对象也不影响它。报告里每个部分的签名是 `{ part, file, present, verified, skipped?, keyId? }`，字段含义在 `lib/check.mjs` 的文件头。
+`createSignatureVerifier` checks the trust list when it is built (a wrong shape throws `trust_list_invalid`), and takes a snapshot of it, so that a caller changing the list object it holds later does not affect it. The signature of each part in the report is `{ part, file, present, verified, skipped?, keyId? }`, and the meaning of the fields is in the header of `lib/check.mjs`.
 
-除了「报错」一节的 code，验签失败还可能是 `signature_missing`（基础部分或协议核心没有签名文件，`details.path` 是应该有的文件）；所有验签失败的 `details.path` 都是签名文件在整个包里的完整路径。入口不选策略抛的是 `signature_policy_missing`（`details.entry` 是哪个入口）；只选了 `allowUnsigned: true` 而部分带着签名文件，报告里是 `signature_unverifiable`。
+Besides the codes in the section "Errors (codes of `VoicePackError`)", a verification failure may also be `signature_missing` (the base part or protocol core has no signature file; `details.path` is the file that should be there); the `details.path` of every verification failure is the full path of the signature file within the whole pack. An entry that does not choose a policy throws `signature_policy_missing` (`details.entry` is which entry); when only `allowUnsigned: true` was chosen and a part carries a signature file, the report has `signature_unverifiable`.
 
-## 互相校验
+## Mutual verification of the pack
 
-一个角色部分和它带着的基础部分对一对（`checkPart`、`checkShareFile`、`inspectShareFile` 默认就做，写 `mutual: false` 才不做；规则在 `lib/mutual.mjs`；命令行的 `check`、`pack`、`unpack` 一直做）。校验的四条（完整性、版本、能力、内容），这样落：
+A role part is checked against the base part it carries (`checkPart`, `checkShareFile` and `inspectShareFile` do it by default, and write `mutual: false` to not do it; the rules are in `lib/mutual.mjs`; `check`, `pack` and `unpack` on the command line always do it). The four checks (integrity, version, capability, content) land like this:
 
-| 要求 | 怎么查 | code |
+| Requirement | How it is checked | code |
 |---|---|---|
-| 完整性：每个文件都和清单里记的哈希一致 | 检查对每个部分各自做的（`FORMAT.md`「检查」第 3 步），不在互相校验里 | `file_modified` 等 |
-| 版本：两部分的协议版本兼容 | 角色部分的 `requires.protocolMajor` 等于基础部分的协议主版本；次版本不管（同一个主版本内兼容） | `protocol_incompatible` |
-| 版本：基础部分不低于角色部分要求的最低版本 | 基础部分的版本不低于 `requires.baseMin`，按语义化版本的次序比：预发布版低于对应的正式版，构建信息不参与 | `base_too_old` |
-| 能力：角色部分里每个功能要的所需能力，基础部分都认得 | 每项能力都是基础部分能力词表（`vocab/capabilities.json` 的 `capabilities` 的键）里的名字；每项缺的能力报一次，要它的功能都列上 | `capability_unknown`；词表读不懂 `capability_vocabulary_invalid` |
-| 内容：至少有一段参考音频和对应的文本 | 不在互相校验里：这是清单自己的规则，清单检查里判定、报告（schema 的 `minItems`、`minLength` 加语义规则 `text_blank`，`FORMAT.md`「语义规则」第 10 条）。同一条规则只在一处判定、一处报错 | `manifest_invalid` |
+| Integrity: every file agrees with the hash recorded in the manifest | Done by the check for each part on its own (`FORMAT.md`「What the check reports」step 3), not in the mutual verification | `file_modified` etc. |
+| Version: the protocol versions of the two parts are compatible | `requires.protocolMajor` of the role part equals the protocol major version of the base part; the minor version does not matter (compatible within one major version) | `protocol_incompatible` |
+| Version: the base part is not lower than the minimum version the role part requires | The version of the base part is not lower than `requires.baseMin`, compared in semantic versioning order: a pre-release is lower than the corresponding release, and build metadata does not take part | `base_too_old` |
+| Capability: for every feature in the role part, the base part recognises its required capabilities | Every capability is a name in the base part's capability vocabulary (the keys of `capabilities` in `vocab/capabilities.json`); each missing capability is reported once, with all the features that need it listed | `capability_unknown`; if the vocabulary cannot be understood, `capability_vocabulary_invalid` |
+| Content: at least one segment of reference audio and its text | Not in the mutual verification: this is the manifest's own rule, judged and reported in the manifest check (`minItems` and `minLength` in the schema plus the semantic rule `text_blank`, `FORMAT.md`「4.5 Semantic rules」rule 10). The same rule is judged in one place and reports an error in one place | `manifest_invalid` |
 
-只有角色部分、没有基础部分的包，互相校验做不了：报告的 `mutual` 是 `{ checked: false, reason: 'no_base' }`，命令行的文字报告会写「没做」和原因。这种包进入环境、补全了基础部分之后，对补全来的基础部分再做一次互相校验。
+A pack with only a role part and no base part cannot have the mutual verification done: the `mutual` of the report is `{ checked: false, reason: 'no_base' }`, and the text report of the command line says "not done" and the reason. When such a pack enters an environment and the base part is completed, the mutual verification is done once more against the base part that came with the completion.
 
-两个检查的结果各报各的，不互相遮：签名不对不会让互相校验不做，互相校验没过也不会让验签不做。
+The results of the two checks are reported each on its own and do not hide each other: a wrong signature does not make the mutual verification not run, and a failed mutual verification does not make the signature verification not run.
 
-### 报错（验签和互相校验接进检查之后新增的 code）
+### Errors (new codes after signatures and the mutual check were wired in)
 
-| code | 什么时候 |
+| code | When |
 |---|---|
-| `signature_missing` | 基础部分或协议核心没有签名文件 |
-| `signature_unverifiable` | 只选了 `allowUnsigned: true`、没给验签函数，而这个部分带着签名文件：没法验，不当成通过。`details.path` 是签名文件 |
-| `signature_policy_missing` | 信任边界上的入口（`checkPart`、`checkShareFile`、`inspectShareFile`）没选验签的策略：`verifySignature` 和 `allowUnsigned: true` 两样都没给。**抛出来，不放进报告**，在读任何输入之前。`details.entry` 是入口的名字 |
-| `protocol_incompatible` | 角色部分要求的协议主版本和基础部分的不一样。`details`：要求的、实际的、基础部分的协议版本 |
-| `base_too_old` | 基础部分比角色部分要求的最低版本低。`details`：要求的、实际的版本 |
-| `capability_unknown` | 角色部分的某个功能要一项基础部分词表里没有的所需能力。`details.capability`、`details.features` |
-| `capability_vocabulary_invalid` | 基础部分的能力词表缺了（清单里也没列）、不是 JSON、形状不对、太大。`details.reason` |
-| `signature_hook_invalid` | 验签的钩子返回的不是 `{ ok }`（程序错误） |
+| `signature_missing` | The base part or protocol core has no signature file |
+| `signature_unverifiable` | Only `allowUnsigned: true` was chosen, no verification function was given, and this part carries a signature file: it cannot be verified, and is not counted as passed. `details.path` is the signature file |
+| `signature_policy_missing` | An entry on the trust boundary (`checkPart`, `checkShareFile`, `inspectShareFile`) did not choose a verification policy: neither `verifySignature` nor `allowUnsigned: true` was given. **It is thrown, not put into the report**, before any input is read. `details.entry` is the name of the entry |
+| `protocol_incompatible` | The protocol major version the role part requires differs from that of the base part. `details`: the required, the actual, and the base part's protocol version |
+| `base_too_old` | The base part is lower than the minimum version the role part requires. `details`: the required and the actual version |
+| `capability_unknown` | A feature of the role part needs a required capability that is not in the base part's vocabulary. `details.capability`, `details.features` |
+| `capability_vocabulary_invalid` | The base part's capability vocabulary is missing (and not listed in the manifest either), is not JSON, has the wrong shape, or is too large. `details.reason` |
+| `signature_hook_invalid` | The verification hook returned something other than `{ ok }` (a programming error) |
 
-## 测试怎么做
+## How to test
 
-测试签名相关的代码：钥匙现场生成，或者用明确标成「仅测试」的固定数据（里面只有公钥，没有私钥），**绝不用官方私钥**。用真的 minisign 0.12 签出来的签名当独立来源的已知答案。接进检查的坏包用例（签名不对、协议核心被改、协议主版本不支持、基础部分版本太旧、缺所需能力）用现场生成的测试密钥签名。
+When testing code related to signatures: generate keys on the spot, or use fixed data clearly marked "for testing only" (it contains only a public key and no private key), and **never use the official private key**. Use signatures produced by real minisign 0.12 as known answers from an independent source. The bad-pack cases wired into the check (wrong signature, modified protocol core, unsupported protocol major version, base part version too old, missing required capability) are signed with test keys generated on the spot.

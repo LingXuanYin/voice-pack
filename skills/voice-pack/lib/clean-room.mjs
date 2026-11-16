@@ -15,11 +15,11 @@
 //                    new-pack/template/*               空白模板（direction.json、guidance.md、sample-lines.json、design-source.json 必须有，别的有就一起带上）
 //                    schema/manifest.schema.json       清单的 schema：从里面取和写文字有关的三个字段（direction、sampleLines、designSource）的格式，上限都在那里
 //   attributes     使用者想要的声音的属性，至少给 tags、words 里的一个：
-//                    name?      角色的名字（1–200 个字符）：卡片那一句开头写它（protocol/new-pack/README.md「示例台词」）
+//                    name?      角色的名字（1–200 个字符）：试听句开头写它（protocol/new-pack/README.md「Sample lines」）
 //                    tags?      设计词表里的标签（lib/design-vocab.mjs 认的写法，中文名和别名也认），换成规范写法交给做包 agent
 //                    words?     使用者自己的话（至少一个字符，最长 MAX_WORDS 个），原样交给做包 agent：不改写，不补充，不删减（前后的空白也不动）
 //                    language?  语言标签（zh、en、zh-CN……）
-//                    designed?  true：这个声音是设计出来的。它只记在属性里，写作 agent 不因此写设计来源；设计来源由调用方给（见 protocol/new-pack/README.md「设计来源」）；默认 false
+//                    designed?  true：这个声音是设计出来的。它只记在属性里，写作 agent 不因此写设计来源；设计来源由调用方给（见 protocol/new-pack/README.md「Design source」）；默认 false
 //                  别的键一律拒绝：不给任何夹带别的东西的口子。
 //
 // ---------------------------------------------------------------- 输出
@@ -64,19 +64,19 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 
 function invalid(problems) {
   const [first] = problems;
-  const message = problems.length === 1 ? first.problem : `${first.problem}（共 ${problems.length} 处）`;
-  return new VoicePackError('clean_room_input_invalid', `净室输入的属性不合约定（${first.field}）：${message}`, { details: { field: first.field, problem: first.problem, problems } });
+  const message = problems.length === 1 ? first.problem : `${first.problem} (${problems.length} problems in total)`;
+  return new VoicePackError('clean_room_input_invalid', `The attributes of the clean-room input are invalid (${first.field}): ${message}`, { details: { field: first.field, problem: first.problem, problems } });
 }
 
 /** 属性检查并整理成要写进 attributes.json 的样子。 */
 function normalizeAttributes(attributes) {
-  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: '必须是对象 { name?, tags?, words?, language?, designed? }' }]);
+  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: 'must be an object { name?, tags?, words?, language?, designed? }' }]);
   const problems = [];
-  for (const key of Object.keys(attributes)) if (!KEYS.includes(key)) problems.push({ field: `attributes.${key}`, problem: `不认识的键（只有 ${KEYS.join('、')}）` });
+  for (const key of Object.keys(attributes)) if (!KEYS.includes(key)) problems.push({ field: `attributes.${key}`, problem: `unknown key (allowed keys: ${KEYS.join(', ')})` });
 
   const out = {};
   if (attributes.name !== undefined) {
-    if (typeof attributes.name !== 'string' || attributes.name.trim() === '' || [...attributes.name].length > MAX_NAME) problems.push({ field: 'attributes.name', problem: `必须是 1–${MAX_NAME} 个字符的名字（不能只有空白）` });
+    if (typeof attributes.name !== 'string' || attributes.name.trim() === '' || [...attributes.name].length > MAX_NAME) problems.push({ field: 'attributes.name', problem: `must be a name of 1–${MAX_NAME} characters (not whitespace only)` });
     else out.name = attributes.name.trim();
   }
   if (attributes.tags !== undefined) {
@@ -85,17 +85,17 @@ function normalizeAttributes(attributes) {
     if (result.direction?.tags !== undefined && result.direction.tags.length > 0) out.tags = result.direction.tags;
   }
   if (attributes.language !== undefined) {
-    if (!isLanguageTag(attributes.language)) problems.push({ field: 'attributes.language', problem: `必须是语言标签，例如 zh、en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）` });
+    if (!isLanguageTag(attributes.language)) problems.push({ field: 'attributes.language', problem: `must be a language tag, for example zh, en, zh-CN (at most ${MAX_LANGUAGE_TAG} characters)` });
     else out.language = attributes.language;
   }
-  if (attributes.designed !== undefined && typeof attributes.designed !== 'boolean') problems.push({ field: 'attributes.designed', problem: '必须是 true 或 false' });
+  if (attributes.designed !== undefined && typeof attributes.designed !== 'boolean') problems.push({ field: 'attributes.designed', problem: 'must be true or false' });
   out.designed = attributes.designed === true;
   if (attributes.words !== undefined) {
-    if (typeof attributes.words !== 'string' || attributes.words.trim() === '' || [...attributes.words].length > MAX_WORDS) problems.push({ field: 'attributes.words', problem: `必须是 1–${MAX_WORDS} 个字符的一段话（不能只有空白）` });
+    if (typeof attributes.words !== 'string' || attributes.words.trim() === '' || [...attributes.words].length > MAX_WORDS) problems.push({ field: 'attributes.words', problem: `must be a piece of text of 1–${MAX_WORDS} characters (not whitespace only)` });
     else out.words = attributes.words;
   }
   if (problems.length === 0 && out.tags === undefined && out.words === undefined) {
-    problems.push({ field: 'attributes', problem: '至少给 tags、words 里的一个：什么属性都没有，做包 agent 没有东西可写' });
+    problems.push({ field: 'attributes', problem: 'give at least one of tags and words: with no attribute at all, the agent that makes the pack has nothing to write from' });
   }
   if (problems.length > 0) throw invalid(problems);
   return out;
@@ -147,7 +147,7 @@ function fieldFormats(protocolCore) {
  * @throws {VoicePackError} clean_room_input_invalid、clean_room_protocol_incomplete
  */
 export function buildCleanRoomInput(input) {
-  if (!isPlainObject(input)) throw new TypeError('input 必须是对象 { protocolCore, attributes }');
+  if (!isPlainObject(input)) throw new TypeError('input must be an object { protocolCore, attributes }');
   const { protocolCore } = input;
   assertFileSet(protocolCore);
   const attributes = normalizeAttributes(input.attributes);
@@ -155,11 +155,11 @@ export function buildCleanRoomInput(input) {
   const templates = [...protocolCore.keys()].filter((path) => path.startsWith(TEMPLATE_DIRECTORY) && path.length > TEMPLATE_DIRECTORY.length).sort();
   const missing = [...FIXED.map(([, from]) => from), ...REQUIRED_TEMPLATES.map((name) => `${TEMPLATE_DIRECTORY}${name}`), SCHEMA_FILE].filter((path) => !protocolCore.has(path));
   if (missing.length > 0) {
-    throw new VoicePackError('clean_room_protocol_incomplete', `协议核心里缺做新包要用的文件：${missing.join('、')}（用官方发布的基础部分里的 protocol/）`, { details: { missing, invalid: [] } });
+    throw new VoicePackError('clean_room_protocol_incomplete', `The protocol core lacks files needed to make a new pack: ${missing.join(', ')} (use the protocol/ in the officially released base part)`, { details: { missing, invalid: [] } });
   }
   const formats = fieldFormats(protocolCore);
   if (formats === null) {
-    throw new VoicePackError('clean_room_protocol_incomplete', `协议核心里的 ${SCHEMA_FILE} 读不了，或者没有 direction、sampleLines、designSource 的定义`, { details: { missing: [], invalid: [SCHEMA_FILE] } });
+    throw new VoicePackError('clean_room_protocol_incomplete', `${SCHEMA_FILE} in the protocol core cannot be read, or it has no definition of direction, sampleLines, or designSource`, { details: { missing: [], invalid: [SCHEMA_FILE] } });
   }
 
   const files = new Map();

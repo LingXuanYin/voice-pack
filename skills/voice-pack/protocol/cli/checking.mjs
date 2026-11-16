@@ -34,7 +34,7 @@ import { DEFAULT_TRUST_FILE, readFileBytes, readTrustListFile } from './signing.
 /** check、pack、unpack 共有的选项，合并进各自 parseOptions 的 spec。 */
 export const CHECK_OPTIONS = Object.freeze({ values: Object.freeze(['trust']), flags: Object.freeze(['allow-unsigned']) });
 /** 写在这三个命令的 usage 里的那一段。 */
-export const CHECK_USAGE = '[--trust <信任名单.json>] [--allow-unsigned]';
+export const CHECK_USAGE = '[--trust <trust-list.json>] [--allow-unsigned]';
 
 /** parseOptions 的结果 -> inspectTarget 的设置。 */
 export function checkSettings(options) {
@@ -58,9 +58,9 @@ function verifyingOptions(ctx, { trust, allowUnsigned = false } = {}) {
 export async function inspectTarget(target, ctx, settings = {}) {
   const options = verifyingOptions(ctx, settings);
   const full = path.resolve(ctx.cwd, target);
-  const kind = pathKind(full, '要检查的路径');
+  const kind = pathKind(full, 'path to check');
   if (kind === 'file') {
-    const { opened, report } = await inspectShareFile(readFileBytes(full, '分享文件'), options);
+    const { opened, report } = await inspectShareFile(readFileBytes(full, 'share file'), options);
     return { kind, report, files: opened?.files ?? null, directory: opened?.directory ?? null };
   }
   const { files, problems } = readDirectory(full);

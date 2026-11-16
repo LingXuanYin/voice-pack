@@ -71,16 +71,16 @@ function runFfmpeg(executable, args, input, timeoutMs) {
       await new Promise((resolve, reject) => {
         execFile(executable, argv, { timeout: timeoutMs, maxBuffer: Number.POSITIVE_INFINITY, windowsHide: true }, (error, _stdout, stderr) => {
           if (!error) return resolve();
-          if (error.killed) return reject(new Error(`ffmpeg 超过 ${Math.round(timeoutMs / 1000)} 秒没有结束，已被结束`, { cause: scrubbedCause(error) }));
-          if (error.code === 'ENOENT') return reject(new Error(reportable(`ffmpeg 启动不了（${executable}）：${error.message}`), { cause: scrubbedCause(error) }));
-          reject(new Error(reportable(`ffmpeg 退出码 ${error.code}：${reportedText(stderr) || error.message}`), { cause: scrubbedCause(error) }));
+          if (error.killed) return reject(new Error(`ffmpeg did not finish within ${Math.round(timeoutMs / 1000)} seconds and was stopped`, { cause: scrubbedCause(error) }));
+          if (error.code === 'ENOENT') return reject(new Error(reportable(`ffmpeg could not start (${executable}): ${error.message}`), { cause: scrubbedCause(error) }));
+          reject(new Error(reportable(`ffmpeg failed with exit code ${error.code}: ${reportedText(stderr) || error.message}`), { cause: scrubbedCause(error) }));
         });
       });
       let output;
       try {
         output = await fs.promises.readFile(outputFile);
       } catch (cause) {
-        throw new Error('ffmpeg 正常结束了，但没有生成输出文件', { cause });
+        throw new Error('ffmpeg finished normally but did not produce an output file', { cause });
       }
       return new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
     } finally {

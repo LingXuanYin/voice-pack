@@ -205,7 +205,7 @@ export function checkedAudio(audio) {
     Number.isInteger(audio.sampleRate) && audio.sampleRate > 0 &&
     Array.isArray(audio.samples) && audio.samples.length > 0 &&
     audio.samples.every((s) => s !== null && typeof s === 'object' && typeof s.length === 'number' && s.length === audio.samples[0].length);
-  if (!ok) throw new TypeError('audio 必须是 { sampleRate: 正整数, samples: 至少一个声道的数组，每个声道一样长 }');
+  if (!ok) throw new TypeError('audio must be { sampleRate: positive integer, samples: array of at least one channel, all channels the same length }');
   return audio;
 }
 
@@ -399,12 +399,12 @@ export function measureAudio(audio) {
 // ---------------------------------------------------------------- 判
 
 function mergedThresholds(overrides) {
-  if (overrides === null || typeof overrides !== 'object' || Array.isArray(overrides)) throw new TypeError('thresholds 必须是对象，例如 { duration: { warnAbove: 30 } }');
+  if (overrides === null || typeof overrides !== 'object' || Array.isArray(overrides)) throw new TypeError('thresholds must be an object, for example { duration: { warnAbove: 30 } }');
   const merged = {};
   for (const group of Object.keys(overrides)) {
-    if (!(group in REFERENCE_THRESHOLDS)) throw new TypeError(`thresholds 里没有 ${group} 这一组（有：${Object.keys(REFERENCE_THRESHOLDS).join('、')}）`);
+    if (!(group in REFERENCE_THRESHOLDS)) throw new TypeError(`thresholds has no group ${group} (groups: ${Object.keys(REFERENCE_THRESHOLDS).join(', ')})`);
     for (const limit of Object.keys(overrides[group] ?? {})) {
-      if (!(limit in REFERENCE_THRESHOLDS[group])) throw new TypeError(`thresholds.${group} 里没有 ${limit} 这条线（有：${Object.keys(REFERENCE_THRESHOLDS[group]).join('、')}）`);
+      if (!(limit in REFERENCE_THRESHOLDS[group])) throw new TypeError(`thresholds.${group} has no limit ${limit} (limits: ${Object.keys(REFERENCE_THRESHOLDS[group]).join(', ')})`);
     }
   }
   for (const group of Object.keys(REFERENCE_THRESHOLDS)) merged[group] = { ...REFERENCE_THRESHOLDS[group], ...(overrides[group] ?? {}) };
@@ -416,7 +416,7 @@ const pct = (ratio) => `${round(ratio * 100, 2)}%`;
 function judge(metrics, t) {
   const need = ['durationSec', 'sampleRate', 'clipping', 'silenceRatio', 'noiseFloorDbfs', 'loudnessLufs', 'snrDb'];
   if (metrics === null || typeof metrics !== 'object' || need.some((k) => !(k in metrics)) || metrics.clipping === null || typeof metrics.clipping !== 'object') {
-    throw new TypeError(`metrics 必须是 measureAudio 的结果（要有 ${need.join('、')}）`);
+    throw new TypeError(`metrics must be a result of measureAudio (it needs ${need.join(', ')})`);
   }
   const reasons = [];
   const add = (code, message, value, limit) => reasons.push({ code, severity: 'warn', message, value, limit });
@@ -424,30 +424,30 @@ function judge(metrics, t) {
   const clip = metrics.clipping.ratio;
 
   const d = t.duration;
-  if (dur < d.warnBelow) add('duration_short', `时长 ${dur} 秒，短于建议的 ${d.warnBelow} 秒：内容少，最好换一段更长的`, dur, d.warnBelow);
-  if (dur > d.warnAbove) add('duration_long', `时长 ${dur} 秒，长于建议的 ${d.warnAbove} 秒：最好切短`, dur, d.warnAbove);
+  if (dur < d.warnBelow) add('duration_short', `Duration ${dur} s is shorter than the recommended ${d.warnBelow} s: too little content; better use a longer one`, dur, d.warnBelow);
+  if (dur > d.warnAbove) add('duration_long', `Duration ${dur} s is longer than the recommended ${d.warnAbove} s: better cut it shorter`, dur, d.warnAbove);
 
   const s = t.sampleRate;
-  if (rate < s.warnBelow) add('sample_rate_low', `采样率 ${rate} Hz，低于 ${s.warnBelow} Hz：${rate / 2} Hz 以上的高频没有，音色会暗一些；有更高采样率的原声就用原声`, rate, s.warnBelow);
+  if (rate < s.warnBelow) add('sample_rate_low', `Sample rate ${rate} Hz is below ${s.warnBelow} Hz: there is nothing above ${rate / 2} Hz, so the timbre will sound darker; if the original has a higher sample rate, use the original`, rate, s.warnBelow);
 
   const c = t.clippingRatio;
-  if (clip >= c.warnAtOrAbove) add('clipping', `有削波：${pct(clip)} 的采样在平顶上（${metrics.clipping.samples} 个顶在满幅），会带进失真；能重录就重录，或者换一段`, clip, c.warnAtOrAbove);
+  if (clip >= c.warnAtOrAbove) add('clipping', `Clipping: ${pct(clip)} of the samples sit on a flat top (${metrics.clipping.samples} at full scale), which brings in distortion; re-record if you can, or use another passage`, clip, c.warnAtOrAbove);
 
   const q = t.silenceRatio;
-  if (silence !== null && silence > q.warnAbove) add('silence_high', `静音占 ${pct(silence)}，超过 ${pct(q.warnAbove)}：停顿太多，有效的说话时间短；最好裁掉长停顿`, silence, q.warnAbove);
+  if (silence !== null && silence > q.warnAbove) add('silence_high', `Silence is ${pct(silence)}, above ${pct(q.warnAbove)}: too many pauses, so the usable speech is short; better trim the long pauses`, silence, q.warnAbove);
 
   // 响度只剩「量不出来」这一条：高低不判（太轻换成了信噪比，太响没有不随增益变的合理的线），见文件头
   if (loud === null) {
-    if (dur >= LOUDNESS_BLOCK_SECONDS) add('loudness_inaudible', `整段都低于 ${LOUDNESS_ABSOLUTE_GATE} LUFS：几乎听不见，量不出响度`, null, LOUDNESS_ABSOLUTE_GATE);
-    else add('loudness_unmeasured', `短于 ${LOUDNESS_BLOCK_SECONDS} 秒，量不出响度`, null, LOUDNESS_BLOCK_SECONDS);
+    if (dur >= LOUDNESS_BLOCK_SECONDS) add('loudness_inaudible', `The whole clip is below ${LOUDNESS_ABSOLUTE_GATE} LUFS: it is almost inaudible, so the loudness cannot be measured`, null, LOUDNESS_ABSOLUTE_GATE);
+    else add('loudness_unmeasured', `Shorter than ${LOUDNESS_BLOCK_SECONDS} s, so the loudness cannot be measured`, null, LOUDNESS_BLOCK_SECONDS);
   }
 
   const r = t.snrDb;
   const n = t.noiseFloorSnrDb;
   if (snr !== null) {
-    if (snr < r.warnBelow) add('snr_low', `信噪比 ${snr} dB（响度减底噪），低于 ${r.warnBelow} dB：背景噪声偏大（噪声、房间声或背景音乐）；能重录就换个安静的地方重录，或者换一段`, snr, r.warnBelow);
+    if (snr < r.warnBelow) add('snr_low', `Signal-to-noise ratio ${snr} dB (loudness minus noise floor) is below ${r.warnBelow} dB: the background noise is high (noise, room sound or background music); re-record somewhere quiet if you can, or use another passage`, snr, r.warnBelow);
     // 底噪偏高：信噪比不到 snr_low 的线的，上面已经说了，这里管 snr_low 的线和这条线之间的；量的是信噪比，随整体增益不变，见文件头「底噪」
-    else if (snr < n.warnBelow) add('noise_floor_high', `信噪比 ${snr} dB（响度减底噪），低于 ${n.warnBelow} dB：背景离说话太近，整段都有持续的背景声（噪声、房间声或背景音乐）；这个量分不清噪声和伴奏，要听一下`, snr, n.warnBelow);
+    else if (snr < n.warnBelow) add('noise_floor_high', `Signal-to-noise ratio ${snr} dB (loudness minus noise floor) is below ${n.warnBelow} dB: the background is too close to the speech, with continuous background sound throughout (noise, room sound or background music); this measure cannot tell noise from accompaniment, so listen to it`, snr, n.warnBelow);
   }
 
   return { verdict: reasons.length > 0 ? 'warn' : 'ok', reasons };

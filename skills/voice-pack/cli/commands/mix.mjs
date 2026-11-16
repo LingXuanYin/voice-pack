@@ -31,7 +31,7 @@
 //   情绪、风格、能量改的是每一句开头的提示，带着 --only 没点到的句子也沿用不了，cli/commands/dub.mjs 文件头「沿用」）。停在 dub_text_rejected 的，换参考、换开头的提示分开说：
 //   换参考的只换 --reference-tag，带着 --only 的照样带着；换开头的提示的（--emotion、--style、--energy、设定写的）每一句开头的提示都变了，照旧带着 --only 再跑，没点到的会记成这一次没做（skipped），
 //   所以给两条路：只给没做好的几句换，改成 .json 台本，新的写在这几项自己的 labels 上（盖过命令行和设定的；不能是空的），命令里的 --emotion 这几个、--setup、--only 照旧，
-//   做好的沿用（怎么改指到 references/dub-details.md「只给几句换开头的提示」）；或者整份都换，不带 --only 再跑（去掉了 --only，那条命令里只想给那几句用的 --reference-tag 也用到整份台本上，
+//   做好的沿用（怎么改指到 references/dub-details.md「Changing only the opening cue of a few lines」）；或者整份都换，不带 --only 再跑（去掉了 --only，那条命令里只想给那几句用的 --reference-tag 也用到整份台本上，
 //   只想那几句用它的，把台本拆成几份、各跑一次 dub，再用 mix 接起来：一次 dub 里一个包只用一个参考标签）。不带 --only 的，换了参考或开头的提示，参考段或开头的提示变了的句子
 //   做好的也要重配、再计一次费（点名现在做好的几句）。
 //   停下的那条带没带 --only，dub.json 里看不出来，两种都说：不带 --only 的做好的沿用；带着 --only 的点到的一律重配，停下以前这一次做好的几句（ok、没有 carriedOver）
@@ -53,8 +53,8 @@ import { CHAPTER_SPLIT_REMINDER } from '../../lib/dub.mjs';
 import { assertFresh, isPlainObject, parseArgs, readBytes, usageProblem } from '../input.mjs';
 import { isTextRejectedUnit, isTooLong, isTooLongScene, isTooShortUnit, isUnretrievedUnit, rerunsWithoutOnly } from '../dub-failures.mjs';
 
-export const summary = '把 dub 做好的各句接成一个 WAV 成品（停顿、次序、语速；本地计算，不花钱）';
-export const usage = 'mix <dub 输出目录>... --out <文件.wav> [--json]';
+export const summary = 'Join the lines dub has finished into one WAV result (pauses, order, speed; computed locally, free)';
+export const usage = 'mix <dub-output-dir>... --out <file.wav> [--json]';
 
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，不在表里）。 */
 export const FLAGS = { out: 'string' };
@@ -65,10 +65,13 @@ const DUB_UNFINISHED = 'dub_unfinished';
 /** dub 停在「连着被拒」的保护上时的 stoppedBy.code（lib/dub.mjs 的文件头「一段失败了怎么办」：还没有一句成功、服务商拒了 3 句）。 */
 const DUB_TEXT_REJECTED = 'dub_text_rejected';
 
+/** 一串句号写成 line 3 或 lines 3, 4, 5（文字输出和提示用）。 */
+const linesOf = (numbers) => `${numbers.length === 1 ? 'line' : 'lines'} ${numbers.join(', ')}`;
+
 /** 没取回的一句怎么取回（dub 报告里这一句的 error.details.retrieve，同 dub 的文字输出：网址一律不打印）；没给就让人看适配器的说明。 */
 const retrieveOf = (item) => {
   const said = item.error?.details?.retrieve;
-  return typeof said === 'string' && said.trim() !== '' ? said.trim().replace(/https?:\/\/\S+/g, '（网址不打印）') : `适配器没说怎么取回（错误码 ${item.error?.code}），看适配器的说明`;
+  return typeof said === 'string' && said.trim() !== '' ? said.trim().replace(/https?:\/\/\S+/g, '(URL not printed)') : `the adapter did not say how to retrieve it (error code ${item.error?.code}); see the adapter's description`;
 };
 
 /**
@@ -88,40 +91,40 @@ function redoAdvice(items, report, keep) {
   const special = new Set([...unretrieved, ...tooShort, ...tooLongScenes, ...rejected]);
   const redo = items.filter((item) => !special.has(item));
   const numbers = (list) => list.map((item) => item.number);
-  if (special.size === 0) return `先用 dub --only ${numbers(redo).join(',')} 重做这几句${keep}，再 mix`;
-  const these = (list) => (list.length === 1 ? '这一句' : '这几句');
+  if (special.size === 0) return `first redo ${redo.length === 1 ? 'this line' : 'these lines'} with dub --only ${numbers(redo).join(',')}${keep}; then mix`;
+  const these = (list) => (list.length === 1 ? 'this line' : 'these lines');
   // 只给一条重做的命令（cli/dub-failures.mjs 的文件头）：有字太少的、一场戏装不下的，只说改好以后不带 --only 再跑；不然文字被拒的和原样重做就行的并成一条 --only
   const rerun = rerunsWithoutOnly(items.map(unitOf));
   const parts = [];
   if (rejected.length > 0) {
-    const codes = [...new Set(rejected.map((item) => unitOf(item).error?.code))].join('、');
-    const fix = `第 ${numbers(rejected).join('、')} 句文字被拒（错误码 ${codes}，原因见 dub 的输出里「文字被拒」一段，或者 dub.json 里${these(rejected)}的 error；只和${these(rejected)}的字有关，原样重做还是会被拒）：先改台本里${these(rejected)}的字`;
+    const codes = [...new Set(rejected.map((item) => unitOf(item).error?.code))].join(', ');
+    const fix = `the text of ${linesOf(numbers(rejected))} was rejected (error code ${codes}; the reason is in the "Text rejected" section of the dub output, or in the error of ${these(rejected)} in dub.json; it depends only on the text of ${these(rejected)}, and redoing it unchanged is rejected again): first change the text of ${these(rejected)} in the script`;
     // 原样重做就行的一起点上：先单独重做它们，没点到的被拒的句子会记成这一次没做，被拒的原因就从 dub.json 里丢了
-    const together = redo.length > 0 ? `，和原样重做就行的第 ${numbers(redo).join('、')} 句一起（不先单独重做${redo.length === 1 ? '它' : '它们'}：没点到的被拒的句子会记成这一次没做，被拒的原因就从 dub.json 里丢了）` : '';
+    const together = redo.length > 0 ? ` (this also redoes ${linesOf(numbers(redo))}, which can simply be redone unchanged; do not redo ${redo.length === 1 ? 'it' : 'them'} alone first: a rejected line that --only does not name is recorded as not done this time, and the reason it was rejected is lost from dub.json)` : '';
     const all = numbers([...rejected, ...redo]).sort((a, b) => a - b);
-    parts.push(rerun ? fix : `${fix}，再用一条 dub --only ${all.join(',')} 重做${keep}${together}`);
+    parts.push(rerun ? fix : `${fix}; then redo with one command: dub --only ${all.join(',')}${keep}${together}`);
     // 不是一场戏的一句，平台说一个请求装不下（dub 的文件头「文字被拒」的例外的最后一条）：改短；要切成两个请求的，序号会变。两种切法代价不同，同 dub 的那一行：
     // 加章节标记只重新切那一章，调小 --max-chars 整份重新切（做好的切法变了也要重配、再计一次费）
     const long = rejected.filter((item) => isTooLong(unitOf(item)));
-    const who = long.length === rejected.length ? `平台说一个请求说不完${these(long)}` : `其中第 ${numbers(long).join('、')} 句是平台说一个请求说不完`;
-    if (long.length > 0) parts.push(`${who}：把${long.length === 1 ? '它' : '它们'}改短${rerun ? '' : '，再照这条命令重做'}；要切成两个请求的，切开以后序号会变，改好以后不带 --only 再跑那条 dub 命令（在中间另起一行写章节标记 # 标题的（${CHAPTER_SPLIT_REMINDER}），只有那一章重新切，别的章做好的沿用，不重复花钱；给 dub 调小 --max-chars 的，整份台本都照新的数重新切，比新的数长的请求都会切开，切法变了的做好了也要重配、再计一次费）`);
+    const who = long.length === rejected.length ? `the platform says one request cannot hold ${these(long)}` : `among them, ${linesOf(numbers(long))}: the platform says one request cannot hold ${long.length === 1 ? 'it' : 'them'}`;
+    if (long.length > 0) parts.push(`${who}: shorten ${long.length === 1 ? 'it' : 'them'}${rerun ? '' : ', then redo with this command'}; to split into two requests, the line numbers change after the split, so after fixing run that dub command again without --only (to split in the middle, start a new line with a chapter marker # title (${CHAPTER_SPLIT_REMINDER}) and only that chapter is split again, while chapters already done are reused at no extra cost; if you lower --max-chars for dub, the whole script is split again by the new number and every request longer than it is split, and lines whose split changed must be dubbed again and are charged again)`);
   } else if (redo.length > 0 && !rerun) {
-    parts.push(`先用 dub --only ${numbers(redo).join(',')} 重做第 ${numbers(redo).join('、')} 句${keep}`);
+    parts.push(`first redo ${linesOf(numbers(redo))} with dub --only ${numbers(redo).join(',')}${keep}`);
   }
   if (tooShort.length > 0) {
     const min = unitOf(tooShort[0]).error?.details?.min;
-    parts.push(`第 ${numbers(tooShort).join('、')} 句比合成能力的下限${typeof min === 'number' ? `（${min} 个字）` : ''}短，和相邻的句子也并不成够长的一段，dub 没合成（字数见 dub 的输出里「没合成」一段，或者 dub.json 里${these(tooShort)}的 error）：原样重做没有用，先改台本，让${these(tooShort)}够长`);
+    parts.push(`${linesOf(numbers(tooShort))}: shorter than the lower limit of the synthesis capability${typeof min === 'number' ? ` (${min} characters)` : ''}, and not long enough together with the neighbouring lines either, so dub did not synthesize ${tooShort.length === 1 ? 'it' : 'them'} (the character counts are in the "Not synthesized" section of the dub output, or in the error of ${these(tooShort)} in dub.json): redoing unchanged does not help; first change the script to make ${these(tooShort)} long enough`);
   }
   if (tooLongScenes.length > 0) {
-    parts.push(`第 ${numbers(tooLongScenes).join('、')} 句（一场戏一个请求）平台说一个请求说不完，原样重做还是装不下（见 dub 的输出里「装不下」一段，或者 dub.json 里${these(tooLongScenes)}的 error）：在那一场中间加一个章节标记（# 标题）把它切成两场（${CHAPTER_SPLIT_REMINDER}），或者给 dub 加 --no-scene 一行一个请求（整份都一行一个请求，做好的几场也要重配）`);
+    parts.push(`${linesOf(numbers(tooLongScenes))} (one request per scene): the platform says one request cannot hold ${tooLongScenes.length === 1 ? 'it' : 'them'}, and redoing unchanged does not fit either (see the "Does not fit" section of the dub output, or the error of ${these(tooLongScenes)} in dub.json): add a chapter marker (# title) in the middle of the scene to split it into two scenes (${CHAPTER_SPLIT_REMINDER}), or add --no-scene to dub for one request per line (the whole script then goes one request per line, and scenes already done must be dubbed again)`);
   }
   if (rerun) {
     // 字太少的、一场戏装不下的：改好以后不带 --only 再跑（序号可能会变），别的没做成的在这一次里一起重做，不另给 --only
     const others = numbers([...rejected, ...redo]).sort((a, b) => a - b);
-    parts.push(`改好以后不带 --only 再跑那条 dub 命令${keep}（序号可能会变；做好的、请求没变的沿用，不重复花钱${others.length > 0 ? `；别的没做成的第 ${others.join('、')} 句也在这一次里一起重做，不用另跑 --only` : ''}）`);
+    parts.push(`after fixing, run that dub command again without --only${keep} (the line numbers may change; lines already done whose request did not change are reused at no extra cost${others.length > 0 ? `; ${linesOf(others)}, which were not done, are also redone in that run, so no separate --only run is needed` : ''})`);
   }
   if (unretrieved.length > 0) parts.push(unretrievedAdvice(unretrieved));
-  return parts.join('；');
+  return parts.join('; ');
 }
 
 /**
@@ -130,7 +133,7 @@ function redoAdvice(items, report, keep) {
  */
 function unretrievedAdvice(items) {
   const numbers = items.map((item) => item.number ?? item.index + 1);
-  return `第 ${numbers.join('、')} 句服务那头已经做完、计过费，只是结果没取回：再跑整份台本的那条 dub 命令（只重做别的句子的那条不会）会把它重配，再计一次费；不想重配，照适配器说的手动取回（${items.map(retrieveOf).join('；')}），可手动取回的音频现在还不能交给 mix 用`;
+  return `${linesOf(numbers)}: the service has finished and billed ${numbers.length === 1 ? 'it' : 'them'}, but the result was not retrieved: running the dub command for the whole script again (the one that only redoes other lines does not) dubs ${numbers.length === 1 ? 'it' : 'them'} again and charges again; if you do not want that, retrieve ${numbers.length === 1 ? 'it' : 'them'} by hand as the adapter says (${items.map(retrieveOf).join('; ')}); audio retrieved by hand cannot yet be handed to mix`;
 }
 
 /**
@@ -151,45 +154,46 @@ function unretrievedAdvice(items) {
 function stoppedAdvice(stopped, report, keep) {
   const units = Array.isArray(report.units) ? report.units.filter(isPlainObject) : [];
   const unretrieved = units.filter(isUnretrievedUnit);
-  const tail = unretrieved.length > 0 ? `；${unretrievedAdvice(unretrieved)}` : '';
+  const tail = unretrieved.length > 0 ? `; ${unretrievedAdvice(unretrieved)}` : '';
   const unfinishedAfterSynthesis = units.filter((unit) => unit.status === 'ok' && unit.afterSynthesisFailed !== undefined).map((unit) => unit.index + 1);
-  const rebilled = unfinishedAfterSynthesis.length > 0 ? `；第 ${unfinishedAfterSynthesis.join('、')} 句合成成了、合成以后的几步出错，不算做完，会重配、再计一次费` : '';
+  const rebilled = unfinishedAfterSynthesis.length > 0 ? `; ${linesOf(unfinishedAfterSynthesis)}: synthesized, but the steps after synthesis failed, so ${unfinishedAfterSynthesis.length === 1 ? 'it is' : 'they are'} not counted as done and will be dubbed again and charged again` : '';
   // 再跑停下的那条命令：带着 --only 的照样带着（去掉了，只想给那几句用的参考就用到整份台本上）。带着 --only 只管点到的几句的只有参考：
   // 没点到的不比参考段；情绪、风格、能量改的是每一句开头的提示，沿用要它一样（cli/commands/dub.mjs 文件头「沿用」）
-  const keepOnly = '带着 --only 的照样带着：去掉了，那条命令里只想给那几句用的 --reference-tag 就用到整份台本上，做好的句子请求变了，也要重配、再计一次费（只有参考是这样：情绪、风格、能量改的是每一句开头的提示，带着 --only 没点到的句子也沿用不了）';
+  const keepOnly = 'keep --only if the command had it: if you remove it, the --reference-tag that was meant for only some lines in that command applies to the whole script, so the lines already done get a different request and must be dubbed again and charged again (this holds only for the reference: emotion, style and energy change the cue at the start of every line, so with --only the lines it does not name cannot be reused either)';
   if (stopped.code === DUB_UNFINISHED) {
     const fixes = fixFirstAdvice(units, new Set());
-    const first = fixes.length > 0 ? `${fixes.join('；')}；改好以后` : '';
-    return `${first}再跑同一条 dub 命令${keep}（选项照旧，${keepOnly}）；${carriedAdvice(units)}${rebilled}，再 mix${tail}`;
+    const first = fixes.length > 0 ? `${fixes.join('; ')}; after fixing, ` : '';
+    return `${first}run the same dub command again${keep} with the same options (${keepOnly}); ${carriedAdvice(units)}${rebilled}, then mix${tail}`;
   }
-  const said = '（dub 停下时的说明就是括号里这一段：dub 停下时打在标准错误里，dub.json 的 stoppedBy 里也有）';
+  const said = ' (the explanation is the part in parentheses at the start of this message: dub printed it to standard error when it stopped, and it is also in stoppedBy in dub.json)';
   if (stopped.code === DUB_TEXT_REJECTED) {
     // 被拒的几句：stoppedBy.details.rejected 的 unit 从 0 起，换成和 --only、文件名一样从 1 起的序号；没有就看报告里文字被拒的几句
     const listed = Array.isArray(stopped.details?.rejected) ? stopped.details.rejected.map((item) => item?.unit).filter(Number.isInteger).map((unit) => unit + 1) : [];
     const rejected = listed.length > 0 ? listed : units.filter(isTextRejectedUnit).map((unit) => unit.index + 1);
-    const which = rejected.length > 0 ? `被拒的第 ${rejected.join('、')} 句` : '被拒的那几句';
+    const which = rejected.length > 0 ? `the rejected ${linesOf(rejected)}` : 'the rejected lines';
     const fixes = fixFirstAdvice(units, new Set(rejected));
     // 沿用只认同一个请求（cli/commands/dub.mjs 文件头「沿用」）：不带 --only 的那条，参考段或开头的提示变了的句子做好的也要重配
     const done = units.filter((unit) => unit.status === 'ok' && unit.afterSynthesisFailed === undefined).map((unit) => unit.index + 1);
-    const redone = done.length > 0 ? `，现在做好的第 ${done.join('、')} 句也要再计一次费` : ''; // 这个目录里还没有做好的句子：没有要多付的
+    const redone = done.length > 0 ? `, and ${linesOf(done)}, done now, must also be charged again` : ''; // 这个目录里还没有做好的句子：没有要多付的
     // 停下以前这一次做好的（ok、不是沿用来的；dub 停下时已经发出去、后来成了的）：停下的那条带着 --only 的话它们是点到的，照旧带着会重配（同 carriedAdvice），两条路各说
     const doneHere = units.filter((unit) => unit.status === 'ok' && unit.carriedOver !== true && unit.afterSynthesisFailed === undefined).map((unit) => unit.index + 1);
-    const it = doneHere.length === 1 ? '它' : '它们';
-    const hereNamed = `第 ${doneHere.join('、')} 句是停下以前这一次做好的`;
+    const it = doneHere.length === 1 ? 'it' : 'them';
+    const they = doneHere.length === 1 ? 'it' : 'they';
+    const hereNamed = `${linesOf(doneHere)}, done in this run before dub stopped`;
     // 换参考：--only 没点到的不比参考段，照旧沿用，带着 --only 的照样带着；点到的、这一次做好的照新的参考重配，要留着就从 --only 里去掉
-    const hereByReference = doneHere.length > 0 ? `；点到的${hereNamed}，也照新的参考重配、再计一次费，要留着${it}，从 --only 里去掉${it}，${it}就沿用` : '';
-    const byReference = `换参考的只换 --reference-tag，带着 --only 的照样带着，只重配点到的几句（没点到的不比参考段，照旧沿用${hereByReference}）；不带 --only 的是整份台本，参考段变了的句子都要重配${redone}`;
+    const hereByReference = doneHere.length > 0 ? `; if --only names ${hereNamed}, ${they} will also be dubbed again with the new reference and charged again; to keep ${it}, remove ${it} from --only and ${doneHere.length === 1 ? 'it is' : 'they are'} reused` : '';
+    const byReference = `To change the reference, change only --reference-tag and keep --only if the command had it: only the lines it names are dubbed again (lines it does not name are not compared with the reference segment and are reused as before${hereByReference}); without --only the whole script is run, and every line whose reference segment changed must be dubbed again${redone}`;
     // 换开头的提示：每一句开头的提示都变了，沿用比开头的提示，带着 --only 没点到的对不上、记成 skipped。只给没做好的几句换，用 .json 台本项自己的 labels（盖过命令行和设定的）；
     // 这一次做好的不写新的，留在 --only 里会照原来的提示和参考重配，所以要从 --only 里去掉（去掉以后开头的提示没变，沿用）
-    const hereByOpeningCue = doneHere.length > 0 ? `，只是${hereNamed}，不写新的，要从 --only 里去掉（留着${it}会照原来的提示和参考重配、再计一次费）` : '';
-    const kept = done.length > 0 ? `做好的第 ${done.join('、')} 句沿用、不花钱` : '做好的沿用、不花钱';
+    const hereByOpeningCue = doneHere.length > 0 ? `, except ${hereNamed}: ${doneHere.length === 1 ? 'it does' : 'they do'} not get a new one, so remove ${it} from --only (if kept, ${they} will be dubbed again with the old cue and reference and charged again)` : '';
+    const kept = done.length > 0 ? `lines already done (${done.join(', ')}) are reused at no cost` : 'lines already done are reused at no cost';
     // 整份都换：去掉了 --only，停下的那条命令里只想给那几句用的 --reference-tag 也用到整份台本上（同 keepOnly）；一次 dub 里一个包只用一个参考标签，只想那几句用它的拆开跑、再 mix
-    const wholeScript = '（去掉了 --only，那条命令里只想给那几句用的 --reference-tag 也用到整份台本上，没点到的句子参考段也跟着换；只想那几句用它的，把台本拆成几份、各跑一次 dub（一次 dub 里一个包只用一个参考标签，各用各的 --out），再用 mix 按次序接起来）';
-    const byOpeningCue = `换开头的提示的（--emotion、--style、--energy、设定写的），每一句开头的提示都变了，沿用要开头的提示一样：带着 --only 再跑，没点到的句子对不上上一次的，会记成这一次没做（skipped），mix 还是出不了成品。两条路：只给没做好的几句换，把台本改成 .json 台本（怎么改见 references/dub-details.md「只给几句换开头的提示」），新的写在这几项自己的 labels 上（盖过 --emotion 这几个和设定写的同一项；不能是空的，要去掉的走下一条），命令里的 --emotion 这几个、--setup 照旧，带着 --only 的照样带着${hereByOpeningCue}，${kept}；或者整份都换，不带 --only 再跑${wholeScript}，每一句都照新的开头的提示重配${redone}`;
-    return `原样重做还是会被拒，多半是参考或别的输入被拦了${said}：先换一段参考（给 dub 换一个 --reference-tag，换一个音色基底标签，没给的加上，包的 SKILL.md 按语言列着有哪些），或者改掉、去掉开头的提示（--emotion、--style、--energy；设定写的，换一套 --setup 或者 --no-setup）；换了还被拒的，多半是${which}的字的问题，先改台本里这几句的字${fixes.length > 0 ? `；${fixes.join('；')}` : ''}。处理好以后再跑停下的那条 dub 命令${keep}，别的选项照旧。${byReference}。${byOpeningCue}${rebilled}，再 mix${tail}`;
+    const wholeScript = ' (with --only removed, the --reference-tag that was meant for only some lines in that command applies to the whole script, so the lines it did not name also switch reference segment; if only some lines should use it, split the script into several parts and run dub once for each (one dub run uses only one reference tag per pack, and each part gets its own --out), then join them with mix in order)';
+    const byOpeningCue = `To change the opening cue (--emotion, --style, --energy, or what the setup writes), the cue at the start of every line changes, and reuse needs the same opening cue: running again with --only, the lines it does not name no longer match the last run and are recorded as not done this time (skipped), so mix still cannot produce a result. Two ways: to change only the lines that are not done, change the script into a .json script (how: references/dub-details.md「Changing only the opening cue of a few lines」), write the new cue in the labels of those items themselves (it overrides the same item from --emotion and the like and from the setup; it cannot be empty, and to remove a cue use the second way), keep --emotion and the like and --setup in the command as they are, and keep --only if the command had it${hereByOpeningCue}, ${kept}; or change the whole script: run again without --only${wholeScript}, and every line is dubbed again with the new opening cue${redone}`;
+    return `running it again unchanged is rejected again, most likely because the reference or another input was blocked${said}: first switch to another reference (give dub another --reference-tag, that is, another reference tag, or add one if none was given; the pack's SKILL.md lists the tags per language), or change or remove the opening cue (--emotion, --style, --energy; for what a setup writes, switch to another --setup or use --no-setup); if it is still rejected after that, it is most likely a problem with the text of ${which}: first change the text of those lines in the script${fixes.length > 0 ? `; ${fixes.join('; ')}` : ''}. After fixing, run the dub command that stopped again${keep}, with the other options unchanged. ${byReference}. ${byOpeningCue}${rebilled}, then mix${tail}`;
   }
   const fixes = fixFirstAdvice(units, new Set());
-  return `原样再跑多半还会这样停：先照 dub 停下时的说明处理好停下的原因${said}，401 这类授权的问题要先让使用者处理好；${fixes.length > 0 ? `${fixes.join('；')}；` : ''}都处理好以后再跑停下的那条 dub 命令${keep}（选项照旧，${keepOnly}）；${carriedAdvice(units)}${rebilled}，再 mix${tail}`;
+  return `running it again unchanged will most likely stop the same way: first deal with the reason dub stopped${said}; an authorization problem such as 401 has to be dealt with by the user first; ${fixes.length > 0 ? `${fixes.join('; ')}; ` : ''}after all of that, run the dub command that stopped again${keep} with the same options (${keepOnly}); ${carriedAdvice(units)}${rebilled}, then mix${tail}`;
 }
 
 /**
@@ -199,9 +203,9 @@ function stoppedAdvice(stopped, report, keep) {
  */
 function carriedAdvice(units) {
   const done = units.filter((unit) => unit.status === 'ok' && unit.carriedOver !== true && unit.afterSynthesisFailed === undefined).map((unit) => unit.index + 1);
-  if (done.length === 0) return '做好的沿用，不再花钱';
-  const them = done.length === 1 ? '它' : '它们';
-  return `不带 --only 的，做好的沿用，不再花钱；带着 --only 的，点到的一律重配：第 ${done.join('、')} 句是停下以前这一次做好的，从 --only 里去掉${them}再跑，${them}就沿用、不再花钱`;
+  if (done.length === 0) return 'lines already done are reused at no extra cost';
+  const them = done.length === 1 ? 'it' : 'them';
+  return `without --only, lines already done are reused at no extra cost; with --only, the lines it names are all dubbed again: ${linesOf(done)}, done in this run before dub stopped, so remove ${them} from --only before running again, and ${done.length === 1 ? 'it is' : 'they are'} reused at no extra cost`;
 }
 
 /**
@@ -211,8 +215,8 @@ function carriedAdvice(units) {
  * named 是另外已经点名的序号（dub_text_rejected 那一支说的被拒的几句），这里不重复。返回几段话，没有就是空数组。
  */
 function fixFirstAdvice(units, named) {
-  const numbersOf = (list) => list.map((unit) => unit.index + 1).join('、');
-  const these = (list) => (list.length === 1 ? '这一句' : '这几句');
+  const numbersOf = (list) => list.map((unit) => unit.index + 1);
+  const these = (list) => (list.length === 1 ? 'this line' : 'these lines');
   const rejected = units.filter((unit) => isTextRejectedUnit(unit) && !named.has(unit.index + 1));
   const long = rejected.filter(isTooLong);
   const refused = rejected.filter((unit) => !isTooLong(unit));
@@ -220,16 +224,16 @@ function fixFirstAdvice(units, named) {
   const tooLongScenes = units.filter(isTooLongScene);
   const parts = [];
   if (refused.length > 0) {
-    const codes = [...new Set(refused.map((unit) => unit.error?.code))].join('、');
-    parts.push(`第 ${numbersOf(refused)} 句在停下以前就文字被拒了（错误码 ${codes}，原因见 dub.json 里${these(refused)}的 error）：只和${these(refused)}的字有关，原样再发还是会被拒，再跑之前先改台本里${these(refused)}的字`);
+    const codes = [...new Set(refused.map((unit) => unit.error?.code))].join(', ');
+    parts.push(`${linesOf(numbersOf(refused))}: the text was rejected before dub stopped (error code ${codes}; the reason is in the error of ${these(refused)} in dub.json): it depends only on the text of ${these(refused)}, and sending it again unchanged is rejected again, so before running again first change the text of ${these(refused)} in the script`);
   }
-  if (long.length > 0) parts.push(`第 ${numbersOf(long)} 句在停下以前平台就说一个请求说不完（dub.json 里${these(long)}的 error）：再跑之前先把${long.length === 1 ? '它' : '它们'}改短，或者在中间另起一行写章节标记 # 标题切成两个请求（${CHAPTER_SPLIT_REMINDER}）`);
+  if (long.length > 0) parts.push(`${linesOf(numbersOf(long))}: the platform said before dub stopped that one request cannot hold ${long.length === 1 ? 'it' : 'them'} (see the error of ${these(long)} in dub.json): before running again, first shorten ${long.length === 1 ? 'it' : 'them'}, or start a new line in the middle with a chapter marker # title to split it into two requests (${CHAPTER_SPLIT_REMINDER})`);
   if (tooShort.length > 0) {
     const min = tooShort[0].error?.details?.min;
-    parts.push(`第 ${numbersOf(tooShort)} 句比合成能力的下限${typeof min === 'number' ? `（${min} 个字）` : ''}短，和相邻的句子也并不成够长的一段，dub 没合成（字数见 dub.json 里${these(tooShort)}的 error）：原样再跑还是不合成，再跑之前先改台本，让${these(tooShort)}够长`);
+    parts.push(`${linesOf(numbersOf(tooShort))}: shorter than the lower limit of the synthesis capability${typeof min === 'number' ? ` (${min} characters)` : ''}, and not long enough together with the neighbouring lines either, so dub did not synthesize ${tooShort.length === 1 ? 'it' : 'them'} (the character counts are in the error of ${these(tooShort)} in dub.json): running again unchanged still does not synthesize ${tooShort.length === 1 ? 'it' : 'them'}, so before running again first change the script to make ${these(tooShort)} long enough`);
   }
-  if (tooLongScenes.length > 0) parts.push(`第 ${numbersOf(tooLongScenes)} 句（一场戏一个请求）在停下以前平台就说一个请求说不完（dub.json 里${these(tooLongScenes)}的 error）：原样再跑还是装不下，再跑之前先在那一场中间加一个章节标记（# 标题）把它切成两场（${CHAPTER_SPLIT_REMINDER}），或者给 dub 加 --no-scene（整份都一行一个请求，做好的几场也要重配）`);
-  if (long.length + tooShort.length + tooLongScenes.length > 0) parts.push('改长、切开以后序号可能会变：停下的那条带着 --only 的，照新的序号改 --only（同样的选项、同一个 --out，去掉 --only 加 --dry-run 跑一次，规划里看得到新的序号）');
+  if (tooLongScenes.length > 0) parts.push(`${linesOf(numbersOf(tooLongScenes))} (one request per scene): the platform said before dub stopped that one request cannot hold ${tooLongScenes.length === 1 ? 'it' : 'them'} (see the error of ${these(tooLongScenes)} in dub.json): running again unchanged does not fit either, so before running again first add a chapter marker (# title) in the middle of the scene to split it into two scenes (${CHAPTER_SPLIT_REMINDER}), or add --no-scene to dub (the whole script then goes one request per line, and scenes already done must be dubbed again)`);
+  if (long.length + tooShort.length + tooLongScenes.length > 0) parts.push('after lengthening or splitting, the line numbers may change: if the command that stopped had --only, change --only to the new numbers (same options and the same --out; remove --only and add --dry-run to run once, and the plan shows the new numbers)');
   return parts;
 }
 
@@ -240,15 +244,15 @@ function readReport(dir) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (cause) {
-    throw new VoicePackError('mix_input_invalid', `${dir} 里没有 ${REPORT_FILE}（要先用 dub 把台本配成这个目录，再 mix）`, { details: { dir, reason: cause?.code ?? 'unknown' } });
+    throw new VoicePackError('mix_input_invalid', `no ${REPORT_FILE} in ${dir} (first dub the script into this directory with dub, then mix)`, { details: { dir, reason: cause?.code ?? 'unknown' } });
   }
   let value;
   try {
     value = JSON.parse(text);
   } catch (cause) {
-    throw new VoicePackError('mix_input_invalid', `${file} 不是 JSON：${cause.message}`, { details: { file } });
+    throw new VoicePackError('mix_input_invalid', `${file} is not JSON: ${cause.message}`, { details: { file } });
   }
-  if (!isPlainObject(value) || !Array.isArray(value.units)) throw new VoicePackError('mix_input_invalid', `${file} 不是 dub 的报告（没有 units）`, { details: { file } });
+  if (!isPlainObject(value) || !Array.isArray(value.units)) throw new VoicePackError('mix_input_invalid', `${file} is not a dub report (it has no units)`, { details: { file } });
   return value;
 }
 
@@ -270,25 +274,25 @@ function bareSeams(plans) {
 
 /** 文字输出。bare 是 bareSeams 给的接缝：只写在这里，--json 里没有。 */
 function render(result, bare) {
-  const lines = [`成品：${result.file}`];
-  const layout = result.channels === 1 ? '单声道' : `${result.channels} 声道`;
-  lines.push(`总时长 ${result.durationSeconds.toFixed(2)} 秒（${result.frames} 帧，${result.sampleRate} Hz，${layout}），接了 ${result.units} 句`);
-  if (result.directories !== undefined) lines.push(`按次序接了 ${result.directories.length} 个目录：${result.directories.map((item) => `${item.directory}（第 ${item.first}–${item.last} 句）`).join('、')}`);
-  lines.push(`插了 ${result.silences.count} 段静音，共 ${result.silences.totalMs} 毫秒（只数插进去的，各句音频自带的头尾安静不算）`);
-  if (bare.length > 0) lines.push(`${bare.map(([before, after]) => `${before} 和 ${after} 之间`).join('、')}一毫秒都没插（目录之间只插两边台本写了的停顿）：要停一口气，在后一份台本开头（或者前一份末尾）写 [pause 0.5s]；已经配好的，加上以后用同一个 --out、不带 --only 再跑那条 dub（带着 --only 的，点到的几句一律重配、再计一次费），做好的全部沿用、不花钱，再 mix`);
-  if (result.turnTrims.count > 0) lines.push(`换人处削了 ${result.turnTrims.count} 处静音，共 ${result.turnTrims.totalMs} 毫秒`);
-  if (result.speedChanged.length > 0) lines.push(`变了速（保持音高）：${result.speedChanged.map((item) => `第 ${item.number} 句（${item.speed}）`).join('、')}`);
-  if (result.converted.length > 0) lines.push(`统一成第一句的格式：第 ${result.converted.join('、')} 句`);
-  for (const note of result.notes) lines.push(`注意：${note.message}`);
+  const lines = [`Result: ${result.file}`];
+  const layout = result.channels === 1 ? 'mono' : `${result.channels} channels`;
+  lines.push(`Total duration ${result.durationSeconds.toFixed(2)} seconds (${result.frames} frames, ${result.sampleRate} Hz, ${layout}), ${result.units} ${result.units === 1 ? 'line' : 'lines'} joined`);
+  if (result.directories !== undefined) lines.push(`Joined ${result.directories.length} ${result.directories.length === 1 ? 'directory' : 'directories'} in order: ${result.directories.map((item) => `${item.directory} (lines ${item.first}–${item.last})`).join(', ')}`);
+  lines.push(`Inserted ${result.silences.count} ${result.silences.count === 1 ? 'silence' : 'silences'}, ${result.silences.totalMs} ms in total (counts only what was inserted, not the quiet at the head and tail of each line's own audio)`);
+  if (bare.length > 0) lines.push(`Nothing was inserted ${bare.map(([before, after]) => `between ${before} and ${after}`).join(', ')} (between directories only the pauses written in the scripts on either side are inserted): to leave a breath, write [pause 0.5s] at the start of the later script (or the end of the earlier one); for lines already dubbed, after adding it run the same dub command again with the same --out and without --only (with --only, the lines it names are all dubbed again and charged again), the lines already done are all reused at no cost, then mix`);
+  if (result.turnTrims.count > 0) lines.push(`Trimmed ${result.turnTrims.count} ${result.turnTrims.count === 1 ? 'silence' : 'silences'} at speaker changes, ${result.turnTrims.totalMs} ms in total`);
+  if (result.speedChanged.length > 0) lines.push(`Speed changed (pitch kept): ${result.speedChanged.map((item) => `line ${item.number} (${item.speed})`).join(', ')}`);
+  if (result.converted.length > 0) lines.push(`Converted to the format of the first line: ${linesOf(result.converted)}`);
+  for (const note of result.notes) lines.push(`Note: ${note.message}`);
   return `${lines.join('\n')}\n`;
 }
 
 export async function run(args, ctx) {
   const parsed = parseArgs(args, FLAGS);
-  if (parsed.problem || parsed.positional.length === 0) return usageProblem(ctx, usage, parsed.problem ?? '要给 dub 的输出目录（一个或几个位置参数）和 --out <文件.wav>');
+  if (parsed.problem || parsed.positional.length === 0) return usageProblem(ctx, usage, parsed.problem ?? 'the output directory of dub (one or more positional arguments) and --out <file.wav> are required');
   const { options } = parsed;
-  if (options.out === undefined) return usageProblem(ctx, usage, '要给 --out <文件.wav>（成品写到这里）');
-  if (!/\.wav$/i.test(options.out)) return usageProblem(ctx, usage, `--out 要以 .wav 结尾，收到 ${options.out}`);
+  if (options.out === undefined) return usageProblem(ctx, usage, '--out <file.wav> is required (the result is written there)');
+  if (!/\.wav$/i.test(options.out)) return usageProblem(ctx, usage, `--out must end in .wav, got ${options.out}`);
   const dirs = parsed.positional.map((argument) => path.resolve(ctx.cwd, argument));
   const several = dirs.length > 1;
   const file = path.resolve(ctx.cwd, options.out);
@@ -301,18 +305,18 @@ export async function run(args, ctx) {
   });
   for (const { dir, report, plan } of plans) {
     const where = several ? { directory: dir } : {};
-    const inDir = several ? `${dir} 里 ` : '';
+    const inDir = several ? `${dir}: ` : '';
     if (plan.stopped !== null) {
       // 照停下的原因说怎么办（stoppedAdvice）：没跑完的再跑同一条命令；连着被拒的、别的错停下的，先处理停下的原因，不叫人原样 --only 重做；都是再跑停下的那条命令，带着 --only 的照样带着
-      const again = stoppedAdvice(plan.stopped, report, several ? '（输出目录还是它）' : '');
+      const again = stoppedAdvice(plan.stopped, report, several ? ' in the same output directory' : '');
       // 停下以前就没做成的几句（dub.json 里有的；停下以后没开始的不在里面）：有就列在 details.failed，写法同没停下时的
       const failed = report.units.filter((unit) => isPlainObject(unit) && unit.status === 'failed').map((unit) => ({ number: unit.index + 1, status: unit.status, ...(unit.error === undefined ? {} : { error: unit.error }) }));
-      throw new VoicePackError('mix_incomplete', `${inDir}dub 中途停下来了（${plan.stopped.code}：${plan.stopped.message}），没做完的句子不出成品；${again}`, { details: { stoppedBy: plan.stopped, ...(failed.length > 0 ? { failed } : {}), ...where } });
+      throw new VoicePackError('mix_incomplete', `${inDir}dub stopped midway (${plan.stopped.code}: ${plan.stopped.message}); the lines not finished produce no result; ${again}`, { details: { stoppedBy: plan.stopped, ...(failed.length > 0 ? { failed } : {}), ...where } });
     }
     if (!plan.ok) {
       const numbers = plan.incomplete.map((item) => item.number);
-      const again = redoAdvice(plan.incomplete, report, several ? '（输出目录还是它）' : '');
-      throw new VoicePackError('mix_incomplete', `${inDir}有 ${numbers.length} 句没做成（第 ${numbers.join('、')} 句），不出成品：${again}`, { details: { failed: plan.incomplete, ...where } });
+      const again = redoAdvice(plan.incomplete, report, several ? ' in the same output directory' : '');
+      throw new VoicePackError('mix_incomplete', `${inDir}${linesOf(numbers)} ${numbers.length === 1 ? 'was' : 'were'} not finished, so no result is produced: ${again}`, { details: { failed: plan.incomplete, ...where } });
     }
   }
 

@@ -56,17 +56,17 @@ export function createSignatureVerifier(trustList) {
     const path = join(part, SIGNATURE_FILE);
     const manifestPath = join(part, MANIFEST_FILE);
     if (signature === null) {
-      return { ok: false, code: 'signature_missing', message: `${label}（${manifestPath}）没有签名文件 ${path}：基础部分和协议核心只认官方签名`, details: { path } };
+      return { ok: false, code: 'signature_missing', message: `The ${label} (${manifestPath}) has no signature file ${path}: the base part and the protocol core accept only official signatures`, details: { path } };
     }
     if (signature.length > MAX_SIGNATURE_BYTES) {
-      return { ok: false, code: 'signature_malformed', message: `${path}：签名文件的格式不对（${signature.length} 字节，签名文件只有几百个字节）`, details: { path, bytes: signature.length } };
+      return { ok: false, code: 'signature_malformed', message: `${path}: the signature file is malformed (${signature.length} bytes; a signature file is only a few hundred bytes)`, details: { path, bytes: signature.length } };
     }
     try {
       const verified = await verifyMessage(manifest, decoder.decode(signature), trusted);
       return { ok: true, keyId: verified.keyId };
     } catch (error) {
       if (!isVoicePackError(error)) throw error;
-      return { ok: false, code: error.code, message: `${path}：${error.message}`, details: { ...error.details, path } };
+      return { ok: false, code: error.code, message: `${path}: ${error.message}`, details: { ...error.details, path } };
     }
   };
 }

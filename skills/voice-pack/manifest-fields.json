@@ -1,5 +1,5 @@
 {
-  "version": "3.0.0",
+  "version": "3.1.0",
   "runtimes": [
     { "runtime": "ffmpeg", "optional": true, "purpose": "解码 WAV 以外的音频（mp3、flac、ogg、m4a……）、合成以后变速（语速、目标时长）、从视频里取音轨；解码 WAV 不需要它" }
   ]

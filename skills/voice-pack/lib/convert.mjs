@@ -54,11 +54,11 @@ const CAPABILITY_OF = Object.freeze({ speech: 'voice-conversion', singing: 'sing
  */
 export async function convertAudio(env, pack, audio, options = {}) {
   const kind = options.kind ?? 'speech';
-  if (!Object.hasOwn(CAPABILITY_OF, kind)) throw new VoicePackError('convert_input_invalid', `kind 必须是 ${Object.keys(CAPABILITY_OF).join(' 或 ')}，收到 ${JSON.stringify(kind)}`, { details: { field: 'kind' } });
+  if (!Object.hasOwn(CAPABILITY_OF, kind)) throw new VoicePackError('convert_input_invalid', `kind must be ${Object.keys(CAPABILITY_OF).join(' or ')}, got ${JSON.stringify(kind)}`, { details: { field: 'kind' } });
   if (options.referenceTag !== undefined && (typeof options.referenceTag !== 'string' || options.referenceTag === '')) {
-    throw new VoicePackError('convert_input_invalid', 'referenceTag 必须是不空的字符串（音色基底标签），或者不给', { details: { field: 'referenceTag' } });
+    throw new VoicePackError('convert_input_invalid', 'referenceTag must be a non-empty string (a reference tag), or omitted', { details: { field: 'referenceTag' } });
   }
-  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw new VoicePackError('convert_input_invalid', 'onPlan 必须是函数', { details: { field: 'onPlan' } });
+  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw new VoicePackError('convert_input_invalid', 'onPlan must be a function', { details: { field: 'onPlan' } });
   assertAudioClip(audio, 'audio');
   const capability = CAPABILITY_OF[kind];
   const convert = requireCapability(env, capability);

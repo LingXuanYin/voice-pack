@@ -18,7 +18,7 @@
 //   它不记成「没听成」：同一段录音再问还是被拦，补做（--redo）也不会重做它。
 //   某一段录音里没有能嵌声纹的语音（说话人验证报标准的 no_speech）也不让整份报告作废：那一条的说话人相似度记成「量不到」，
 //   写明是生成的还是留出的那一段，不进比例，不能补做，退出码仍是 0。
-//   怎么显示照 lib/fidelity.mjs 文件头「怎么读这份报告」：规则（判成同一人的比例分档、有效的不到 5 条不下结论、没听成和量不到单独报）
+//   怎么显示照 lib/fidelity.mjs 文件头「How to read this report」：规则（判成同一人的比例分档、有效的不到 5 条不下结论、没听成和量不到单独报）
 //   在 lib/fidelity-reading.mjs 的 readReport 里，cli/fidelity-report.mjs 的 renderFidelityReport 从它的返回值写成文字，不另写一份阈值（make-pack 命令也用它）。
 //
 // 补做没听成的（--redo）：库不替调用方重试（建任务和补全可能已经计费），要补做由调用方明确地要。
@@ -51,8 +51,8 @@ import { invalidEvaluationSet, readEvaluationSet, readPreviousReport } from '../
 import { renderFidelityReport } from '../fidelity-report.mjs';
 import { isPlainObject } from '../input.mjs';
 
-export const summary = '量一个包的还原度：说话人相似度跟真人基线的比值，加盲听（读一份评测集 JSON）；可以只补做上一次没听成的';
-export const usage = `fidelity <评测集.json> ${ADAPTER_USAGE} [--seed <整数>] [--max-error-rate <数>] [--redo <上一次的报告.json>] [--save-report <文件>] [--json]`;
+export const summary = 'Measure the fidelity of a pack: the ratio of speaker similarity to the real-person baseline, plus blind listening (reads an evaluation set JSON); can redo only the items that were not heard last time';
+export const usage = `fidelity <evaluation-set.json> ${ADAPTER_USAGE} [--seed <integer>] [--max-error-rate <number>] [--redo <previous-report.json>] [--save-report <file>] [--json]`;
 
 /**
  * 命令认的选项（--json 由 runner 取走，适配器的参数由 takeAdapterArguments 先取走）。用法里要都写出来，约定见 cli/input.mjs 文件头。
@@ -74,7 +74,7 @@ async function synthesizeMissing(env, references, holdouts) {
   for (const track of missing) {
     const reference = references.find((item) => item.id === (track.reference ?? references[0]?.id));
     if (reference === undefined) {
-      throw invalidEvaluationSet('references', `要给留出录音 ${track.id} 合成一条，但参考集里一段参考都没有：给一段参考，或者直接给这条的 generated`);
+      throw invalidEvaluationSet('references', `held-out recording ${track.id} needs a synthesized clip, but the reference set has no reference segment: give a reference segment, or give this recording's generated directly`);
     }
     const generated = await clone({ text: track.text, ref_audio: reference.audio, ...(reference.text === undefined ? {} : { ref_text: reference.text }) });
     if (isPlainObject(generated) && typeof generated.model === 'string') models.add(generated.model);
@@ -86,29 +86,30 @@ async function synthesizeMissing(env, references, holdouts) {
 /** 开始之前的开销说明（只给人看，写到标准错误）。 */
 function costNote({ billing, references, holdouts, missing, hasVerifier }) {
   const real = references.length + holdouts.length;
-  const lines = [`${billing}：`];
-  if (missing > 0) lines.push(`  合成 ${missing} 次（voice-cloning）`);
-  if (hasVerifier) lines.push(`  说话人相似度 ${(real * (real - 1)) / 2 + holdouts.length} 次（speaker-verification：${real} 段真录音两两算，再加每条留出录音对它的合成录音）`);
-  else lines.push(`  说话人相似度：这个环境没有 speaker-verification，这一项会报「${UNMEASURABLE_LABEL}」`);
-  lines.push(`  盲听 ${holdouts.length * 2} 次（audio-text-to-text：每条留出录音问两遍）`);
-  lines.push('  碰到服务出错的那一项会记成「没听成」，不自动重试；之后想补做，这次要加 --save-report <文件> 存下 JSON 报告（或者用 --json）');
+  const lines = [`${billing}:`];
+  if (missing > 0) lines.push(`  synthesis: ${timesOf(missing)} (voice-cloning)`);
+  if (hasVerifier) lines.push(`  speaker similarity: ${timesOf((real * (real - 1)) / 2 + holdouts.length)} (speaker-verification: ${real} real recordings compared in pairs, plus each held-out recording against its synthesized recording)`);
+  else lines.push(`  speaker similarity: this environment has no speaker-verification, so this item will be reported as "${UNMEASURABLE_LABEL}"`);
+  lines.push(`  blind listening: ${timesOf(holdouts.length * 2)} (audio-text-to-text: each held-out recording is asked twice)`);
+  lines.push('  An item that hits a service error is recorded as "not heard" and is not retried automatically; to redo it later, add --save-report <file> now to save the JSON report (or use --json)');
   return `${lines.join('\n')}\n`;
 }
 
 /** 补做之前的开销说明（只给人看，写到标准错误）：只重新调用没听成的那几项。 */
 function redoCostNote({ billing, plan, resynthesize }) {
-  const lines = [`${billing}。补做上一次没听成的 ${plan.items.length} 项（其余的不动）：`];
-  if (resynthesize > 0) lines.push(`  合成 ${resynthesize} 次（voice-cloning：评测集里没给这几条的 generated，上一次现场合成的录音没有留下来，要重新合成一条）`);
-  for (const [capability, count] of Object.entries(plan.calls)) lines.push(`  ${CALL_NOTE[capability] ?? capability}：${count} 次（${capability}）`);
+  const lines = [`${billing}. Redoing the ${plan.items.length} ${plan.items.length === 1 ? 'item' : 'items'} that were not heard last time (the rest are left alone):`];
+  if (resynthesize > 0) lines.push(`  synthesis: ${timesOf(resynthesize)} (voice-cloning: the evaluation set gives no generated for these recordings, and the clip synthesized live last time was not kept, so one has to be synthesized again)`);
+  for (const [capability, count] of Object.entries(plan.calls)) lines.push(`  ${CALL_NOTE[capability] ?? capability}: ${timesOf(count)} (${capability})`);
   return `${lines.join('\n')}\n`;
 }
-const CALL_NOTE = { 'audio-text-to-text': '盲听', 'speaker-verification': '说话人相似度' };
+const CALL_NOTE = { 'audio-text-to-text': 'blind listening', 'speaker-verification': 'speaker similarity' };
+const timesOf = (count) => `${count} ${count === 1 ? 'call' : 'calls'}`;
 
 // ---------------------------------------------------------------- 命令
 
 export async function run(args, ctx) {
   const usageError = (message) => {
-    ctx.stderr(`用法错误：${message}\n用法：${usage}\n`);
+    ctx.stderr(`Usage error: ${message}\nUsage: ${usage}\n`);
     return 2;
   };
 
@@ -120,27 +121,27 @@ export async function run(args, ctx) {
     const arg = taken.rest[index];
     if (arg.startsWith('--') && Object.hasOwn(FLAGS, arg.slice(2))) {
       const value = taken.rest[++index];
-      if (value === undefined) return usageError(`${arg} 后面要给一个值`);
+      if (value === undefined) return usageError(`${arg} needs a value after it`);
       if (arg === '--seed') {
-        if (!/^-?[0-9]+$/.test(value)) return usageError(`--seed 要给一个整数（固定盲听先后的随机数种子），收到 ${value}`);
+        if (!/^-?[0-9]+$/.test(value)) return usageError(`--seed needs an integer (the random seed that fixes the order of blind listening), got ${value}`);
         options.seed = Number(value);
       } else if (arg === '--redo' || arg === '--save-report') {
-        if (value === '') return usageError(`${arg} 后面要给一个文件`);
+        if (value === '') return usageError(`${arg} needs a file after it`);
         options[arg === '--redo' ? 'redo' : 'saveReport'] = value;
       } else {
         const rate = Number(value);
-        if (value.trim() === '' || !Number.isFinite(rate) || rate < 0) return usageError(`--max-error-rate 要给一个不小于 0 的数（收音校验的阈值），收到 ${value}`);
+        if (value.trim() === '' || !Number.isFinite(rate) || rate < 0) return usageError(`--max-error-rate needs a number not less than 0 (the threshold of the listening check), got ${value}`);
         options.maxErrorRate = rate;
       }
     } else if (arg.startsWith('-')) {
-      return usageError(`不认识的选项 ${arg}`);
+      return usageError(`unknown option ${arg}`);
     } else if (file === null) {
       file = arg;
     } else {
-      return usageError(`只需要一个评测集文件，多给了一个：${arg}`);
+      return usageError(`only one evaluation set file is expected, extra argument: ${arg}`);
     }
   }
-  if (file === null) return usageError('要给出评测集文件（JSON）');
+  if (file === null) return usageError('an evaluation set file (JSON) is required');
 
   const set = readEvaluationSet(path.resolve(ctx.cwd, file));
   const previous = options.redo === null ? null : readPreviousReport(path.resolve(ctx.cwd, options.redo));
@@ -156,7 +157,7 @@ export async function run(args, ctx) {
   const wanted = plan === null ? new Set() : new Set(plan.items.map((entry) => entry.id));
   const planned = set.holdouts.filter((track) => wanted.has(track.id));
   for (const id of wanted) {
-    if (!planned.some((track) => track.id === id)) throw invalidEvaluationSet('holdouts', `上一次的报告里没听成的留出录音「${id}」不在这份评测集里：补做要用量那一次用的评测集`);
+    if (!planned.some((track) => track.id === id)) throw invalidEvaluationSet('holdouts', `the held-out recording "${id}" that was not heard in the previous report is not in this evaluation set: a redo needs the evaluation set used for that measurement`);
   }
 
   // 补做时没有要补做的：什么也不做，不加载适配器（不碰外面的服务），原样输出
@@ -169,7 +170,7 @@ export async function run(args, ctx) {
     billing = billingSentence(applied.adapters);
   }
 
-  if (nothingToDo && !ctx.json) ctx.stderr('上一次的报告里没有没听成的项，什么也不用补做；报告原样输出。\n');
+  if (nothingToDo && !ctx.json) ctx.stderr('The previous report has no items that were not heard, so there is nothing to redo; the report is printed unchanged.\n');
 
   let synthesis;
   let report;
@@ -194,7 +195,7 @@ export async function run(args, ctx) {
     try {
       fs.writeFileSync(target, `${JSON.stringify(full, null, 2)}\n`);
     } catch (cause) {
-      throw new VoicePackError('report_unwritable', `写不了 --save-report 给的文件：${target}`, { details: { file: target }, cause });
+      throw new VoicePackError('report_unwritable', `cannot write the file given to --save-report: ${target}`, { details: { file: target }, cause });
     }
   }
   if (ctx.json) ctx.stdout(`${JSON.stringify(full, null, 2)}\n`);

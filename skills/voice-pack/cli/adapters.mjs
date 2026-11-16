@@ -4,7 +4,7 @@
 // 适配器是什么、工厂怎么写、返回什么、出错怎么报，约定只写在 adapters/README.md，这里只实现「命令行怎么把它们接进命令」。
 // 通用层（protocol/、lib/、tools/、cli/）里只有这个文件碰 adapters/ 目录，别处不直接 import 任何一个适配器。
 //
-// 命令行上怎么给（--adapter、--adapter-option、官方适配器在 adapter.json 里声明的简写和参数）：写法只在 adapters/README.md「命令行上怎么给」，这里实现它。
+// 命令行上怎么给（--adapter、--adapter-option、官方适配器在 adapter.json 里声明的简写和参数）：写法只在 adapters/README.md「How to pass it on the command line」，这里实现它。
 // 加一个官方适配器只加目录 adapters/<名字>/（adapter.mjs，可选 adapter.json），不改别的文件。
 //
 // 合并（applyAdapters）：这是合并规则唯一的正本。适配器按给的先后一个一个接进命令已有的环境：后给的盖过先给的，命令行上明说的盖过命令自己的默认。每个适配器的工厂拿到的 env 是「命令已有的加上前面的适配器」，
@@ -72,13 +72,13 @@ const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const OPTION_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 // 退役的官方适配器：1.x 里在 adapters/ 下，2.0.0 起搬出去了。照老文档写它的名字、简写或专有参数的人，
-// 报错时要知道它现在在哪、怎么用路径接进来（--adapter <目录>）。只用来写报错，不加载任何东西；名字、简写、参数只在这里写。
+// 报错时要知道适配器现在由平台自己提供、怎么用路径接进来（--adapter <目录>）；报错不点名任何产品。只用来写报错，不加载任何东西；名字、简写、参数只在这里写。
 const RETIRED = [
   {
     name: 'cohub',
     flags: ['--cohub', '--space'],
-    moved: 'Cohub 适配器从 2.0.0 起不在 voice-pack 里了，归 Voice Studio：在 Voice Studio 的 skill 里，目录 .agents/skills/voice-studio/adapters/cohub/',
-    how: '用路径接进来：--adapter <那个目录>；Space 用 --adapter-option space=<Space id>，或者设环境变量 COHUB_SPACE_ID',
+    moved: 'This adapter and its options are no longer part of voice-pack since 2.0.0: the platform provides its own adapter',
+    how: 'Attach it by path: --adapter <adapter directory>; pass the parameters it needs with --adapter-option <key>=<value> (see that adapter\'s notes for the keys)',
   },
 ];
 const retiredNamed = (name) => RETIRED.find((entry) => entry.name === name);
@@ -93,20 +93,20 @@ function readManifest(name, dir) {
   } catch {
     return {}; // adapter.json 是可选的
   }
-  const broken = (message, cause) => new VoicePackError('adapter_invalid', `官方适配器 ${name} 的 ${MANIFEST_FILE} 写坏了：${message}`, { details: { spec: name, file, reason: 'manifest' }, ...(cause === undefined ? {} : { cause }) });
+  const broken = (message, cause) => new VoicePackError('adapter_invalid', `${MANIFEST_FILE} of the official adapter ${name} is broken: ${message}`, { details: { spec: name, file, reason: 'manifest' }, ...(cause === undefined ? {} : { cause }) });
   let manifest;
   try {
     manifest = JSON.parse(text);
   } catch (cause) {
-    throw broken(`不是合法的 JSON（${cause.message}）`, cause);
+    throw broken(`not valid JSON (${cause.message})`, cause);
   }
-  if (!isPlainObject(manifest)) throw broken('要是对象');
-  if (manifest.summary !== undefined && typeof manifest.summary !== 'string') throw broken('summary 要是字符串');
-  if (manifest.shorthand !== undefined && typeof manifest.shorthand !== 'boolean') throw broken('shorthand 要是 true 或 false');
+  if (!isPlainObject(manifest)) throw broken('must be an object');
+  if (manifest.summary !== undefined && typeof manifest.summary !== 'string') throw broken('summary must be a string');
+  if (manifest.shorthand !== undefined && typeof manifest.shorthand !== 'boolean') throw broken('shorthand must be true or false');
   if (manifest.flags !== undefined) {
-    if (!isPlainObject(manifest.flags)) throw broken('flags 要是对象：{ "--参数": "选项的键" }');
+    if (!isPlainObject(manifest.flags)) throw broken('flags must be an object: { "--flag": "option key" }');
     for (const [flag, key] of Object.entries(manifest.flags)) {
-      if (!/^--[a-z][a-z0-9-]*$/.test(flag) || typeof key !== 'string' || !OPTION_KEY_RE.test(key)) throw broken(`flags 里的 ${JSON.stringify(flag)}: ${JSON.stringify(key)} 不合约定（参数是 --小写字母开头的名字，选项的键是字母开头的字母、数字、下划线）`);
+      if (!/^--[a-z][a-z0-9-]*$/.test(flag) || typeof key !== 'string' || !OPTION_KEY_RE.test(key)) throw broken(`${JSON.stringify(flag)}: ${JSON.stringify(key)} in flags does not follow the convention (a flag is -- followed by a name starting with a lowercase letter; an option key starts with a letter and contains letters, digits and underscores)`);
     }
   }
   return manifest;
@@ -137,7 +137,7 @@ export function officialAdapterNames() {
 
 /** 命令的用法里「接适配器」的那一段，按官方适配器的 adapter.json 生成：简写和专有参数都在里面。 */
 function usageOf(adapters) {
-  const parts = ['[--adapter <名字|模块文件>]...', '[--adapter-option <键=值>]...'];
+  const parts = ['[--adapter <name|module file>]...', '[--adapter-option <key=value>]...'];
   for (const { name, manifest } of adapters) {
     const flags = Object.entries(manifest.flags ?? {}).map(([flag, key]) => `[${flag} <${key}>]`).join(' ');
     if (manifest.shorthand === true) parts.push(`[--${name}${flags === '' ? '' : ` ${flags}`}]`);
@@ -171,25 +171,25 @@ export function takeAdapterArguments(args) {
     const arg = args[index];
     if (arg === '--adapter') {
       const value = args[++index];
-      if (value === undefined || value === '') return fail('--adapter 后面要给适配器的名字，或者适配器模块的路径');
+      if (value === undefined || value === '') return fail('--adapter must be followed by the name of an adapter or the path of an adapter module');
       requests.push({ spec: value, options: {} });
     } else if (shorthand.has(arg)) {
       requests.push({ spec: shorthand.get(arg), options: {} });
     } else if (arg === '--adapter-option') {
       const value = args[++index];
-      if (value === undefined) return fail('--adapter-option 后面要给 键=值');
+      if (value === undefined) return fail('--adapter-option must be followed by key=value');
       const at = value.indexOf('=');
       const key = at < 0 ? '' : value.slice(0, at);
-      if (!OPTION_KEY_RE.test(key)) return fail(`--adapter-option 要写成 键=值，键是字母开头的字母、数字、下划线，收到 ${JSON.stringify(value)}`);
+      if (!OPTION_KEY_RE.test(key)) return fail(`--adapter-option must be written as key=value, where the key starts with a letter and contains letters, digits and underscores; got ${JSON.stringify(value)}`);
       sets.push({ flag: arg, owner: null, key, value: value.slice(at + 1), position: requests.length });
     } else if (declared.has(arg)) {
       const value = args[++index];
-      if (value === undefined) return fail(`${arg} 后面要给一个值`);
+      if (value === undefined) return fail(`${arg} must be followed by a value`);
       const { adapter, key } = declared.get(arg);
       sets.push({ flag: arg, owner: adapter, key, value, position: requests.length });
     } else if (RETIRED.some((entry) => entry.flags.includes(arg))) {
       const entry = RETIRED.find((item) => item.flags.includes(arg));
-      return fail(`${arg} 是退役的官方适配器 ${entry.name} 的参数。${entry.moved}。${entry.how}`);
+      return fail(`${arg} is an option of a retired official adapter. ${entry.moved}. ${entry.how}`);
     } else {
       rest.push(arg);
     }
@@ -198,15 +198,15 @@ export function takeAdapterArguments(args) {
     let target;
     if (entry.owner === null) {
       target = requests[entry.position - 1];
-      if (target === undefined) return fail('--adapter-option 要跟在 --adapter <名字|模块文件> 后面（给前一个适配器的参数），前面还没有适配器');
+      if (target === undefined) return fail('--adapter-option must come after --adapter <name|module file> (it gives a parameter to the adapter before it), but there is no adapter before it');
     } else {
       target = requests.slice(0, entry.position).findLast((request) => request.spec === entry.owner) ?? requests.slice(entry.position).find((request) => request.spec === entry.owner);
       if (target === undefined) {
-        const how = shorthand.has(`--${entry.owner}`) ? `--${entry.owner}（或 --adapter ${entry.owner}）` : `--adapter ${entry.owner}`;
-        return fail(`${entry.flag} 是 ${entry.owner} 适配器的参数，命令行上要有 ${how}`);
+        const how = shorthand.has(`--${entry.owner}`) ? `--${entry.owner} (or --adapter ${entry.owner})` : `--adapter ${entry.owner}`;
+        return fail(`${entry.flag} is a parameter of the ${entry.owner} adapter, so the command line must have ${how}`);
       }
     }
-    if (Object.hasOwn(target.options, entry.key)) return fail(`适配器 ${target.spec} 的参数 ${entry.key} 给了两次（${entry.flag}）`);
+    if (Object.hasOwn(target.options, entry.key)) return fail(`Parameter ${entry.key} of adapter ${target.spec} was given twice (${entry.flag})`);
     target.options[entry.key] = entry.value;
   }
   return { rest, requests };
@@ -246,12 +246,12 @@ const stem = (file) => path.basename(file, path.extname(file));
 /** 给的是名字还是路径：名字是小写字母、数字、连字符，不含路径分隔符和点。 */
 const isOfficialName = (spec) => NAME_RE.test(spec);
 
-function notFound(name, official, { shown = name, hint = `自己的适配器要给文件或目录的路径，例如 --adapter ./${name}` } = {}) {
+function notFound(name, official, { shown = name, hint = `Your own adapter must be given as the path of a file or directory, for example --adapter ./${name}` } = {}) {
   const available = official.map((adapter) => adapter.name);
   const retired = retiredNamed(name);
   return new VoicePackError(
     'adapter_not_found',
-    `没有叫 ${shown} 的官方适配器（有：${available.join('、') || '一个都没有'}）。${retired ? `${retired.moved}。${retired.how}` : hint}`,
+    `There is no official adapter named ${shown} (available: ${available.join(', ') || 'none'}). ${retired ? `${retired.moved}. ${retired.how}` : hint}`,
     { details: { name, available, ...(retired ? { retired: true } : {}) } },
   );
 }
@@ -287,21 +287,21 @@ function resolveSpec(ctx, spec) {
 export async function loadAdapter(ctx, env, request) {
   const { spec } = request;
   const { file, label, dir } = resolveSpec(ctx, spec);
-  const invalid = (reason, message, extra = {}) => new VoicePackError('adapter_invalid', `适配器 ${spec}：${message}`, { details: { spec, file, reason, ...(extra.details ?? {}) }, ...(extra.cause === undefined ? {} : { cause: extra.cause }) });
+  const invalid = (reason, message, extra = {}) => new VoicePackError('adapter_invalid', `Adapter ${spec}: ${message}`, { details: { spec, file, reason, ...(extra.details ?? {}) }, ...(extra.cause === undefined ? {} : { cause: extra.cause }) });
   let mod;
   try {
     mod = await import(pathToFileURL(file).href);
   } catch (cause) {
-    throw invalid('load', `加载不了（${file}：${cause?.message ?? cause}）`, { cause });
+    throw invalid('load', `cannot be loaded (${file}: ${cause?.message ?? cause})`, { cause });
   }
   const factory = mod.default ?? mod.createAdapter;
-  if (typeof factory !== 'function') throw invalid('not_function', `要默认导出一个函数（或者导出名叫 createAdapter 的函数），它返回 { ${ADAPTER_KEYS.join(', ')} }`);
+  if (typeof factory !== 'function') throw invalid('not_function', `must default-export a function (or export a function named createAdapter) that returns { ${ADAPTER_KEYS.join(', ')} }`);
   const use = async (name, options = {}) => {
     // 名字不是字符串：写适配器的人用错了接口，是 TypeError（它在工厂里抛出，外面包成 adapter_invalid 的 factory_failed）。
     // 是字符串但不是现有的官方适配器（写法不对的也算）：名字可能是适配器从命令行参数里转来的，报 adapter_not_found（adapters/README.md 里 use 那一行写的就是这样）。
-    if (typeof name !== 'string') throw new TypeError(`use 的第一个参数要是官方适配器的名字（字符串），收到 ${name === null ? 'null' : typeof name}`);
+    if (typeof name !== 'string') throw new TypeError(`The first argument of use must be the name of an official adapter (a string), got ${name === null ? 'null' : typeof name}`);
     const official = officialAdapters();
-    if (!official.some((adapter) => adapter.name === name)) throw notFound(name, official, { shown: JSON.stringify(name), hint: 'use 只加载官方适配器，名字是小写字母、数字、连字符' });
+    if (!official.some((adapter) => adapter.name === name)) throw notFound(name, official, { shown: JSON.stringify(name), hint: 'use only loads official adapters; a name is made of lowercase letters, digits and hyphens' });
     return (await loadAdapter({ ...ctx, cwd: ctx.cwd }, env, { spec: name, options, dir })).adapter;
   };
   let adapter;
@@ -309,12 +309,12 @@ export async function loadAdapter(ctx, env, request) {
     adapter = await factory({ cwd: ctx.cwd, dir: request.dir ?? dir, env, options: request.options ?? {}, use, VoicePackError });
   } catch (cause) {
     if (isVoicePackError(cause)) throw cause; // 工厂自己抛的有 code 的错，比「函数抛了错」更有用：原样往上
-    throw invalid('factory_failed', `函数抛了错（${cause?.message ?? cause}）`, { cause });
+    throw invalid('factory_failed', `the function threw an error (${cause?.message ?? cause})`, { cause });
   }
   const shape = checkAdapterShape(adapter);
   if (!shape.ok) {
     const first = shape.issues.filter((issue) => issue.level === 'error');
-    throw invalid('shape', first.map((issue) => issue.message).join('；'), { details: { problems: shape.issues } });
+    throw invalid('shape', first.map((issue) => issue.message).join('; '), { details: { problems: shape.issues } });
   }
   return { adapter, label, spec, file };
 }
@@ -356,8 +356,8 @@ function modelsOfProvided(adapter) {
 
 /** 费用说明的开头一句：给了 billing 的适配器各一句，用「，也」连起来（「要……，也要……」）；不带句末的标点，命令自己接。没有适配器给 billing 就是 null（不用说）。 */
 export function billingSentence(adapters) {
-  const sentences = adapters.filter((adapter) => typeof adapter.billing === 'string').map((adapter) => `要${adapter.billing}`);
-  return sentences.length === 0 ? null : sentences.join('，也');
+  const sentences = adapters.filter((adapter) => typeof adapter.billing === 'string').map((adapter) => `needs ${adapter.billing}`);
+  return sentences.length === 0 ? null : `This ${sentences.join(', and also ')}`;
 }
 
 /** 费用说明里估金额的一句（文件头）。基础部分不知道价格，单价只从适配器来；一项都没有单价的说估不出。 */
@@ -369,18 +369,18 @@ export function moneySentence(adapters, calls, extraCalls = {}) {
   if (entries.length === 0) return null;
   const unpriced = [...new Set(entries.map(([capability]) => capability).filter((capability) => priceOf(capability) === undefined))];
   const capabilities = new Set(entries.map(([capability]) => capability));
-  if (unpriced.length === capabilities.size) return '金额：适配器没给单价，估不出；实际花费看平台账单';
+  if (unpriced.length === capabilities.size) return 'Amount: the adapter gives no unit price, so it cannot be estimated; see the platform bill for the actual cost';
   const usual = sum(called(calls));
   const most = usual + sum(called(extraCalls));
-  return `金额：按适配器给的单价约 ${usual.toFixed(3)} 美元${most > usual ? `，暂时出错全都重试时最多 ${most.toFixed(3)} 美元` : ''}${unpriced.length === 0 ? '' : `（不含 ${unpriced.join('、')}：没给单价）`}；实际花费看平台账单`;
+  return `Amount: about ${usual.toFixed(3)} USD at the unit prices the adapter gives${most > usual ? `, at most ${most.toFixed(3)} USD if every call is retried after a temporary error` : ''}${unpriced.length === 0 ? '' : ` (not including ${unpriced.join(', ')}: no unit price given)`}; see the platform bill for the actual cost`;
 }
 
 /** 环境没有 ffmpeg 时，预演和费用说明里写的一句（文件头）；有就是 null。 */
 export const ffmpegNote = (env, { makePack = false } = {}) => (typeof env.runtimes?.ffmpeg === 'function'
   ? null
   : makePack
-    ? `这个环境没有 ffmpeg：不是 WAV 的录音（设计和配音的模型回来的多半是 MP3）不调响度、不查音质和时长，查重也不比这些录音；包照样做出来，文字输出写明哪几段没做。${FFMPEG_INSTALL}`
-    : `这个环境没有 ffmpeg：单句的音频照常出；把句子接成一个文件（mix）、解 WAV 以外的音频、变速要它。${FFMPEG_INSTALL}`);
+    ? `This environment has no ffmpeg: recordings that are not WAV (the models of design and dubbing mostly return MP3) get no loudness adjustment and no quality or length check, and the duplicate check does not compare them either; the pack is still made, and the text output says which recordings were skipped. ${FFMPEG_INSTALL}`
+    : `This environment has no ffmpeg: the audio of a single line is produced as usual; joining lines into one file (mix), decoding audio other than WAV and changing speed need it. ${FFMPEG_INSTALL}`);
 
 /** 一次合成最多多少个字：最后一个给了 limits.maxChars 的适配器的（后给的盖过先给的）；都没给是 undefined。 */
 export function maxCharsOf(adapters) {
@@ -449,23 +449,23 @@ export async function buildSkeleton(kind, context) {
   const official = officialAdapters().find((adapter) => adapter.name === kind && fs.existsSync(path.join(adapter.dir, SKELETON_FILE)));
   if (official === undefined) {
     const available = skeletonKinds();
-    throw new VoicePackError('adapter_not_found', `没有 ${kind} 这一种骨架（有：${available.join('、')}）`, { details: { name: kind, available } });
+    throw new VoicePackError('adapter_not_found', `There is no skeleton of kind ${kind} (available: ${available.join(', ')})`, { details: { name: kind, available } });
   }
   const file = path.join(official.dir, SKELETON_FILE);
-  const broken = (problem, cause) => new VoicePackError('adapter_invalid', `官方适配器 ${kind} 的骨架生成器（${SKELETON_FILE}）：${problem}`, { details: { spec: kind, file, reason: 'skeleton', problem }, ...(cause === undefined ? {} : { cause }) });
+  const broken = (problem, cause) => new VoicePackError('adapter_invalid', `Skeleton generator (${SKELETON_FILE}) of the official adapter ${kind}: ${problem}`, { details: { spec: kind, file, reason: 'skeleton', problem }, ...(cause === undefined ? {} : { cause }) });
   let mod;
   try {
     mod = await import(pathToFileURL(file).href);
   } catch (cause) {
-    throw broken(`加载不了（${cause?.message ?? cause}）`, cause);
+    throw broken(`cannot be loaded (${cause?.message ?? cause})`, cause);
   }
-  if (typeof mod.generateSkeleton !== 'function') throw broken('要导出函数 generateSkeleton');
+  if (typeof mod.generateSkeleton !== 'function') throw broken('must export a function generateSkeleton');
   let skeleton;
   try {
     skeleton = await mod.generateSkeleton(context);
   } catch (cause) {
-    throw broken(`抛了错（${cause?.message ?? cause}）`, cause);
+    throw broken(`threw an error (${cause?.message ?? cause})`, cause);
   }
-  if (!isSkeleton(skeleton)) throw broken('返回的要是 { files: [{ path, content }]（至少一个文件，content 是文字）, fillIn: 字符串 }');
+  if (!isSkeleton(skeleton)) throw broken('must return { files: [{ path, content }] (at least one file; content is text), fillIn: string }');
   return skeleton;
 }

@@ -35,11 +35,11 @@ const sameBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte =
  * @returns {Promise<{ entries: { name: string, data: Uint8Array, method: number, offset: number }[], directories: string[] }>}
  */
 export async function readZip(bytes, options = {}) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('readZip 的输入必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('The input of readZip must be a Uint8Array');
   const limits = resolveLimits(options.limits);
   const ceiling = limits.maxTotalBytes + limits.maxMembers * HEADER_ALLOWANCE + 0x10000;
   if (bytes.length > ceiling) {
-    throw new VoicePackError('total_too_large', `zip 文件本身就有 ${bytes.length} 字节，超过解包上限能容下的 ${ceiling} 字节`, { details: { total: bytes.length, limit: ceiling } });
+    throw new VoicePackError('total_too_large', `The zip file itself is ${bytes.length} bytes, more than the ${ceiling} bytes the unpack limit allows`, { details: { total: bytes.length, limit: ceiling } });
   }
   const { records, files, directories, centralOffset } = readStructure(bytes, limits);
   locateData(bytes, records, centralOffset);
@@ -49,12 +49,12 @@ export async function readZip(bytes, options = {}) {
     const compressed = bytes.subarray(rec.dataStart, rec.dataEnd);
     let data;
     if (rec.method === Z.METHOD_STORE) {
-      if (rec.compressedSize !== rec.size) throw malformed('stored_size_mismatch', `${JSON.stringify(rec.path)} 是存储条目，压缩后大小和原大小却不一样`, { path: rec.path });
+      if (rec.compressedSize !== rec.size) throw malformed('stored_size_mismatch', `${JSON.stringify(rec.path)} is a stored entry, but its compressed size differs from its original size`, { path: rec.path });
       data = compressed.slice();
     } else {
       data = await inflate(compressed, rec.size, rec.path);
     }
-    if (Z.crc32(data) !== rec.crc) throw new VoicePackError('zip_crc_mismatch', `${JSON.stringify(rec.path)} 的 CRC-32 对不上：内容被改过或者文件损坏`, { details: { path: rec.path } });
+    if (Z.crc32(data) !== rec.crc) throw new VoicePackError('zip_crc_mismatch', `The CRC-32 of ${JSON.stringify(rec.path)} does not match: the content was modified or the file is damaged`, { details: { path: rec.path } });
     entries.push({ name: rec.path, data, method: rec.method, offset: rec.offset });
   }
   return { entries, directories };
@@ -65,37 +65,37 @@ function locateData(bytes, records, centralOffset) {
   const dv = Z.viewOf(bytes);
   for (const rec of records) {
     const at = rec.offset;
-    if (at + Z.LOCAL_HEADER_SIZE > centralOffset) throw malformed('data_outside_file', `${JSON.stringify(rec.path)} 的本地头在文件之外`, { path: rec.path });
-    if (dv.getUint32(at, true) !== Z.SIG_LOCAL) throw malformed('local_header_signature', `${JSON.stringify(rec.path)} 的本地头没有 PK\\x03\\x04 标记`, { path: rec.path });
+    if (at + Z.LOCAL_HEADER_SIZE > centralOffset) throw malformed('data_outside_file', `The local header of ${JSON.stringify(rec.path)} is outside the file`, { path: rec.path });
+    if (dv.getUint32(at, true) !== Z.SIG_LOCAL) throw malformed('local_header_signature', `The local header of ${JSON.stringify(rec.path)} does not have the PK\\x03\\x04 marker`, { path: rec.path });
     const flags = dv.getUint16(at + 6, true);
     const nameLen = dv.getUint16(at + 26, true);
     const extraLen = dv.getUint16(at + 28, true);
     const nameEnd = at + Z.LOCAL_HEADER_SIZE + nameLen;
-    if (nameEnd + extraLen > centralOffset) throw malformed('data_outside_file', `${JSON.stringify(rec.path)} 的本地头被截断`, { path: rec.path });
-    if (flags & ENCRYPTION_FLAGS) throw malformed('local_flags_mismatch', `${JSON.stringify(rec.path)} 的本地头标着加密，中央目录没有`, { path: rec.path });
+    if (nameEnd + extraLen > centralOffset) throw malformed('data_outside_file', `The local header of ${JSON.stringify(rec.path)} is truncated`, { path: rec.path });
+    if (flags & ENCRYPTION_FLAGS) throw malformed('local_flags_mismatch', `The local header of ${JSON.stringify(rec.path)} is marked encrypted, but the central directory is not`, { path: rec.path });
     if (!sameBytes(bytes.subarray(at + Z.LOCAL_HEADER_SIZE, nameEnd), rec.nameBytes)) {
-      throw malformed('local_name_mismatch', `${JSON.stringify(rec.path)} 在本地头里的名字和中央目录里的不一样`, { path: rec.path });
+      throw malformed('local_name_mismatch', `The name of ${JSON.stringify(rec.path)} in the local header differs from the one in the central directory`, { path: rec.path });
     }
-    if (dv.getUint16(at + 8, true) !== rec.method) throw malformed('local_method_mismatch', `${JSON.stringify(rec.path)} 的压缩方法，本地头和中央目录说的不一样`, { path: rec.path });
+    if (dv.getUint16(at + 8, true) !== rec.method) throw malformed('local_method_mismatch', `The compression method of ${JSON.stringify(rec.path)} differs between the local header and the central directory`, { path: rec.path });
     if (!(flags & Z.FLAG_DESCRIPTOR)) {
       const same = dv.getUint32(at + 14, true) === rec.crc && dv.getUint32(at + 18, true) === rec.compressedSize && dv.getUint32(at + 22, true) === rec.size;
-      if (!same) throw malformed('local_size_mismatch', `${JSON.stringify(rec.path)} 的 CRC 或大小，本地头和中央目录说的不一样`, { path: rec.path });
+      if (!same) throw malformed('local_size_mismatch', `The CRC or size of ${JSON.stringify(rec.path)} differs between the local header and the central directory`, { path: rec.path });
     }
     rec.dataStart = nameEnd + extraLen;
     rec.dataEnd = rec.dataStart + rec.compressedSize;
-    if (rec.dataEnd > centralOffset) throw malformed('data_outside_file', `${JSON.stringify(rec.path)} 的数据超出了文件`, { path: rec.path });
+    if (rec.dataEnd > centralOffset) throw malformed('data_outside_file', `The data of ${JSON.stringify(rec.path)} extends beyond the file`, { path: rec.path });
   }
   const byOffset = [...records].sort((a, b) => a.offset - b.offset);
-  if (byOffset.length > 0 && byOffset[0].offset !== 0) throw malformed('data_before_first_entry', '第一个条目之前有多余的字节');
+  if (byOffset.length > 0 && byOffset[0].offset !== 0) throw malformed('data_before_first_entry', 'There are extra bytes before the first entry');
   for (let i = 0; i + 1 < byOffset.length; i++) {
-    if (byOffset[i].dataEnd > byOffset[i + 1].offset) throw malformed('entries_overlap', `${JSON.stringify(byOffset[i].path)} 的数据压到了 ${JSON.stringify(byOffset[i + 1].path)} 的头`, { path: byOffset[i].path, other: byOffset[i + 1].path });
+    if (byOffset[i].dataEnd > byOffset[i + 1].offset) throw malformed('entries_overlap', `The data of ${JSON.stringify(byOffset[i].path)} runs into the header of ${JSON.stringify(byOffset[i + 1].path)}`, { path: byOffset[i].path, other: byOffset[i + 1].path });
   }
 }
 
 /** deflate-raw 解压，解到超过声明的大小就停。 */
 async function inflate(compressed, declared, path) {
   if (typeof DecompressionStream !== 'function') {
-    throw new VoicePackError('platform_unsupported', `这个平台没有 DecompressionStream，读不了压缩过的条目 ${JSON.stringify(path)}（浏览器要 Chrome 103+、Firefox 113+、Safari 16.4+）`, { details: { path } });
+    throw new VoicePackError('platform_unsupported', `This platform has no DecompressionStream, so the compressed entry ${JSON.stringify(path)} cannot be read (browsers need Chrome 103+, Firefox 113+, Safari 16.4+)`, { details: { path } });
   }
   const reader = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
   const chunks = [];
@@ -107,14 +107,14 @@ async function inflate(compressed, declared, path) {
       produced += value.length;
       if (produced > declared) {
         await reader.cancel().catch(() => {});
-        throw new VoicePackError('zip_size_mismatch', `${JSON.stringify(path)} 解出来的内容超过了头里声明的 ${declared} 字节：头在说谎，或者是压缩炸弹`, { details: { path, declared } });
+        throw new VoicePackError('zip_size_mismatch', `${JSON.stringify(path)} inflates to more than the ${declared} bytes declared in its header: the header is lying, or this is a decompression bomb`, { details: { path, declared } });
       }
       chunks.push(value);
     }
   } catch (cause) {
     if (isVoicePackError(cause)) throw cause;
-    throw new VoicePackError('zip_corrupt_entry', `${JSON.stringify(path)} 的压缩数据坏了`, { details: { path }, cause });
+    throw new VoicePackError('zip_corrupt_entry', `The compressed data of ${JSON.stringify(path)} is corrupt`, { details: { path }, cause });
   }
-  if (produced !== declared) throw new VoicePackError('zip_size_mismatch', `${JSON.stringify(path)} 解出来 ${produced} 字节，头里声明的是 ${declared} 字节`, { details: { path, declared, actual: produced } });
+  if (produced !== declared) throw new VoicePackError('zip_size_mismatch', `${JSON.stringify(path)} inflates to ${produced} bytes, but its header declares ${declared} bytes`, { details: { path, declared, actual: produced } });
   return Z.concatBytes(chunks, produced);
 }

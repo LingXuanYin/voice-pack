@@ -13,7 +13,7 @@
 //                                    version    版本相关的字段（version、bump、changelog、drop、defaultSegments），没给的是 undefined（drop、defaultSegments 是空数组）；
 //                                               defaultSegments 是作者点名的默认段（input.defaultSegment 写的，一个也整理成数组），按给的次序
 //                                    direction  音色描述和标签换成规范写法以后的样子（lib/design-vocab.mjs），没给是 undefined
-//                                    cardLine   卡片试听那一句，去掉了两头空白；没给是 undefined
+//                                    cardLine   试听句，去掉了两头空白；没给是 undefined
 //                                  previous 是 lib/pack-version.mjs 的 readPreviousVersion 读出来的上一版（发新版本时），不是的话是 null。
 //                                  moreSegments 为真：还有段没交来（命令行先查输入、再切长录音，lib/make-pack-precheck.mjs 的 precheckInput）：segments 可以是空数组，
 //                                  点名的默认段不在这些段里也不报（可能是要切出来的段，makePack 拿到全部的段再查）。
@@ -29,7 +29,7 @@
 //   givenLanguage（素材给的语言：段自己的 language，没有就是输入的 language；都没给是 undefined）、
 //   givenTag（素材给的音色基底标签，去掉了两头空白；没给是 undefined。作者给的和库里给的不分，都是素材给的）、source、externalUrl、
 //   synthetic（布尔值：true 是合成的，克隆出来的，不是这个人录的；没标是 false）；
-//   sentence（长录音的句子模式给，素材 .json 也可以写（references/make-pack.md「素材」）：{ bodySec, pauseSec }，做包的句子合段用，见 lib/make-pack-sentences.mjs；没给就没有这个字段）；
+//   sentence（长录音的句子模式给，素材 .json 也可以写（references/make-pack.md「Source material」）：{ bodySec, pauseSec }，做包的句子合段用，见 lib/make-pack-sentences.mjs；没给就没有这个字段）；
 //   trim（素材给的起止秒 { startSec?, endSec? }，只用这几秒，做包先切出来，见 lib/make-pack-take-audio.mjs；没给就没有这个字段。写法：至少一个，不小于 0 的数，
 //     写了 endSec 的，它比起点（startSec，没写是 0）至少大 TRIM_MIN_SEC（0.1 秒）；句子不收，外部资源（externalUrl）不收：包里只记网址、大小和哈希，切了就对不上网址上的文件）；
 //   上一版带过来的段还有 previous（'reference' 或 'holdout'）和 path（在上一版里的路径），annotatedText 是上一版清单里的（没有就没有这个字段），
@@ -85,20 +85,20 @@ const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const TRIM_MIN_SEC = 0.1;
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-export const invalid = (field, problem, more = {}) => new VoicePackError('make_pack_input_invalid', `做包的输入不合约定（${field}）：${problem}`, { details: { field, problem, ...more } });
+export const invalid = (field, problem, more = {}) => new VoicePackError('make_pack_input_invalid', `Invalid make-pack input (${field}): ${problem}`, { details: { field, problem, ...more } });
 
 // ---------------------------------------------------------------- 读输入
 
 /** 旧写法的 labels（每段的，或者输入的）：这一版不收，花钱之前报错，说明怎么改写（不悄悄忽略：素材里写的语言、标签不能没了还当没事）。 */
 function rejectLabels(labels, where) {
   if (labels === undefined) return;
-  throw invalid(where, '这一版没有 labels 了：语言写成 language（每段自己的，或者输入的 language 给所有段当默认），音色基底标签写成每段的 tag（和清单同名）；情绪、风格、能量不再记，情绪写成台本里的提示');
+  throw invalid(where, 'labels is no longer accepted in this version: write the language as language (per segment, or the input-level language as the default for all segments), write the reference tag as the tag of each segment (same name as in the manifest); emotion, style and energy are no longer recorded, write emotion as cues in the script');
 }
 
 /** 素材给的语言（段自己的 language，或者输入的 language）：不给是 undefined；给了要是语言标签（形如 en、zh-CN），去掉两头空白。 */
 function readLanguage(value, where) {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string' || !isLanguageTag(value.trim())) throw invalid(where, `语言标签 ${JSON.stringify(value)} 写法不对：要像 en、zh-CN（最长 ${MAX_LANGUAGE_TAG} 个字符）`);
+  if (typeof value !== 'string' || !isLanguageTag(value.trim())) throw invalid(where, `language tag ${JSON.stringify(value)} is malformed: it must look like en or zh-CN (at most ${MAX_LANGUAGE_TAG} characters)`);
   return value.trim();
 }
 
@@ -109,12 +109,12 @@ function readLanguage(value, where) {
 function readTagText(value, where, blank, more) {
   if (typeof value !== 'string' || isBlankText(value)) throw invalid(where, blank, more);
   const tag = value.trim();
-  if ([...tag].length > REFERENCE_TAG_MAX) throw invalid(where, `最长 ${REFERENCE_TAG_MAX} 个字符（按码点算），收到 ${[...tag].length} 个`, more);
+  if ([...tag].length > REFERENCE_TAG_MAX) throw invalid(where, `at most ${REFERENCE_TAG_MAX} characters (counted by code point), got ${[...tag].length}`, more);
   return tag;
 }
 
 /** 素材给的音色基底标签（段的 tag）：不给是 undefined，给了照 readTagText。 */
-const readTag = (value, where) => (value === undefined ? undefined : readTagText(value, where, '必须是有字的字符串：这段参考的音色基底标签（例如「平常」「愤怒」「少年」），只用来在几段参考之间切换；不给就由做包给一个'));
+const readTag = (value, where) => (value === undefined ? undefined : readTagText(value, where, 'must be a non-blank string: the reference tag of this reference segment (for example "平常", "愤怒", "少年"), used only to switch between reference segments; if omitted, make-pack assigns one'));
 
 /**
  * 改名（input.retag）：{ 段名: 新标签 }，规矩见文件头。kept 是上一版这次没去掉的段（readPreviousVersion 的 segments 去掉 drop 的）。
@@ -123,31 +123,31 @@ const readTag = (value, where) => (value === undefined ? undefined : readTagText
 function readRetag(value, { previous, kept }) {
   const retag = new Map();
   if (value === undefined) return retag;
-  if (previous === null) throw invalid('retag', '只有发新版本（给了 previous）才能改上一版参考的音色基底标签');
-  if (!isPlainObject(value)) throw invalid('retag', '必须是 { 段名: 新标签 } 对象：上一版里要改音色基底标签的参考，一段一项');
+  if (previous === null) throw invalid('retag', 'retag only works when issuing a new version (previous given): it changes the reference tag of a reference segment of the previous version');
+  if (!isPlainObject(value)) throw invalid('retag', 'must be a { segment id: new tag } object: the reference segments of the previous version whose reference tag you want to change, one entry per segment');
   for (const [id, tag] of Object.entries(value)) {
     const before = previous.segments.find((segment) => segment.id === id);
-    const why = before === undefined ? '上一版里没有这一段' : before.role !== 'reference' ? '是上一版的留出录音（留出录音没有音色基底标签）' : !kept.some((segment) => segment.id === id) ? '这次去掉了（drop）' : null;
-    if (why !== null) throw invalid('retag', `${JSON.stringify(id)} ${why}：只能改上一版参考的标签`, { segment: id });
-    retag.set(id, readTagText(tag, 'retag', `${JSON.stringify(id)} 的新标签必须是有字的字符串（例如「平常」「愤怒」「少年」）`, { segment: id }));
+    const why = before === undefined ? 'does not exist in the previous version' : before.role !== 'reference' ? 'is a held-out recording of the previous version (held-out recordings have no reference tag)' : !kept.some((segment) => segment.id === id) ? 'was dropped this time (drop)' : null;
+    if (why !== null) throw invalid('retag', `${JSON.stringify(id)} ${why}: only the tag of a reference segment of the previous version can be changed`, { segment: id });
+    retag.set(id, readTagText(tag, 'retag', `the new tag for ${JSON.stringify(id)} must be a non-blank string (for example "平常", "愤怒", "少年")`, { segment: id }));
   }
   return retag;
 }
 
 function readSource(source, where) {
   if (source === undefined) return null;
-  if (!isPlainObject(source)) throw invalid(where, '必须是 { recording?, startSec?, endSec? } 对象');
+  if (!isPlainObject(source)) throw invalid(where, 'must be a { recording?, startSec?, endSec? } object');
   const out = {};
   if (source.recording !== undefined) {
-    if (typeof source.recording !== 'string' || source.recording === '') throw invalid(`${where}.recording`, '必须是非空字符串');
+    if (typeof source.recording !== 'string' || source.recording === '') throw invalid(`${where}.recording`, 'must be a non-empty string');
     out.recording = source.recording;
   }
   for (const key of ['startSec', 'endSec']) {
     if (source[key] === undefined) continue;
-    if (typeof source[key] !== 'number' || !Number.isFinite(source[key]) || source[key] < 0) throw invalid(`${where}.${key}`, '必须是不小于 0 的数（秒）');
+    if (typeof source[key] !== 'number' || !Number.isFinite(source[key]) || source[key] < 0) throw invalid(`${where}.${key}`, 'must be a number of at least 0 (seconds)');
     out[key] = source[key];
   }
-  if (out.startSec !== undefined && out.endSec !== undefined && !(out.endSec > out.startSec)) throw invalid(where, `endSec（${out.endSec}）要大于 startSec（${out.startSec}）`);
+  if (out.startSec !== undefined && out.endSec !== undefined && !(out.endSec > out.startSec)) throw invalid(where, `endSec (${out.endSec}) must be greater than startSec (${out.startSec})`);
   return out;
 }
 
@@ -160,27 +160,27 @@ function readSource(source, where) {
  */
 export function readTrim(trim, where, { sentence, externalUrl } = {}) {
   if (trim === undefined) return {};
-  if (!isPlainObject(trim)) throw invalid(where, '必须是 { startSec?, endSec? } 对象：只用这段录音的这几秒（秒，startSec 不写是从头，endSec 不写是到结尾）');
-  if (sentence !== undefined) throw invalid(where, '句子（带 sentence 的段）不收 trim：句子的秒数照 sentence 算，要切先自己切好');
-  if (externalUrl !== undefined) throw invalid(where, '外部资源（externalUrl）不收 trim：包里只记网址、大小和哈希，切了就对不上网址上的文件；要切就先切好，切好的文件放到网址上，或者不写 externalUrl');
+  if (!isPlainObject(trim)) throw invalid(where, 'must be a { startSec?, endSec? } object: use only these seconds of the recording (in seconds; omit startSec to start at the beginning, omit endSec to run to the end)');
+  if (sentence !== undefined) throw invalid(where, 'a sentence (a segment with sentence) does not accept trim: its seconds follow sentence; cut it yourself first if you need a cut');
+  if (externalUrl !== undefined) throw invalid(where, 'an external resource (externalUrl) does not accept trim: the pack records only the URL, size and hash, so a cut file would no longer match the file at the URL; cut first and put the cut file at the URL, or omit externalUrl');
   const out = {};
   for (const key of ['startSec', 'endSec']) {
     if (trim[key] === undefined) continue;
-    if (typeof trim[key] !== 'number' || !Number.isFinite(trim[key]) || trim[key] < 0) throw invalid(`${where}.${key}`, '必须是不小于 0 的数（秒）');
+    if (typeof trim[key] !== 'number' || !Number.isFinite(trim[key]) || trim[key] < 0) throw invalid(`${where}.${key}`, 'must be a number of at least 0 (seconds)');
     out[key] = trim[key];
   }
-  if (out.startSec === undefined && out.endSec === undefined) throw invalid(where, '至少写 startSec、endSec 中的一个（秒）');
-  if (out.startSec !== undefined && out.endSec !== undefined && !(out.endSec > out.startSec)) throw invalid(where, `endSec（${out.endSec}）要大于 startSec（${out.startSec}）`);
-  if (out.endSec !== undefined && out.endSec - (out.startSec ?? 0) < TRIM_MIN_SEC) throw invalid(where, `至少切 ${TRIM_MIN_SEC} 秒：endSec（${out.endSec}）离起点（${out.startSec ?? 0}）不到 ${TRIM_MIN_SEC} 秒`);
+  if (out.startSec === undefined && out.endSec === undefined) throw invalid(where, 'write at least one of startSec and endSec (seconds)');
+  if (out.startSec !== undefined && out.endSec !== undefined && !(out.endSec > out.startSec)) throw invalid(where, `endSec (${out.endSec}) must be greater than startSec (${out.startSec})`);
+  if (out.endSec !== undefined && out.endSec - (out.startSec ?? 0) < TRIM_MIN_SEC) throw invalid(where, `cut at least ${TRIM_MIN_SEC} seconds: endSec (${out.endSec}) is less than ${TRIM_MIN_SEC} seconds after the start (${out.startSec ?? 0})`);
   return { trim: out };
 }
 
 /** 句子模式的句子（lib/long-recording.mjs 的 sentences: true 给的）：句子的秒数（含留边），和它后面的原停顿（秒；没有就是 null）。 */
 function readSentence(sentence, where) {
-  if (!isPlainObject(sentence)) throw invalid(where, '必须是 { bodySec, pauseSec } 对象（句子的秒数，和它后面的原停顿）');
+  if (!isPlainObject(sentence)) throw invalid(where, 'must be a { bodySec, pauseSec } object (the length of the sentence in seconds, and the original pause after it)');
   const { bodySec, pauseSec } = sentence;
-  if (typeof bodySec !== 'number' || !Number.isFinite(bodySec) || bodySec < 0) throw invalid(`${where}.bodySec`, '必须是不小于 0 的数（秒）');
-  if (pauseSec !== null && (typeof pauseSec !== 'number' || !Number.isFinite(pauseSec) || pauseSec < 0)) throw invalid(`${where}.pauseSec`, '必须是不小于 0 的数（秒），或者 null（后面没有原停顿）');
+  if (typeof bodySec !== 'number' || !Number.isFinite(bodySec) || bodySec < 0) throw invalid(`${where}.bodySec`, 'must be a number of at least 0 (seconds)');
+  if (pauseSec !== null && (typeof pauseSec !== 'number' || !Number.isFinite(pauseSec) || pauseSec < 0)) throw invalid(`${where}.pauseSec`, 'must be a number of at least 0 (seconds), or null (no original pause after it)');
   return { bodySec, pauseSec };
 }
 
@@ -189,35 +189,35 @@ function readSentence(sentence, where) {
  * 设计词表（vocab/design-sample-lines.json）里每一项是 { text, feel, kind } 对象，原样抄进来的，说明里说词表的句子只当口气的样子、示例台词照这个角色写。条数、长度、能不能空白，清单检查在花钱之前查。
  */
 function readSampleLines(lines) {
-  if (!Array.isArray(lines)) throw invalid('sampleLines', '必须是字符串数组：每条是一句示例台词（条数、长度、能不能空白，清单检查在花钱之前就查）');
+  if (!Array.isArray(lines)) throw invalid('sampleLines', 'must be an array of strings: each entry is one sample line (count, length and whether blank text is allowed are checked by the manifest check before any money is spent)');
   lines.forEach((line, index) => {
     if (typeof line === 'string') return;
     const copied = isPlainObject(line) && typeof line.text === 'string';
-    const got = line === null ? 'null' : Array.isArray(line) ? '数组' : typeof line === 'object' ? '对象' : JSON.stringify(line);
-    throw invalid(`sampleLines[${index}]`, `第 ${index + 1} 条必须是字符串（一句示例台词），收到的是 ${got}${copied ? '：设计词表（vocab/design-sample-lines.json）里每一项是 { text, feel, kind } 对象，那几句只当口气的样子；示例台词是照这个角色写的句子（references/make-pack.md 讲示例台词的那一段）' : ''}`);
+    const got = line === null ? 'null' : Array.isArray(line) ? 'an array' : typeof line === 'object' ? 'an object' : JSON.stringify(line);
+    throw invalid(`sampleLines[${index}]`, `entry ${index + 1} must be a string (one sample line), got ${got}${copied ? ': each item of the design vocabulary (vocab/design-sample-lines.json) is a { text, feel, kind } object, and those lines only show the tone; sample lines are sentences written for this character (see the part of references/make-pack.md about sample lines)' : ''}`);
   });
 }
 
-/** 给了配音指引就要有这两节，一行都没有（标题下面是空的）也算没写；每项都写「缺」算写了（references/make-pack.md「配音指引的五节」）。 */
+/** 给了配音指引就要有这两节，一行都没有（标题下面是空的）也算没写；每项都写「缺」算写了（references/make-pack.md「The five sections of the dubbing guidance」）。 */
 function assertWriterSections(guidance) {
   const missing = WRITER_SECTIONS.filter((name) => !guidanceSection(guidance, name));
-  if (missing.length > 0) throw invalid('guidance', `配音指引缺${missing.map((name) => `「### ${name}」`).join('、')}（或者这一节一行都没有）。没有依据的项写「缺」，不编（references/make-pack.md「配音指引的五节」）`, { missing });
+  if (missing.length > 0) throw invalid('guidance', `the dubbing guidance is missing ${missing.length === 1 ? 'a section' : 'sections'}: ${missing.map((name) => `"### ${name}"`).join(', ')} (or it has no lines at all). Write "缺" (missing) for an item with no basis; do not make things up (references/make-pack.md「The five sections of the dubbing guidance」)`, { missing });
 }
 
-/** 卡片试听那一句的语言（input.cardLineLanguage，语言标签）：要和 cardLine 一起给。 */
+/** 试听句的语言（input.cardLineLanguage，语言标签）：要和 cardLine 一起给。 */
 function readCardLineLanguage(input) {
   if (input.cardLineLanguage === undefined) return;
-  if (!isLanguageTag(input.cardLineLanguage)) throw invalid('cardLineLanguage', `必须是语言标签，例如 zh、fr、en-GB（最长 ${MAX_LANGUAGE_TAG} 个字符），收到 ${JSON.stringify(input.cardLineLanguage)}`);
-  if (input.cardLine === undefined) throw invalid('cardLineLanguage', '要和 cardLine 一起给：说的是这一句的语言');
+  if (!isLanguageTag(input.cardLineLanguage)) throw invalid('cardLineLanguage', `must be a language tag, for example zh, fr, en-GB (at most ${MAX_LANGUAGE_TAG} characters), got ${JSON.stringify(input.cardLineLanguage)}`);
+  if (input.cardLine === undefined) throw invalid('cardLineLanguage', 'must be given together with cardLine: it is the language of that line');
 }
 
-/** 这个声音的起伏（input.expressiveness，全局值，null 是去掉）和卡片试听那一句单独取的（input.cardLineExpressiveness，要和 cardLine 一起给）：给了就要是 0 到 100 的整数，花钱之前报。 */
+/** 这个声音的起伏（input.expressiveness，全局值，null 是去掉）和试听句单独取的（input.cardLineExpressiveness，要和 cardLine 一起给）：给了就要是 0 到 100 的整数，花钱之前报。 */
 function readVoiceExpressiveness(input) {
   const scale = (value) => Number.isInteger(value) && value >= 0 && value <= 100;
-  if (input.expressiveness !== undefined && input.expressiveness !== null && !scale(input.expressiveness)) throw invalid('expressiveness', `必须是 0 到 100 的整数（这个声音的起伏：越大越多变，越小越平稳；不收小数，也不收 0 到 1 的写法），或者 null（去掉上一版的值），收到 ${JSON.stringify(input.expressiveness)}`);
+  if (input.expressiveness !== undefined && input.expressiveness !== null && !scale(input.expressiveness)) throw invalid('expressiveness', `must be an integer from 0 to 100 (the expressiveness of this voice: higher is more varied, lower is steadier; decimals and the 0 to 1 form are not accepted), or null (drop the value from the previous version), got ${JSON.stringify(input.expressiveness)}`);
   if (input.cardLineExpressiveness === undefined) return;
-  if (!scale(input.cardLineExpressiveness)) throw invalid('cardLineExpressiveness', `必须是 0 到 100 的整数（卡片试听那一句单独取的起伏），收到 ${JSON.stringify(input.cardLineExpressiveness)}`);
-  if (input.cardLine === undefined) throw invalid('cardLineExpressiveness', '要和 cardLine 一起给：只有这一次配的这一句用这个值');
+  if (!scale(input.cardLineExpressiveness)) throw invalid('cardLineExpressiveness', `must be an integer from 0 to 100 (the expressiveness for the audition line alone), got ${JSON.stringify(input.cardLineExpressiveness)}`);
+  if (input.cardLine === undefined) throw invalid('cardLineExpressiveness', 'must be given together with cardLine: only the line dubbed this time uses this value');
 }
 
 /** 设定的起伏（input.setups 每一项的 expressiveness）：给了就要是 0 到 100 的整数（文件头「设定的起伏」）；这一项不是对象、没写这个键的不管（别的由清单检查报）。 */
@@ -226,15 +226,15 @@ function readSetupExpressiveness(setups) {
     if (!isPlainObject(setup) || setup.expressiveness === undefined) return;
     const { expressiveness } = setup;
     if (Number.isInteger(expressiveness) && expressiveness >= 0 && expressiveness <= 100) return;
-    const name = typeof setup.name === 'string' ? JSON.stringify(setup.name) : `第 ${index + 1} 套`;
-    throw invalid(`setups[${index}].expressiveness`, `设定 ${name} 的 expressiveness 必须是 0 到 100 的整数（这套设定固定的起伏：越大越多变，越小越平稳；不收小数，也不收 0 到 1 的写法），收到 ${JSON.stringify(expressiveness)}`);
+    const name = typeof setup.name === 'string' ? JSON.stringify(setup.name) : `#${index + 1}`;
+    throw invalid(`setups[${index}].expressiveness`, `setup ${name}: expressiveness must be an integer from 0 to 100 (the expressiveness this setup fixes: higher is more varied, lower is steadier; decimals and the 0 to 1 form are not accepted), got ${JSON.stringify(expressiveness)}`);
   });
 }
 
 /** 片段的 synthetic：不给或 false 是真录音，true 是合成的（克隆出来的），别的值报错。 */
 function readSynthetic(synthetic, where) {
   if (synthetic === undefined) return false;
-  if (typeof synthetic !== 'boolean') throw invalid(where, '必须是 true 或 false：true 表示这段是合成的（克隆出来的），不是这个人录的');
+  if (typeof synthetic !== 'boolean') throw invalid(where, 'must be true or false: true means this segment is synthetic (cloned), not recorded by the person');
   return synthetic;
 }
 
@@ -278,10 +278,10 @@ function firstDifference(a, b) {
 /** 素材给的提示标注（annotatedText）：不给就是没有；给了要是有看得见的字的字符串，去掉两头空白以后不超过 ANNOTATED_TEXT_MAX 个字符（格式的上限，protocol/FORMAT.md 4.4）。 */
 function readAnnotatedText(value, where) {
   if (value === undefined) return {};
-  if (typeof value !== 'string' || isBlankText(value)) throw invalid(where, '必须是有字的字符串：这段逐字稿加上方括号提示的整句（提示以外的字和 text 一样）；没有提示标注就不写这个键');
+  if (typeof value !== 'string' || isBlankText(value)) throw invalid(where, 'must be a non-blank string: the full line of this segment with bracketed cues added to its verbatim transcript (the words outside the cues are the same as text); if there is no cue annotation, omit this key');
   const text = value.trim();
-  if ([...text].length > ANNOTATED_TEXT_MAX) throw invalid(where, `最长 ${ANNOTATED_TEXT_MAX} 个字符`);
-  if (withoutCues(text) === '') throw invalid(where, '除了方括号提示没有别的字：提示标注是逐字稿加上提示的整句');
+  if ([...text].length > ANNOTATED_TEXT_MAX) throw invalid(where, `at most ${ANNOTATED_TEXT_MAX} characters`);
+  if (withoutCues(text) === '') throw invalid(where, 'contains nothing but bracketed cues: a cue annotation is the verbatim transcript with cues added');
   return { annotatedText: text };
 }
 
@@ -295,19 +295,19 @@ function readText(segment, annotated, where) {
   if (text === '') return withoutCues(annotated.annotatedText);
   const differs = firstDifference(withoutCues(annotated.annotatedText), withoutCues(text));
   if (differs !== null) {
-    const shown = (part) => (part === '' ? '（到头了）' : `「${part}」`);
-    throw invalid(`${where}.annotatedText`, `提示以外的字要和 text 一样（空白不算）：从提示标注的${shown(differs.annotatedText)}、text 的${shown(differs.text)}起不一样`, { differsAt: differs });
+    const shown = (part) => (part === '' ? '(end of text)' : `"${part}"`);
+    throw invalid(`${where}.annotatedText`, `the words outside the cues must match text (whitespace ignored): they first differ at ${shown(differs.annotatedText)} in the cue annotation and ${shown(differs.text)} in text`, { differsAt: differs });
   }
   return text;
 }
 
 function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
-  if (!Array.isArray(segments)) throw invalid('segments', '必须是数组：每一项是一段切好的录音');
-  if (segments.length === 0 && !allowEmpty) throw invalid('segments', '至少要有一段');
+  if (!Array.isArray(segments)) throw invalid('segments', 'must be an array: each item is one recording, already cut');
+  if (segments.length === 0 && !allowEmpty) throw invalid('segments', 'at least one segment is required');
   const seen = new Set(taken);
   return segments.map((segment, index) => {
     const where = `segments[${index}]`;
-    if (!isPlainObject(segment)) throw invalid(where, '必须是对象 { id?, audio, text?, scriptText?, annotatedText?, language?, tag?, source?, trim? }');
+    if (!isPlainObject(segment)) throw invalid(where, 'must be an object { id?, audio, text?, scriptText?, annotatedText?, language?, tag?, source?, trim? }');
     rejectLabels(segment.labels, `${where}.labels`);
     let id = segment.id;
     if (id === undefined) {
@@ -316,21 +316,21 @@ function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0
       while (seen.has(`seg-${String(n).padStart(3, '0')}`)) n += 1;
       id = `seg-${String(n).padStart(3, '0')}`;
     }
-    if (typeof id !== 'string' || !SLUG.test(id)) throw invalid(`${where}.id`, `名字 ${JSON.stringify(id)} 不合格：小写字母、数字、连字符、下划线，以字母或数字开头，最长 64 个字符`);
-    if (seen.has(id)) throw invalid(`${where}.id`, taken.has(id) ? `名字 ${JSON.stringify(id)} 和上一版里的一段重名了` : `名字 ${JSON.stringify(id)} 重复了`);
+    if (typeof id !== 'string' || !SLUG.test(id)) throw invalid(`${where}.id`, `id ${JSON.stringify(id)} is not valid: lowercase letters, digits, hyphens and underscores, starting with a letter or digit, at most 64 characters`);
+    if (seen.has(id)) throw invalid(`${where}.id`, taken.has(id) ? `id ${JSON.stringify(id)} is the same as a segment in the previous version` : `id ${JSON.stringify(id)} is duplicated`);
     seen.add(id);
     try {
       assertAudioClip(segment.audio, `${where}.audio`);
     } catch (cause) {
       if (!isVoicePackError(cause, 'audio_clip_invalid')) throw cause;
-      throw new VoicePackError('make_pack_input_invalid', `做包的输入不合约定（${where}.audio）：${cause.details.problem}`, { details: { field: `${where}.audio`, problem: cause.details.problem }, cause });
+      throw new VoicePackError('make_pack_input_invalid', `Invalid make-pack input (${where}.audio): ${cause.details.problem}`, { details: { field: `${where}.audio`, problem: cause.details.problem }, cause });
     }
-    if (segment.text !== undefined && segment.text !== null && typeof segment.text !== 'string') throw invalid(`${where}.text`, '必须是字符串（这段录音里说的原话），或者不给、给 null 表示没有文本');
+    if (segment.text !== undefined && segment.text !== null && typeof segment.text !== 'string') throw invalid(`${where}.text`, 'must be a string (the words spoken in this recording), or omitted, or null for no text');
     if (segment.externalUrl !== undefined && (typeof segment.externalUrl !== 'string' || !/^https:\/\//.test(segment.externalUrl) || segment.externalUrl.length > 2048)) {
-      throw invalid(`${where}.externalUrl`, '必须是 https:// 开头、不超过 2048 个字符的网址');
+      throw invalid(`${where}.externalUrl`, 'must be a URL starting with https://, at most 2048 characters');
     }
     const annotated = readAnnotatedText(segment.annotatedText, `${where}.annotatedText`);
-    if (segment.scriptText !== undefined && (typeof segment.scriptText !== 'string' || isBlankText(segment.scriptText))) throw invalid(`${where}.scriptText`, '必须是有字的字符串（配这一段用的台本原文，带提示也行）');
+    if (segment.scriptText !== undefined && (typeof segment.scriptText !== 'string' || isBlankText(segment.scriptText))) throw invalid(`${where}.scriptText`, 'must be a non-blank string (the original script text used to dub this segment; cues are allowed)');
     return {
       index: offset + index,
       id,
@@ -351,8 +351,8 @@ function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0
 
 /** 句子的一组里两句标得不一样时，各自的说法（文件头「句子」）。 */
 const SENTENCE_MARKS = [
-  { mark: (item) => item.synthetic === true, field: 'synthetic', yes: '标了 synthetic: true', no: '没标 synthetic', whole: '整段算合成的或整段算真录音' },
-  { mark: (item) => item.annotatedText !== undefined, field: 'annotatedText', yes: '给了 annotatedText', no: '没给 annotatedText', whole: '整段带着提示标注或整段没有' },
+  { mark: (item) => item.synthetic === true, field: 'synthetic', yes: 'marked synthetic: true', no: 'not marked synthetic', whole: 'the merged segment is either wholly synthetic or wholly a real recording' },
+  { mark: (item) => item.annotatedText !== undefined, field: 'annotatedText', yes: 'given annotatedText', no: 'not given annotatedText', whole: 'the merged segment either carries a cue annotation as a whole or has none' },
 ];
 
 /**
@@ -375,8 +375,8 @@ function assertSentenceGroups(fresh, offset, { moreSentences, defaultLanguage })
     for (const { mark, field, yes, no, whole } of SENTENCE_MARKS) {
       const headMarked = head.item !== null && mark(head.item);
       if (mark(item) === headMarked) continue;
-      const other = head.item === null ? `要从长录音切出来的句子${no}` : `${head.where} ${headMarked ? yes : no}`;
-      throw invalid(`${where}.${field}`, `这一句${mark(item) ? yes : no}，${other}：素材给的语言一样的句子（带 sentence 的段）可能并进同一段，并成的段${whole}。同一组的句子要标得一样；要分开标，就不写 sentence，自己切成段交`);
+      const other = head.item === null ? `the sentences to be cut from the long recording are ${no}` : `${head.where} is ${headMarked ? yes : no}`;
+      throw invalid(`${where}.${field}`, `this sentence is ${mark(item) ? yes : no}, while ${other}: sentences (segments with sentence) in the same language given by the material may be merged into one segment, and ${whole}. Sentences in the same group must be marked the same way; to mark them differently, omit sentence and submit them as segments you cut yourself`);
     }
   }
 }
@@ -388,61 +388,61 @@ function assertSentenceGroups(fresh, offset, { moreSentences, defaultLanguage })
  *   direction：音色描述和标签换成规范写法以后的样子（没给是 undefined）
  */
 export function readInput(input, previous, { moreSegments = false, moreSentences = false } = {}) {
-  if (!isPlainObject(input)) throw invalid('input', '必须是对象');
+  if (!isPlainObject(input)) throw invalid('input', 'must be an object');
   const hasPrevious = previous !== null;
   if (input.name === undefined && hasPrevious) {
     // 发新版本不用再给名字：沿用上一版的
   } else if (typeof input.name !== 'string' || input.name.trim() === '' || [...input.name].length > 100) {
-    throw invalid('name', '必须是 1–100 个字符的显示名');
+    throw invalid('name', 'must be a display name of 1–100 characters');
   }
-  if (!isSemver(input.baseVersion)) throw invalid('baseVersion', `必须是语义化版本号（例如 1.0.0），收到 ${JSON.stringify(input.baseVersion)}`);
-  if (!(input.protocolCore instanceof Map)) throw invalid('protocolCore', '必须是协议核心的文件集 Map<路径, Uint8Array>');
-  if (input.base !== undefined && !(input.base instanceof Map)) throw invalid('base', '必须是基础部分的文件集 Map<路径, Uint8Array>，或者不给');
-  for (const key of ['features', 'requires', 'designSource']) if (input[key] !== undefined && !isPlainObject(input[key])) throw invalid(key, '必须是对象');
+  if (!isSemver(input.baseVersion)) throw invalid('baseVersion', `must be a semantic version (for example 1.0.0), got ${JSON.stringify(input.baseVersion)}`);
+  if (!(input.protocolCore instanceof Map)) throw invalid('protocolCore', 'must be the file set of the protocol core, a Map<path, Uint8Array>');
+  if (input.base !== undefined && !(input.base instanceof Map)) throw invalid('base', 'must be the file set of the base part, a Map<path, Uint8Array>, or omitted');
+  for (const key of ['features', 'requires', 'designSource']) if (input[key] !== undefined && !isPlainObject(input[key])) throw invalid(key, 'must be an object');
   let direction;
   if (input.direction !== undefined) {
     // 音色标签只能从设计词表里取：写法换成规范的，不在词表里的、不认识的字段在花钱之前就报
     const normalized = normalizeDirection(input.direction);
     if (normalized.problems.length > 0) {
       const [first] = normalized.problems;
-      throw invalid(first.field === '' ? 'direction' : `direction.${first.field}`, `${first.message}${normalized.problems.length > 1 ? `（共 ${normalized.problems.length} 处：${normalized.problems.map((problem) => problem.field).join('、')}）` : ''}`);
+      throw invalid(first.field === '' ? 'direction' : `direction.${first.field}`, `${first.message}${normalized.problems.length > 1 ? ` (${normalized.problems.length} problems in total: ${normalized.problems.map((problem) => problem.field).join(', ')})` : ''}`);
     }
     direction = normalized.direction;
   }
-  for (const key of ['scripts', 'enhancers']) if (input[key] !== undefined && !Array.isArray(input[key])) throw invalid(key, '必须是数组');
-  if (input.setups !== undefined && !Array.isArray(input.setups)) throw invalid('setups', '必须是数组：每项是一套设定 { name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }（写法、重名、default 的检查，清单检查在花钱之前就查；referenceTag 对不对得上，lib/make-pack-tags.mjs 在花钱之前查）');
+  for (const key of ['scripts', 'enhancers']) if (input[key] !== undefined && !Array.isArray(input[key])) throw invalid(key, 'must be an array');
+  if (input.setups !== undefined && !Array.isArray(input.setups)) throw invalid('setups', 'must be an array: each item is a setup { name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? } (the format, duplicate names and default are checked by the manifest check before any money is spent; whether referenceTag matches is checked by lib/make-pack-tags.mjs before any money is spent)');
   if (input.setups !== undefined) readSetupExpressiveness(input.setups);
   readVoiceExpressiveness(input);
   if (input.sampleLines !== undefined) readSampleLines(input.sampleLines);
-  if (input.cardLine !== undefined && typeof input.cardLine !== 'string') throw invalid('cardLine', '必须是字符串：卡片试听那一句台词（长度、能不能空白，清单检查在花钱之前就查；配不配得成一个请求，lib/make-pack-card-line.mjs 在花钱之前查）');
-  if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', '必须是字符串（配音指引的 Markdown 正文）');
+  if (input.cardLine !== undefined && typeof input.cardLine !== 'string') throw invalid('cardLine', 'must be a string: the text of the audition line (length and whether blank text is allowed are checked by the manifest check before any money is spent; whether it can be dubbed as one request is checked by lib/make-pack-card-line.mjs before any money is spent)');
+  if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', 'must be a string (the Markdown body of the dubbing guidance)');
   if (typeof input.guidance === 'string' && input.guidance.trim() !== '') assertWriterSections(input.guidance);
   readCardLineLanguage(input);
-  if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', '必须是 Map<路径, Uint8Array>');
+  if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', 'must be a Map<path, Uint8Array>');
 
   // 版本相关的字段
-  if (input.bump !== undefined && !hasPrevious) throw invalid('bump', '只有发新版本（给了 previous）才用 bump：第一个版本用 version 明说，或者不给（1.0.0）');
-  if (input.bump !== undefined && !BUMPS.includes(input.bump)) throw invalid('bump', `必须是 ${BUMPS.join('、')} 之一，收到 ${JSON.stringify(input.bump)}`);
-  if (input.version !== undefined && !isSemver(input.version)) throw invalid('version', `必须是语义化版本号（例如 1.2.0），收到 ${JSON.stringify(input.version)}`);
+  if (input.bump !== undefined && !hasPrevious) throw invalid('bump', 'bump only works when issuing a new version (previous given): for the first version, state version explicitly, or omit it (1.0.0)');
+  if (input.bump !== undefined && !BUMPS.includes(input.bump)) throw invalid('bump', `must be one of ${BUMPS.join(', ')}, got ${JSON.stringify(input.bump)}`);
+  if (input.version !== undefined && !isSemver(input.version)) throw invalid('version', `must be a semantic version (for example 1.2.0), got ${JSON.stringify(input.version)}`);
   let changelog;
   if (input.changelog !== undefined) {
-    if (typeof input.changelog !== 'string' || input.changelog.trim() === '' || [...input.changelog.trim()].length > CHANGELOG_MAX) throw invalid('changelog', `必须是 1–${CHANGELOG_MAX} 个字符的变更说明`);
+    if (typeof input.changelog !== 'string' || input.changelog.trim() === '' || [...input.changelog.trim()].length > CHANGELOG_MAX) throw invalid('changelog', `must be a change description of 1–${CHANGELOG_MAX} characters`);
     changelog = input.changelog.trim();
   }
   const previousIds = new Set(hasPrevious ? previous.segments.map((segment) => segment.id) : []);
   let drop = [];
   if (input.drop !== undefined) {
-    if (!hasPrevious) throw invalid('drop', '只有发新版本（给了 previous）才能去掉上一版里的段');
-    if (!Array.isArray(input.drop) || input.drop.some((id) => typeof id !== 'string')) throw invalid('drop', '必须是名字的数组：上一版里要去掉的参考或留出录音');
+    if (!hasPrevious) throw invalid('drop', 'drop only works when issuing a new version (previous given): it drops segments of the previous version');
+    if (!Array.isArray(input.drop) || input.drop.some((id) => typeof id !== 'string')) throw invalid('drop', 'must be an array of ids: the reference segments or held-out recordings of the previous version to drop');
     const unknown = input.drop.filter((id) => !previousIds.has(id));
-    if (unknown.length > 0) throw invalid('drop', `上一版里没有这几段：${unknown.join('、')}`);
+    if (unknown.length > 0) throw invalid('drop', `the previous version has no such segments: ${unknown.join(', ')}`);
     drop = [...new Set(input.drop)];
   }
   // 点名的默认段：一段的名字，或者几种语言各一段的名字的数组（一种语言最多一段，语言的检查在 lib/make-pack-pick.mjs 的 assertDefaultsUsable 和 pickMaterial）
   const defaultSegments = input.defaultSegment === undefined ? [] : [input.defaultSegment].flat();
-  if (input.defaultSegment !== undefined && (defaultSegments.length === 0 || defaultSegments.some((id) => typeof id !== 'string' || id === ''))) throw invalid('defaultSegment', '必须是参考集里一段的名字，或者几种语言各一段的名字的数组');
+  if (input.defaultSegment !== undefined && (defaultSegments.length === 0 || defaultSegments.some((id) => typeof id !== 'string' || id === ''))) throw invalid('defaultSegment', 'must be the id of one segment of the reference set, or an array of ids, one segment per language');
   const repeated = defaultSegments.find((id, index) => defaultSegments.indexOf(id) !== index);
-  if (repeated !== undefined) throw invalid('defaultSegment', `${JSON.stringify(repeated)} 点名了两次`);
+  if (repeated !== undefined) throw invalid('defaultSegment', `${JSON.stringify(repeated)} is named twice`);
 
   rejectLabels(input.labels, 'labels');
   const defaultLanguage = readLanguage(input.language, 'language'); // 给所有段的默认只有语言；没有默认的音色基底标签
@@ -469,9 +469,9 @@ export function readInput(input, previous, { moreSegments = false, moreSentences
   assertSentenceGroups(fresh, previousItems.length, { moreSentences, defaultLanguage }); // 可能并进同一段的句子，synthetic、annotatedText 要标得一样
   for (const wanted of moreSegments ? [] : defaultSegments) {
     const isPreviousReference = kept.some((segment) => segment.id === wanted && segment.role === 'reference');
-    if (!isPreviousReference && !fresh.some((item) => item.id === wanted)) throw invalid('defaultSegment', `${JSON.stringify(wanted)} 不是参考集里的一段（上一版的参考，或者这次新补的；留出录音和去掉的不行）`);
+    if (!isPreviousReference && !fresh.some((item) => item.id === wanted)) throw invalid('defaultSegment', `${JSON.stringify(wanted)} is not a segment of the reference set (it must be a reference segment of the previous version or one added this time; held-out recordings and dropped segments do not qualify)`);
   }
-  // 卡片试听那一句：去掉两头空白（素材的文字都这样），别的原样
+  // 试听句：去掉两头空白（素材的文字都这样），别的原样
   const cardLine = input.cardLine === undefined ? undefined : input.cardLine.trim();
   return { items: [...previousItems, ...fresh], version: { version: input.version, bump: input.bump, changelog, drop, defaultSegments }, direction, cardLine, cardLineExpressiveness: input.cardLineExpressiveness, cardLineLanguage: input.cardLineLanguage };
 }
@@ -483,7 +483,7 @@ export function readInput(input, previous, { moreSegments = false, moreSentences
 function readLoudness(value) {
   if (value === false) return null;
   if (value === undefined || value === true) return loudnessOptions();
-  if (!isPlainObject(value)) throw invalid('loudness', `必须是 true、false 或 { targetLufs?, peakCeilingDbfs?, limiter? }，收到 ${JSON.stringify(value)}`);
+  if (!isPlainObject(value)) throw invalid('loudness', `must be true, false or { targetLufs?, peakCeilingDbfs?, limiter? }, got ${JSON.stringify(value)}`);
   try {
     return loudnessOptions(value);
   } catch (cause) {
@@ -507,26 +507,26 @@ function readTextLanguage(value) {
 }
 
 export function readOptions(options) {
-  if (!isPlainObject(options)) throw invalid('options', '必须是对象');
-  // 挑素材的几个选项：规则只在 lib/pack-material.mjs 写一遍。写错了在花钱之前就报 make_pack_input_invalid，不等到挑素材那一步抛 TypeError（程序员用错接口才抛 TypeError，protocol/README.md「错误」）
+  if (!isPlainObject(options)) throw invalid('options', 'must be an object');
+  // 挑素材的几个选项：规则只在 lib/pack-material.mjs 写一遍。写错了在花钱之前就报 make_pack_input_invalid，不等到挑素材那一步抛 TypeError（程序员用错接口才抛 TypeError，protocol/README.md「Errors」）
   const [problem] = materialOptionProblems(options);
   if (problem !== undefined) throw invalid(problem.field, problem.message);
-  if (options.concurrency !== undefined && !(Number.isInteger(options.concurrency) && options.concurrency >= 1 && options.concurrency <= 8)) throw invalid('concurrency', '必须是 1–8 的整数');
-  if (options.describeChanges !== undefined && typeof options.describeChanges !== 'function') throw invalid('describeChanges', '必须是函数 (changes, { name }) => 一句变更说明');
-  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', '必须是函数 (毫秒) => Promise，转写、挑默认段、标提示标注、试合成暂时出错、再试之前等多久');
-  if (options.minChars !== undefined && options.minChars !== null && !(Number.isInteger(options.minChars) && options.minChars >= 1)) throw invalid('minChars', '必须是不小于 1 的整数（合成能力一次至少多少个字，环境声明的），或者不给');
-  // 配卡片试听那一句时交给配音的两项上限（环境声明的，写法同 lib/dub.mjs 的同名选项；maxChars 的下限在 lib/synthesis-limits.mjs）
-  if (options.maxChars !== undefined && options.maxChars !== null && !(Number.isInteger(options.maxChars) && options.maxChars >= MIN_MAX_CHARS)) throw invalid('maxChars', `必须是不小于 ${MIN_MAX_CHARS} 的整数（合成能力一次最多多少个字，环境声明的），或者不给`);
-  if (options.maxPauseInRequestMs !== undefined && options.maxPauseInRequestMs !== null && !(Number.isInteger(options.maxPauseInRequestMs) && options.maxPauseInRequestMs >= 0)) throw invalid('maxPauseInRequestMs', '必须是不小于 0 的整数（一个请求里一处停顿最多多少毫秒，环境声明的），或者不给');
-  if (options.allowCrossLanguage !== undefined && typeof options.allowCrossLanguage !== 'boolean') throw invalid('allowCrossLanguage', '必须是 true 或 false（true：卡片试听那一句和给它挑的参考段不是一种语言也照配，带口音），或者不给');
-  if (options.languageMarks !== undefined && typeof options.languageMarks !== 'boolean') throw invalid('languageMarks', '必须是 true 或 false（false：跨语言配卡片试听那一句时不要求名字对，不加两边的语言提示），或者不给');
+  if (options.concurrency !== undefined && !(Number.isInteger(options.concurrency) && options.concurrency >= 1 && options.concurrency <= 8)) throw invalid('concurrency', 'must be an integer from 1 to 8');
+  if (options.describeChanges !== undefined && typeof options.describeChanges !== 'function') throw invalid('describeChanges', 'must be a function (changes, { name }) => a one-sentence change description');
+  if (options.retryWait !== undefined && typeof options.retryWait !== 'function') throw invalid('retryWait', 'must be a function (milliseconds) => Promise: how long to wait before retrying after a temporary error in transcription, default-segment picking, cue annotation or trial synthesis');
+  if (options.minChars !== undefined && options.minChars !== null && !(Number.isInteger(options.minChars) && options.minChars >= 1)) throw invalid('minChars', 'must be an integer of at least 1 (the minimum number of characters the synthesis capability accepts per request, declared by the environment), or omitted');
+  // 配试听句时交给配音的两项上限（环境声明的，写法同 lib/dub.mjs 的同名选项；maxChars 的下限在 lib/synthesis-limits.mjs）
+  if (options.maxChars !== undefined && options.maxChars !== null && !(Number.isInteger(options.maxChars) && options.maxChars >= MIN_MAX_CHARS)) throw invalid('maxChars', `must be an integer of at least ${MIN_MAX_CHARS} (the maximum number of characters the synthesis capability accepts per request, declared by the environment), or omitted`);
+  if (options.maxPauseInRequestMs !== undefined && options.maxPauseInRequestMs !== null && !(Number.isInteger(options.maxPauseInRequestMs) && options.maxPauseInRequestMs >= 0)) throw invalid('maxPauseInRequestMs', 'must be an integer of at least 0 (the maximum length in milliseconds of one pause inside a request, declared by the environment), or omitted');
+  if (options.allowCrossLanguage !== undefined && typeof options.allowCrossLanguage !== 'boolean') throw invalid('allowCrossLanguage', 'must be true or false (true: dub the audition line even when it is not in the same language as the reference segment picked for it, with an accent), or omitted');
+  if (options.languageMarks !== undefined && typeof options.languageMarks !== 'boolean') throw invalid('languageMarks', 'must be true or false (false: when dubbing the audition line across languages, do not require a name pair at the start and do not add the language cues on both sides), or omitted');
   // loudness 换成补全的目标、上限和限幅器，或者 null（关掉）；textLanguage 换成 'zh' 或 'en'（没给就是 'zh'）
   return { ...options, loudness: readLoudness(options.loudness), textLanguage: readTextLanguage(options.textLanguage) };
 }
 
 /** input 必须是对象。makePack 最先查它：连 options 都还没读。 */
 export function assertInput(input) {
-  if (!isPlainObject(input)) throw invalid('input', '必须是对象');
+  if (!isPlainObject(input)) throw invalid('input', 'must be an object');
 }
 
 /**
@@ -542,17 +542,17 @@ export function checkSetupOpeningCues(setups, { carried = false } = {}) {
     const { cue } = openingCueOf({}, setup.labels);
     const words = cue === null ? 0 : cueWords(cue);
     if (words <= MAX_OPENING_CUE_WORDS) return;
-    const name = typeof setup.name === 'string' ? setup.name : `第 ${index + 1} 套`;
-    const counted = `合成的开头的提示 ${cue} 数出来 ${words} 个词，超过上限 ${MAX_OPENING_CUE_WORDS} 个词（汉字、假名两个算一个词，拼音文字按空格数，一下子的声音不算）`;
+    const name = typeof setup.name === 'string' ? setup.name : `#${index + 1}`;
+    const counted = `its cue at the start of the synthesis, ${cue}, counts ${words} words, over the limit of ${MAX_OPENING_CUE_WORDS} words (two Han characters or kana count as one word, alphabetic scripts are counted by spaces, sudden sounds are not counted)`;
     if (carried) {
       notes.push({
         code: 'setup_opening_cue_too_long',
-        message: `沿用上一版的设定 ${JSON.stringify(name)} ${counted}，原样写进了这一版。配音用到这套设定时会报 dub_input_invalid（命令行用更短的 --emotion、--style 盖过它，或者 --no-setup）；要改，给 setups（命令行 --setups）换一份情绪、风格短的`,
+        message: `Setup ${JSON.stringify(name)} was carried over from the previous version and written into this version unchanged, but ${counted}. Dubbing with this setup will report dub_input_invalid (on the command line, override it with a shorter --emotion or --style, or use --no-setup); to fix it, replace setups (command line --setups) with ones whose emotion and style are shorter`,
         details: { setup: name, words, limit: MAX_OPENING_CUE_WORDS, from: 'previous' },
       });
       return;
     }
-    throw invalid(`setups[${index}]`, `设定 ${JSON.stringify(name)} ${counted}。配音时它写在每个请求的开头，要短：情绪、风格用标签词表（vocab/cues.json）里的短词，不写成一长串；把这套设定的情绪、风格改短（写法见 references/make-pack.md「几套设定」、models/scene3.md「写什么」）`, { words, limit: MAX_OPENING_CUE_WORDS });
+    throw invalid(`setups[${index}]`, `setup ${JSON.stringify(name)}: ${counted}. When dubbing, it is written at the start of every request and must be short: use short words from the cue vocabulary (vocab/cues.json) for emotion and style, not a long string; shorten the emotion and style of this setup (how to write: references/make-pack.md「Several setups (writing fixed values into the voice)」, models/scene3.md「What to write」)`, { words, limit: MAX_OPENING_CUE_WORDS });
   });
   return notes;
 }

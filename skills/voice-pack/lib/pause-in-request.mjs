@@ -24,7 +24,7 @@ import { endsWrittenWithoutSpaces, writtenWithoutSpaceBetween, TRAILING_TAGS } f
 
 /**
  * 环境没声明 limits.maxPauseInRequestMs 时，一个请求里一处停顿最多多长（毫秒）：成品里每一处静音最多留这么长
- * （出处：models/scene3.md「停顿」最后一条，推理代码的上限；不是 PAUSE_WRITINGS 的读数）。比它长的写不出来，在那里切开交给拼接。
+ * （出处：models/scene3.md「Pause between lines」最后一条，推理代码的上限；不是 PAUSE_WRITINGS 的读数）。比它长的写不出来，在那里切开交给拼接。
  * PAUSE_WRITINGS 里有读数比它长（[pause] 量到过 780 毫秒），那是读数上下有几百毫秒的出入，不按读数调高这个默认值：调高了，长过上限的停顿会写进请求、被截短。
  */
 export const DEFAULT_MAX_PAUSE_IN_REQUEST_MS = 750;
@@ -33,7 +33,7 @@ export const DEFAULT_MAX_PAUSE_IN_REQUEST_MS = 750;
  * 请求里的停顿写法，和每一种量出来的静音（毫秒，几种声音、几句一起的中位数）。三组按前一段怎么收尾分（见文件头），写法接在前一段后面；
  * cjk 是前一段以汉字、假名或它们的全角标点收尾（隔着收尾的引号、括号，protocol/lib/word-spacing.mjs 的 endsWrittenWithoutSpaces）时的写法，other 是别的
  * （英文这类，写法前后带空格；韩文的词和词之间有空格，也用它）；空串是什么都不加。
- * 出处：models/scene3.md「停顿」（日期、量法、读数都在那里）。
+ * 出处：models/scene3.md「Pause between lines」（日期、量法、读数都在那里）。
  */
 export const PAUSE_WRITINGS = Object.freeze({
   plain: Object.freeze([
@@ -114,7 +114,7 @@ export function requestsOf(items, { limits = [], canJoin, boundary = () => 'sent
       continue;
     }
     const level = BOUNDARIES.indexOf(boundary(items[i], items[i + 1]));
-    if (level === -1) throw new TypeError(`boundary 要返回 ${BOUNDARIES.join('、')} 之一`);
+    if (level === -1) throw new TypeError(`boundary must return one of ${BOUNDARIES.join(', ')}`);
     const writing = separator(before, texts[i + 1], pauseWriting(before, items[i].pause));
     seams.push({ level, between: level === 0 ? writing : `${writing.trimEnd()}\n`, paused: items[i].pause > 0 });
   }

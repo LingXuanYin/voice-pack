@@ -34,18 +34,18 @@ import { writeNewFile } from '../disk.mjs';
 import { parseOptions } from '../signing.mjs';
 import { formatReport } from '../report.mjs';
 
-export const summary = '把一个部分的目录打成分享文件（.voicepack.zip）：先检查（含验签和互相校验），通过了才打包，同样的目录打出同样的字节';
-export const usage = `pack <部分目录> [--out <分享文件>] [--product-name <名字>] [--open-link <地址>] [--make-link <地址>] ${CHECK_USAGE} [--json]`;
+export const summary = 'Pack the directory of one part into a share file (.voicepack.zip): check first (including signature verification and mutual verification), pack only if the check passes; the same directory always packs to the same bytes';
+export const usage = `pack <part-dir> [--out <share-file>] [--product-name <name>] [--open-link <url>] [--make-link <url>] ${CHECK_USAGE} [--json]`;
 
 export async function run(args, ctx) {
   const options = parseOptions(args, { values: ['out', 'product-name', 'open-link', 'make-link', ...CHECK_OPTIONS.values], flags: CHECK_OPTIONS.flags });
-  if (options.problem !== undefined) { ctx.stderr(`用法错误：${options.problem}\n用法：${usage}\n`); return 2; }
+  if (options.problem !== undefined) { ctx.stderr(`Usage error: ${options.problem}\nUsage: ${usage}\n`); return 2; }
   const [target, ...extra] = options.positional;
-  if (target === undefined) { ctx.stderr(`用法错误：要指定部分的目录\n用法：${usage}\n`); return 2; }
-  if (extra.length > 0) { ctx.stderr(`用法错误：一次只打一个，多出来的是 ${extra.join(' ')}\n用法：${usage}\n`); return 2; }
+  if (target === undefined) { ctx.stderr(`Usage error: give the part directory\nUsage: ${usage}\n`); return 2; }
+  if (extra.length > 0) { ctx.stderr(`Usage error: pack takes one part at a time; the extra argument is ${extra.join(' ')}\nUsage: ${usage}\n`); return 2; }
 
   const { kind, report, files } = await inspectTarget(target, ctx, checkSettings(options));
-  if (kind !== 'directory') { ctx.stderr(`用法错误：pack 要的是部分的目录，${target} 是文件；检查分享文件用 check，解开用 unpack\n用法：${usage}\n`); return 2; }
+  if (kind !== 'directory') { ctx.stderr(`Usage error: pack takes a part directory, but ${target} is a file; check a share file with check, unpack it with unpack\nUsage: ${usage}\n`); return 2; }
   if (!report.ok) {
     ctx.stdout(ctx.json ? `${JSON.stringify(report)}\n` : formatReport(report, target));
     return 1;
@@ -53,7 +53,7 @@ export async function run(args, ctx) {
 
   const manifest = parseManifest(files.get('manifest.json'));
   if (manifest.part === 'protocol') {
-    ctx.stderr('用法错误：协议核心不单独分享：要打包的是角色部分或基础部分的目录\n');
+    ctx.stderr('Usage error: the protocol core is not shared on its own: pack the directory of a role part or a base part\n');
     return 2;
   }
   const card = { productName: options.values['product-name'], links: { open: options.values['open-link'], make: options.values['make-link'] } };
@@ -63,6 +63,6 @@ export async function run(args, ctx) {
   writeNewFile(file, bytes);
   const sha256 = await sha256Hex(bytes);
   const info = { file, bytes: bytes.length, sha256, part: manifest.part, ...(manifest.part === 'role' ? { id: manifest.id } : {}), version: manifest.version };
-  ctx.stdout(ctx.json ? `${JSON.stringify(info)}\n` : `已打包：${file}（${bytes.length} 字节，sha256 ${sha256}）\n`);
+  ctx.stdout(ctx.json ? `${JSON.stringify(info)}\n` : `Packed: ${file} (${bytes.length} bytes, sha256 ${sha256})\n`);
   return 0;
 }

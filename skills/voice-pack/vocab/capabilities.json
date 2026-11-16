@@ -25,7 +25,7 @@
     "phoneme-in-text": { "tier": "convention", "summary": "合成时认文字里的音素：<speak>…</speak> 包着的 <phoneme alphabet=\"x-pinyin\" ph=\"zeng1\">曾</phoneme>，按标的音念（读音词表里的拼音音素，lib/pronunciation-lexicon.mjs）" },
     "phoneme-markers": { "tier": "convention", "summary": "合成时认文字里的音素标签：<|phoneme_start|>音素<|phoneme_end|> 代替原来的词（拼音一个音节一个标签，<|phoneme_start|>zeng1<|phoneme_end|>；英文 CMU Arpabet 一个词一个标签，日文带音调数字的罗马字一个词条一个标签），按标的音念；读音词表里的拼音、Arpabet、罗马字音素写成这种标签，一场戏的每一轮也写（lib/pronunciation-lexicon.mjs）" },
     "scene-in-request": { "tier": "convention", "summary": "一场戏一个请求：环境的 text-to-dialogue 收每一轮（turns），配音把台本里几个说话人轮流说的一段连续的话放进一个请求、一个音频，每个说话人整场用一段参考，每一轮的提示写在这一轮的文字里；没有声明的环境，配音一个声音一个声音地配：同一章里同一个声音接着说的几行，参考、语速、开头的提示都一样，放得下就并成一个请求（lib/dub.mjs 第 5a、5c 步）" },
-    "seed-in-request": { "tier": "convention", "summary": "合成收 seed：环境的 voice-cloning、text-to-dialogue 收 seed 参数，同一个 seed、同样的输入尽量出同样的结果；配音给每个请求同一个固定的 seed（dub --only 重配的段、用同样的请求重配的卡片试听那一句，换成上一次的加 1），长文切开的几块就用同一个（lib/dub.mjs 第 7 步）；没有声明的环境，配音不给 seed" },
+    "seed-in-request": { "tier": "convention", "summary": "合成收 seed：环境的 voice-cloning、text-to-dialogue 收 seed 参数，同一个 seed、同样的输入尽量出同样的结果；配音给每个请求同一个固定的 seed（dub --only 重配的段、用同样的请求重配的试听句，换成上一次的加 1），长文切开的几块就用同一个（lib/dub.mjs 第 7 步）；没有声明的环境，配音不给 seed" },
     "pronunciation-lexicon": { "tier": "convention", "summary": "合成时按读音词表（W3C PLS 格式）改读指定的词" }
   },
   "parameters": {

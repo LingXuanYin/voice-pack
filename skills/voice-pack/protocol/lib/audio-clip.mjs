@@ -8,7 +8,7 @@
 // 不传 URL、Base64 字符串、文件路径：这样库的接口不绑定某个环境的存储。要 URL 的模型（例如只收 URL 的参考音频），
 // 由适配器自己去上传，再把返回的 URL 用在它自己的请求里，URL 不会回到库的接口上。
 //
-// 为什么放在核心层：流程层和环境适配层都要用，而适配器只允许依赖核心层（protocol/README.md「模块约定」）。
+// 为什么放在核心层：流程层和环境适配层都要用，而适配器只允许依赖核心层（protocol/README.md「Module conventions」）。
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError } from './errors.mjs';
 
@@ -16,10 +16,10 @@ import { VoicePackError } from './errors.mjs';
 const AUDIO_MIME = /^audio\/[^\s;/]+(?:\s*;.*)?$/i;
 
 function problemOf(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return '必须是 { bytes, mimeType } 对象（不收 URL、Base64 字符串、文件路径）';
-  if (!(value.bytes instanceof Uint8Array)) return 'bytes 必须是 Uint8Array（Buffer 也行；不收 Base64 字符串、普通数组、ArrayBuffer）';
-  if (value.bytes.length === 0) return 'bytes 不能是空的';
-  if (typeof value.mimeType !== 'string' || !AUDIO_MIME.test(value.mimeType)) return 'mimeType 必须是 audio/ 开头的 MIME 类型，例如 audio/wav、audio/mpeg';
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be a { bytes, mimeType } object (no URL, Base64 string or file path)';
+  if (!(value.bytes instanceof Uint8Array)) return 'bytes must be a Uint8Array (a Buffer is fine; no Base64 string, plain array or ArrayBuffer)';
+  if (value.bytes.length === 0) return 'bytes must not be empty';
+  if (typeof value.mimeType !== 'string' || !AUDIO_MIME.test(value.mimeType)) return 'mimeType must be a MIME type starting with audio/, for example audio/wav, audio/mpeg';
   return null;
 }
 
@@ -43,7 +43,7 @@ export function isAudioClip(value) {
 export function assertAudioClip(value, field = 'audio') {
   const problem = problemOf(value);
   if (problem !== null) {
-    throw new VoicePackError('audio_clip_invalid', `${field} 不是合法的音频片段：${problem}`, { details: { field, problem } });
+    throw new VoicePackError('audio_clip_invalid', `${field} is not a valid audio clip: ${problem}`, { details: { field, problem } });
   }
   return value;
 }

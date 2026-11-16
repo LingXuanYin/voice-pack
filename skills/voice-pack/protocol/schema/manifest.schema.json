@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "音色包的清单（manifest.json）",
-  "description": "每个部分（角色部分、基础部分、协议核心）的目录里各有一份 manifest.json，列出这个部分的每一个文件和它的 SHA-256。三种清单靠 part 字段区分。这份 schema 只管结构；排序、路径安全、重名、引用对得上这些 schema 表达不了的规则，写在 FORMAT.md 的「清单」一节，由 protocol/lib/manifest.mjs 检查。同一个主版本内次版本只加不删：读到不认识的字段一律忽略，所以这里不写 additionalProperties: false。",
+  "title": "Manifest of a voice pack (manifest.json)",
+  "description": "Each part (role part, base part, protocol core) has a manifest.json in its directory, listing every file of that part and its SHA-256. The three kinds of manifest are told apart by the part field. This schema covers structure only; rules a schema cannot express (ordering, path safety, duplicate names, references that resolve) are written in FORMAT.md「4. Manifest (manifest.json)」 and checked by protocol/lib/manifest.mjs. Within one major version, minor versions only add and never remove: fields that are not recognized are always ignored on read, so additionalProperties: false is not written here.",
   "type": "object",
   "oneOf": [
     { "$ref": "#/$defs/roleManifest" },
@@ -10,7 +10,7 @@
   ],
   "$defs": {
     "roleManifest": {
-      "title": "角色部分的清单",
+      "title": "Manifest of the role part",
       "type": "object",
       "required": ["protocol", "part", "id", "name", "version", "changelog", "madeWith", "requires", "features", "reference", "files"],
       "properties": {
@@ -21,13 +21,13 @@
         "version": { "$ref": "#/$defs/semver" },
         "changelog": { "$ref": "#/$defs/longText" },
         "madeWith": {
-          "description": "做包时用的基础部分版本（相当于「Made with」后面的版本号）。不记这个包是从哪个包来的。",
+          "description": "The base part version used to make the pack (the version number that comes after \"Made with\"). It does not record which pack this pack came from.",
           "type": "object",
           "required": ["baseVersion"],
           "properties": { "baseVersion": { "$ref": "#/$defs/semver" } }
         },
         "requires": {
-          "description": "对基础部分的要求：协议主版本，以及基础部分的最低版本。",
+          "description": "Requirements on the base part: the protocol major version, and the minimum version of the base part.",
           "type": "object",
           "required": ["protocolMajor", "baseMin"],
           "properties": {
@@ -36,7 +36,7 @@
           }
         },
         "features": {
-          "description": "每个功能要的所需能力。键是功能名，值里的 capabilities 取自基础部分的能力词表（vocab/capabilities.json）。环境缺某项能力时，只有用到它的功能报错。",
+          "description": "The required capabilities of each feature. The key is the feature name; capabilities in the value are taken from the base part's capability vocabulary (vocab/capabilities.json). When the environment lacks a capability, only the features that use it report an error.",
           "type": "object",
           "maxProperties": 64,
           "propertyNames": { "$ref": "#/$defs/slug" },
@@ -44,20 +44,20 @@
         },
         "reference": { "$ref": "#/$defs/referenceSet" },
         "holdout": {
-          "description": "留出录音：只用来量还原度，从不当参考。只记语言，不带音色基底标签、不带提示标注。",
+          "description": "Held-out recording: used only to measure fidelity, never as a reference. It records the language only, with no reference tag and no cue annotation.",
           "type": "array",
           "maxItems": 500,
           "items": { "$ref": "#/$defs/holdoutSegment" }
         },
         "files": { "$ref": "#/$defs/fileList" },
         "externals": {
-          "description": "外部资源：不在包里、放在 URL 上，用 SHA-256 核对。用路径引用，和包内文件一视同仁。",
+          "description": "External resources: not in the pack but placed at a URL and checked by SHA-256. They are referenced by path, treated the same as files inside the pack.",
           "type": "array",
           "maxItems": 1000,
           "items": { "$ref": "#/$defs/externalEntry" }
         },
         "scripts": {
-          "description": "脚本：登记入口和运行时，不声明权限。入口必须是包内文件。",
+          "description": "Scripts: register the entry and the runtime, and declare no permissions. The entry must be a file inside the pack.",
           "type": "array",
           "maxItems": 100,
           "items": {
@@ -71,7 +71,7 @@
           }
         },
         "enhancers": {
-          "description": "增强件：只对某个模型有效、在那个模型上还原度更高的文件。包不依赖增强件。",
+          "description": "Enhancers: files that work only for a given model and give higher fidelity on that model. The pack does not depend on enhancers.",
           "type": "array",
           "maxItems": 100,
           "items": {
@@ -88,7 +88,7 @@
           }
         },
         "direction": {
-          "description": "配音指引里的结构化部分：一句音色描述、音色标签（取自设计词表）。",
+          "description": "The structured part of the dubbing guidance: a one-sentence voice description and voice tags (taken from the design vocabulary).",
           "type": "object",
           "properties": {
             "description": { "type": "string", "minLength": 1, "maxLength": 500 },
@@ -96,36 +96,36 @@
           }
         },
         "sampleLines": {
-          "description": "示例台词：这个声音会说的几句台词，每条是一句。台词里可以带舞台提示，例如（耳语），格式只存这条字符串、不解析它。每条不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。",
+          "description": "Sample lines: a few lines this voice would say, one line per item. A line may carry a stage cue, for example（耳语） (whisper); the format stores only this string and does not parse it. An item must not be only whitespace or invisible characters (semantic rule, see FORMAT.md「4.5 Semantic rules」).",
           "type": "array",
           "maxItems": 50,
           "items": { "type": "string", "minLength": 1, "maxLength": 500 }
         },
         "cardLine": {
-          "description": "卡片试听那一句：预览卡片上放的一句台词（text）和它的录音（audio，包内文件，files 里的一项，用这个包自己的声音配的），可选记着配它用的 seed（seed）。台词的写法同示例台词：可以带舞台提示，格式只存这条字符串、不解析它；不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。它不是参考，也不是留出录音：配音、变声、量还原度、挑默认段都不读它。",
+          "description": "Audition line: one line shown on the preview card (text) and its recording (audio, a file inside the pack, an entry in files, dubbed with this pack's own voice), optionally with the seed used to dub it (seed). The line is written like a sample line: it may carry a stage cue, the format stores only this string and does not parse it, and it must not be only whitespace or invisible characters (semantic rule, see FORMAT.md「4.5 Semantic rules」). It is not a reference and not a held-out recording: dubbing, voice conversion, fidelity measurement and picking the default segment never read it.",
           "type": "object",
           "required": ["audio", "text"],
           "properties": {
             "audio": { "$ref": "#/$defs/packPath" },
             "text": { "type": "string", "minLength": 1, "maxLength": 500 },
-            "expressiveness": { "description": "配这一句时单独取的起伏（0 到 100 的整数）：可选，做包时明说了才有。", "type": "integer", "minimum": 0, "maximum": 100 },
-            "seed": { "description": "配这一句时交给合成能力的 seed（0 到 2^53−1 的整数）：环境收 seed 时才有。用同样的请求重配这一句时，做包程序换一个（上一版的加 1），所以要记下来；格式只存这个数，读的人不拿它做别的。", "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+            "expressiveness": { "description": "The expressiveness taken for this line alone (an integer from 0 to 100): optional, present only if it was stated explicitly when the pack was made.", "type": "integer", "minimum": 0, "maximum": 100 },
+            "seed": { "description": "The seed handed to the synthesis capability when this line was dubbed (an integer from 0 to 2^53−1): present only if the environment accepts a seed. When this line is dubbed again with the same request, the make-pack program changes the seed (adds 1 to the previous one), so it has to be recorded; the format stores only this number, and whoever reads it does not use it for anything else.", "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
           }
         },
         "expressiveness": {
-          "description": "这个声音的起伏（全局值，0 到 100 的整数）：可选。配音时没有更靠后的一层声明起伏，就用它；设定（setups 的 expressiveness）和配音时给的盖过它。",
+          "description": "The expressiveness of this voice (a global value, an integer from 0 to 100): optional. At dubbing time it is used when no later layer declares an expressiveness; the setup's expressiveness (in setups) and the one given at dubbing time override it.",
           "type": "integer",
           "minimum": 0,
           "maximum": 100
         },
         "setups": {
-          "description": "几套设定：把配音时「怎么说」的固定值写进包里（情绪、风格、能量、语言、默认参考 referenceTag、语速、一段给模型的说明），例如一套叫「平静播报」、一套叫「生气」。每套有名字，同一个包里不能重名（语义规则，见 FORMAT.md「语义规则」）；最多一套带 default: true（语义规则），配音时不点名就用它。换设定的值可以原地改当前版本（版本号不变，只动那一个目录），也可以发新版本；已经发出去的包和别处的副本不跟着变；配音时用哪一套是配音的参数（也可以明确这一次一套都不用，带 default 的也不套），不在清单里。带 setups 的包对基础部分的最低要求（requires.baseMin）怎么写，见 FORMAT.md 4.4 的 setups 一行。",
+          "description": "Several setups: write the fixed values for how to speak at dubbing time into the pack (emotion, style, energy, language, default reference tag referenceTag, speed, a note for the model), for example one setup named 「平静播报」 (calm announcing) and one named 「生气」 (angry). Each setup has a name, and names must be unique within one pack (semantic rule, see FORMAT.md「4.5 Semantic rules」); at most one setup carries default: true (semantic rule), and dubbing uses it when no setup is named. The values of a setup may be changed in place in the current version (the version number stays the same, only that one directory changes), or a new version may be released; packs already released and copies elsewhere do not change with it; which setup dubbing uses is a parameter of the dubbing (it can also state that this time no setup is used at all, not even the one with default), and is not in the manifest. For how to write the minimum base part version (requires.baseMin) of a pack with setups, see the setups row in FORMAT.md section 4.4.",
           "type": "array",
           "maxItems": 500,
           "items": { "$ref": "#/$defs/setup" }
         },
         "verification": {
-          "description": "验证记录：在哪个环境、用哪个模型、哪天测的、还原度多少，以及量这个还原度时用的评测模型。",
+          "description": "Verification record: in which environment, with which model, on which day it was tested, what the fidelity was, and the evaluation models used to measure that fidelity.",
           "type": "array",
           "maxItems": 100,
           "items": {
@@ -140,7 +140,7 @@
                 "properties": {
                   "ratio": { "type": "number", "minimum": 0 },
                   "measuredBy": {
-                    "description": "量这个还原度时用的评测模型：说话人验证和盲听各一个模型名。不知道是哪个模型就不写那一项，两个都不知道就不写 measuredBy。",
+                    "description": "The evaluation models used to measure this fidelity: one model name each for speaker verification and blind listening. If you do not know which model it was, leave that item out; if you know neither, leave out measuredBy.",
                     "type": "object",
                     "properties": {
                       "speakerVerification": { "$ref": "#/$defs/shortText" },
@@ -153,7 +153,7 @@
           }
         },
         "designSource": {
-          "description": "设计来源：设计出来的音色，记下描述、用的模型和设计时试听用的台词。",
+          "description": "Design source: for a designed voice, records the description, the model used, and the lines used for the audition during design.",
           "type": "object",
           "properties": {
             "description": { "$ref": "#/$defs/longText" },
@@ -161,7 +161,7 @@
             "modelVersion": { "$ref": "#/$defs/shortText" },
             "date": { "$ref": "#/$defs/date" },
             "auditionLines": {
-              "description": "试听台词：设计时试听用的原文，每项是一段。每项不能只有空白或看不见的字符（语义规则，见 FORMAT.md「语义规则」）。",
+              "description": "Design audition text: the original text used for the audition during design, one passage per item. An item must not be only whitespace or invisible characters (semantic rule, see FORMAT.md「4.5 Semantic rules」).",
               "type": "array",
               "maxItems": 10,
               "items": { "$ref": "#/$defs/longText" }
@@ -172,7 +172,7 @@
     },
 
     "baseManifest": {
-      "title": "基础部分的清单",
+      "title": "Manifest of the base part",
       "type": "object",
       "required": ["protocol", "part", "version", "files"],
       "properties": {
@@ -180,7 +180,7 @@
         "part": { "const": "base" },
         "version": { "$ref": "#/$defs/semver" },
         "runtimes": {
-          "description": "登记这个部分的程序要向运行环境要的命令行工具（env.runtimes 里的名字），例如 ffmpeg。和角色部分脚本的 runtime 是同一个概念、同一种写法。optional 为 true：环境没有它，只有用到它的功能报错，其他功能照常；为 false：这个部分整个离不开它。purpose 写用来做什么。",
+          "description": "Registers the command-line tools (names in env.runtimes) that this part's programs need from the runtime environment, for example ffmpeg. It is the same concept and the same spelling as the runtime of a role part script. optional true: if the environment lacks it, only the features that use it report an error and the others work as usual; false: this part cannot work at all without it. purpose says what it is used for.",
           "type": "array",
           "maxItems": 32,
           "items": {
@@ -198,7 +198,7 @@
     },
 
     "protocolManifest": {
-      "title": "协议核心的清单",
+      "title": "Manifest of the protocol core",
       "type": "object",
       "required": ["protocol", "part", "version", "files"],
       "properties": {
@@ -210,7 +210,7 @@
     },
 
     "referenceSet": {
-      "description": "参考集：多段原声，每段配逐字文本、语言和一个音色基底标签。defaultSegment 是主语言的默认段（它的语言就是包的主语言）；languageDefaults 是别的语言各自的默认段（段的 id，一种语言最多一段，可选）。",
+      "description": "Reference set: several segments of original voice, each with a verbatim transcript, a language and one reference tag. defaultSegment is the default segment of the main language (its language is the pack's main language); languageDefaults are the default segments of the other languages (segment ids, at most one segment per language, optional).",
       "type": "object",
       "required": ["defaultSegment", "segments"],
       "properties": {
@@ -221,7 +221,7 @@
     },
 
     "segment": {
-      "description": "一段参考：音频文件、逐字文本、提示标注（可选）、语言、音色基底标签。tag 只用来在一个包的几段参考之间切换（同一种语言里不重名，语义规则见 FORMAT.md「语义规则」），自由文字，中文、英文都行。",
+      "description": "One reference segment: an audio file, a verbatim transcript, a cue annotation (optional), a language, a reference tag. tag is used only to switch between the reference segments of one pack (names must be unique within one language, for the semantic rule see FORMAT.md「4.5 Semantic rules」); it is free text, Chinese or English both work.",
       "type": "object",
       "required": ["id", "audio", "text", "language", "tag"],
       "properties": {
@@ -236,7 +236,7 @@
     },
 
     "holdoutSegment": {
-      "description": "一条留出录音：音频文件、逐字文本、语言。它不当参考，用不着切换，所以没有音色基底标签，也不标提示标注。",
+      "description": "One held-out recording: an audio file, a verbatim transcript, a language. It is not used as a reference and needs no switching, so it has no reference tag and no cue annotation.",
       "type": "object",
       "required": ["id", "audio", "text", "language"],
       "properties": {
@@ -249,14 +249,14 @@
     },
 
     "referenceTag": {
-      "description": "音色基底标签：一段参考的短名字，例如「愤怒」「少年」「平常」，1–64 个字符（按码点算）。逐字比，大小写不同就是两个标签。设定的 referenceTag 用它指一段默认参考。",
+      "description": "Reference tag: a short name for one reference segment, for example 「愤怒」 (angry), 「少年」 (youth), 「平常」 (normal), 1–64 characters (counted by code point). Compared character by character: names that differ in case are two tags. The referenceTag of a setup uses it to point to a default reference segment.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
 
     "legacySegment": {
-      "description": "协议 1.x、2.x 的包里参考段和留出录音的写法（只为读旧包、检查旧包用，这一版不写它）：语言和情绪、风格、能量写在 tags 里。协议 3.x 的清单不用它，用 segment 和 holdoutSegment（FORMAT.md 第 14 节）。",
+      "description": "How a reference segment and a held-out recording were written in packs of protocol 1.x and 2.x (only for reading and checking old packs, this version does not write it): language, emotion, style and energy are written in tags. Manifests of protocol 3.x do not use it; they use segment and holdoutSegment (FORMAT.md section 14).",
       "type": "object",
       "required": ["id", "audio", "text", "tags"],
       "properties": {
@@ -278,26 +278,26 @@
     },
 
     "annotatedText": {
-      "description": "提示标注：参考段的逐字文本在说法变化的地方加上方括号提示的整句，例如 [laughs]呵呵，[happy]太可爱了吧。提示以外的字和 text 一样。配音时和参考一起交给模型。没有就不写这个键。",
+      "description": "Cue annotation: the whole sentence of a reference segment's verbatim transcript with square-bracket cues added where the way of speaking changes, for example [laughs]呵呵，[happy]太可爱了吧。 (the Chinese reads roughly \"hehe, so cute!\"). Apart from the cues, the characters are the same as text. At dubbing time it is handed to the model together with the reference. If there is none, do not write this key.",
       "type": "string",
       "minLength": 1,
       "maxLength": 4000
     },
 
     "languageTag": {
-      "description": "语言标签：2 到 3 个字母，后面可以接几段「连字符 + 2 到 8 个字母或数字」，例如 en、zh-CN、zh-Hans-CN；不收下划线（zh_CN 不合格）。参考段、留出录音的 language 和设定的 labels.language 写法一样。",
+      "description": "Language tag: 2 to 3 letters, optionally followed by several groups of \"hyphen + 2 to 8 letters or digits\", for example en, zh-CN, zh-Hans-CN; underscores are not accepted (zh_CN is invalid). It is written the same way as the language of a reference segment, of a held-out recording, and of a setup's labels.language.",
       "type": "string",
       "maxLength": 35,
       "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
     },
 
     "energyLevel": {
-      "description": "能量：low、medium、high 三档。设定的 labels.energy 用它（协议 1.x、2.x 的参考段的 tags.energy 也是这个写法）。",
+      "description": "Energy: three levels, low, medium, high. The labels.energy of a setup uses it (tags.energy of a reference segment of protocol 1.x and 2.x is written the same way).",
       "enum": ["low", "medium", "high"]
     },
 
     "setup": {
-      "description": "一套设定：name 是名字；labels 是固定的标签（语言、情绪、风格、能量，都可选；和参考段的音色基底标签不是同一批东西）；referenceTag 是这套设定的默认参考，用参考段的音色基底标签指（可选，必须是参考集里某段的标签，语义规则见 FORMAT.md「语义规则」）；speed 是语速的倍数，正数（1 是不变，0.85 放慢，1.15 加快），配音在合成以后按它变速（不是台本里写的放慢、加快那种交给模型的提示）；expressiveness 是这个声音固定的起伏，0 到 100 的整数，配音时调用方没给就用它（可选）；instructions 是一段给模型的说明，例如口音、方言；default 为 true 的那一套是不点名时用的。",
+      "description": "One setup: name is the name; labels are the fixed labels (language, emotion, style, energy, all optional; not the same set as the reference tag of a reference segment); referenceTag is the default reference of this setup, pointing by the reference tag of a reference segment (optional, must be the tag of some segment in the reference set, for the semantic rule see FORMAT.md「4.5 Semantic rules」); speed is the speed multiplier, a positive number (1 is unchanged, 0.85 slows down, 1.15 speeds up), and dubbing changes the speed by it after synthesis (this is not the slow-down or speed-up cue written in a script and handed to the model); expressiveness is the fixed expressiveness of this voice, an integer from 0 to 100, used when the caller gives none at dubbing time (optional); instructions is a note for the model, for example accent or dialect; the setup with default true is the one used when none is named.",
       "type": "object",
       "required": ["name"],
       "properties": {
@@ -328,7 +328,7 @@
     },
 
     "fileList": {
-      "description": "这个部分目录里除清单和签名以外的每一个文件，按路径的 UTF-8 字节序排列。子目录里另有清单的（基础部分、协议核心），交给那份清单管，这里不列。",
+      "description": "Every file in this part's directory except the manifest and the signature, sorted by the UTF-8 byte order of the path. Subdirectories that have a manifest of their own (the base part, the protocol core) are handled by that manifest and are not listed here.",
       "type": "array",
       "maxItems": 65534,
       "items": { "$ref": "#/$defs/fileEntry" }
@@ -356,39 +356,39 @@
     },
 
     "packPath": {
-      "description": "相对这个部分目录的路径，用 / 分隔。这里只挡住最明显的写法（空的、以 / 开头、含反斜杠）；跳出目录、空的一段、Windows 保留名这些由 manifest.mjs 按 FORMAT.md 的「路径」一节检查。",
+      "description": "Path relative to this part's directory, separated by /. This catches only the most obvious forms (empty, starting with /, containing a backslash); leaving the directory, an empty segment, and Windows reserved names are checked by manifest.mjs according to FORMAT.md「Path check」.",
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
       "pattern": "^[^/\\\\][^\\\\]*$"
     },
-    "sha256": { "description": "文件原始字节的 SHA-256，小写十六进制。不转换换行。", "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "size": { "description": "文件的字节数。", "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "sha256": { "description": "SHA-256 of the raw bytes of the file, lowercase hexadecimal. Line breaks are not converted.", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "description": "The size of the file in bytes.", "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "semver": {
-      "description": "语义化版本号（semver.org 2.0.0）。",
+      "description": "Semantic version number (semver.org 2.0.0).",
       "type": "string",
       "maxLength": 128,
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
     },
     "protocolVersion": {
-      "description": "协议版本，「主.次」两段。同一个主版本内兼容，次版本只加不删。",
+      "description": "Protocol version, two segments \"major.minor\". Compatible within one major version; minor versions only add and never remove.",
       "type": "string",
       "maxLength": 16,
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
     },
     "packId": {
-      "description": "包 ID：「英文短名-8 位随机的小写字母和数字」。遵守 Agent Skills 对 name 的限制：只用小写字母、数字和连字符，最长 64 个字符，不以连字符开头或结尾，不连用两个连字符。",
+      "description": "Pack ID: \"short English name-8 random lowercase letters and digits\". It follows the Agent Skills restrictions on name: only lowercase letters, digits and hyphens, at most 64 characters, no hyphen at the start or end, no two hyphens in a row.",
       "type": "string",
       "maxLength": 64,
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]{8}$"
     },
-    "slug": { "description": "清单里给条目起的名字：小写字母、数字、连字符、下划线。", "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
-    "capabilityName": { "description": "所需能力的名字，取自能力词表。", "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
-    "date": { "description": "日期，YYYY-MM-DD。", "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
-    "name": { "description": "显示名。", "type": "string", "minLength": 1, "maxLength": 100 },
+    "slug": { "description": "The name given to an entry in the manifest: lowercase letters, digits, hyphens, underscores.", "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+    "capabilityName": { "description": "The name of a required capability, taken from the capability vocabulary.", "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "date": { "description": "Date, YYYY-MM-DD.", "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
+    "name": { "description": "Display name.", "type": "string", "minLength": 1, "maxLength": 100 },
     "label": { "type": "string", "minLength": 1, "maxLength": 64 },
     "runtimeName": {
-      "description": "运行时的名字：运行环境提供的命令行工具，取 env.runtimes 的键，例如 ffmpeg、node。角色部分脚本的 runtime 和基础部分登记的 runtimes[].runtime 都用这一种写法：小写字母开头，后面是小写字母、数字、点、下划线、加号、连字符，最长 32 个字符。",
+      "description": "The name of a runtime: a command-line tool provided by the runtime environment, taken from the keys of env.runtimes, for example ffmpeg, node. The runtime of a role part script and runtimes[].runtime registered by the base part both use this one spelling: starts with a lowercase letter, followed by lowercase letters, digits, dots, underscores, plus signs, hyphens, at most 32 characters.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9._+-]{0,31}$"
     },

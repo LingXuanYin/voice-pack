@@ -80,8 +80,8 @@ export function decodeFailureKind(error) {
  * @throws {VoicePackError} audio_decode_failed、wav_invalid、runtime_missing、environment_invalid
  */
 export async function decodeAudio(env, bytes) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('音频必须是 Uint8Array（Buffer 也行）');
-  if (bytes.length === 0) throw failed('empty', null, '音频是空的，没有可解码的内容');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('Audio must be a Uint8Array (a Buffer also works)');
+  if (bytes.length === 0) throw failed('empty', null, 'The audio is empty, so there is nothing to decode');
   if (isWav(bytes)) {
     try {
       const { sampleRate, channels, frames, samples } = parseWav(bytes);
@@ -96,12 +96,12 @@ export async function decodeAudio(env, bytes) {
   try {
     output = await ffmpeg([...FFMPEG_ARGS], bytes);
   } catch (cause) {
-    throw failed('runtime_failed', 'ffmpeg', `ffmpeg 没能解码这段音频：${said(cause)}`, cause);
+    throw failed('runtime_failed', 'ffmpeg', `ffmpeg could not decode this audio: ${said(cause)}`, cause);
   }
   try {
     const { sampleRate, channels, frames, samples } = parseWav(output); // 空的、不是字节、坏的，parseWav 都会抛，下面统一包成 bad_output
     return { decoder: 'ffmpeg', sampleRate, channels, frames, samples };
   } catch (cause) {
-    throw failed('bad_output', 'ffmpeg', `ffmpeg 返回的不是能解析的 WAV：${said(cause)}`, cause);
+    throw failed('bad_output', 'ffmpeg', `ffmpeg returned something that is not a parseable WAV: ${said(cause)}`, cause);
   }
 }

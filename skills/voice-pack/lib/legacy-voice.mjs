@@ -27,7 +27,7 @@ export { languageLabelOf, languageTagOf } from './language-tag.mjs';
 export const LEGACY_SEGMENT_ID = 'default';
 
 /** 迁移出来的第一个版本的变更说明（包库对第一个版本的默认说明是「首个版本」，那不说它从哪儿来；社区页上要看得出来）。 */
-export const LEGACY_CHANGELOG = '从旧版声音迁移而来';
+export const LEGACY_CHANGELOG = 'Migrated from a legacy voice';
 
 /**
  * 清单的长度限制（按码点数）：一段参考的逐字文本、名字、一个标签（protocol/schema/manifest.schema.json）。
@@ -99,11 +99,11 @@ const BLANK_TEXT = /^[\s\p{Cc}\p{Cf}]*$/u;
 export function convertLegacyVoice(voice, options = {}) {
   const old = isObject(voice) ? voice : {};
   const name = typeof old.name === 'string' ? clip(old.name.trim(), MAX_NAME) : '';
-  if (name === '') return { ok: false, reason: 'no_name', message: `这个声音没有名字（name）：音色包的名字要 1–${MAX_NAME} 个字符` };
+  if (name === '') return { ok: false, reason: 'no_name', message: `This voice has no name (name): a voice pack name must be 1–${MAX_NAME} characters` };
   const transcript = typeof old.transcript === 'string' ? old.transcript : '';
-  if (BLANK_TEXT.test(transcript)) return { ok: false, reason: 'no_transcript', message: '这个声音没有逐字文本（transcript）：音色包的每一段参考音频都要有对应的文本' };
+  if (BLANK_TEXT.test(transcript)) return { ok: false, reason: 'no_transcript', message: 'This voice has no verbatim transcript (transcript): every reference audio segment of a voice pack needs its text' };
   const length = [...transcript].length;
-  if (length > MAX_TEXT) return { ok: false, reason: 'transcript_too_long', message: `逐字文本（transcript）有 ${length} 个字符，超过清单的 ${MAX_TEXT} 个；截了就不是逐字，所以整条不转` };
+  if (length > MAX_TEXT) return { ok: false, reason: 'transcript_too_long', message: `The verbatim transcript (transcript) is ${length} characters, over the manifest limit of ${MAX_TEXT}; truncating it would make it no longer verbatim, so this voice is not converted` };
   const { direction, dropped } = legacyDirection(old, options);
   return {
     ok: true,

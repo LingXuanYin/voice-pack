@@ -59,7 +59,7 @@
 //   false 就不并短句，只按下限认：试合成用，每条留出录音一段）、only（只合成这几段，编号是规划里的 units[i].index，别的标成 skipped，规划里也标；失败后重做用）、
 //   reuse（沿用上一次做好的：见下面「沿用」）、
 //   previousSeed（函数：previousSeed(unit) 返回 only 点到的这一段上一次配它用的 seed（做成的那一次，或者换了 seed 重配、没成的那一次；哪些算由调用方定，命令行的在 cli/commands/dub.mjs
-//   文件头「--only 换 seed」，做包配卡片试听那一句的在 lib/make-pack-card-line.mjs 的 voiceCardLine），没有是 null；环境收 seed 时这一段的 seed 换成它加 1，见第 7 步「seed」）、
+//   文件头「--only 换 seed」，做包配试听句的在 lib/make-pack-card-line.mjs 的 voiceCardLine），没有是 null；环境收 seed 时这一段的 seed 换成它加 1，见第 7 步「seed」）、
 //   runtimesOf（几个包时，每个包的脚本运行时：runtimesOf(pack) 返回这个包的 { 运行时名字: 函数 }；命令行层给每个包目录各建一份（cli/script-runtimes.mjs）；
 //   不给就用 env.runtimes。脚本在它自己的包目录里运行，所以要分开）、
 //   scene（默认 true；false 是明说分开：不按一场戏一个请求，即使环境声明了 scene-in-request，而且一行一个请求，同一个声音接着说的几行也不并（第 5a、5c 步）：
@@ -100,7 +100,7 @@
 //     指定的标签包里没有：规划时就报 reference_tag_unknown（--dry-run 也报），一次能力都不调。
 //     用的是哪一段、它的标签、为什么、是不是跨语言，放在 units[i].pick 里：{ segmentId, tag, by, crossLanguage, followsLine?, language, directions }，by 是 'reference-tag'、'setup'、'default' 之一。
 //     换标签的单位是一次 dub 里的一个包：台本中途要换，拆成几次 dub，再用 mix 按次序接起来（cli/commands/mix.mjs）。
-//   3a 默认不带口音：用一种语言的参考念另一种语言，配出来常带参考那种语言的口音（日语的参考念英文，常是带日语口音的英文；models/scene3.md「跨语言和口音」）。
+//   3a 默认不带口音：用一种语言的参考念另一种语言，配出来常带参考那种语言的口音（日语的参考念英文，常是带日语口音的英文；models/scene3.md「Cross-language and accent」）。
 //     所以没给 options.allowCrossLanguage: true 时，这一次要合成的段（规划里 status 是 planned 的）里有一行用的参考段不是这一行的语言，就停下：报 dub_cross_language，
 //     一次能力都不调、不花钱；规划（planDub）也报，所以 --dry-run 看得到。查在 only、沿用（settleUnits）之后：only 没点到的、沿用上一次的段这一次不合成，不算。
 //     比的是整行的语言（第 3 步按整行认的那个）和这一行用的参考段（比法同 lib/reference-pick.mjs 的 speaksLanguage）：
@@ -152,7 +152,7 @@
 //     调用方给了 scene: false（明说分开）的，行和行不并：一行一个请求（一行里的几段照旧并；第 5b 步已经并成一段的短行照旧是一段）；
 //     行和行之间换行，同一行里的几句照旧接着；后面没写提示的句子在同一个请求里，接着前面的说法。
 //     中间的停顿不超过 maxPauseInRequestMs 的写在文字里（量过的写法，规则在 lib/pause-in-request.mjs；只写着停顿的一行也一样）；长过它的在那里切开，停顿留给拼接，插多长就是多长。
-//     切开的后一个请求只重复这一行开头的第一个方括号（第 7c 步），不重复别的提示：要接着那样说，在停顿后面再写一次提示（references/dub.md「一段话一次请求」）。
+//     切开的后一个请求只重复这一行开头的第一个方括号（第 7c 步），不重复别的提示：要接着那样说，在停顿后面再写一次提示（references/dub.md「One request per passage」）。
 //     除了长停顿，总是切的几处：章节、换了声音（[voice:] 写的名字变了）、换了参考段、换了语速、换了开头的提示（第 7a 步）、包里有配音脚本；
 //     还有换行的地方，这一行要加设定的提示（第 7a 步）、前面要并进的那个请求里已经有台本自己写的提示（请求开头的，或者哪一行行首、句中写的）；规则写在 joinIntoRequests 上。
 //     「前面要并进的那个请求」按上限切开之前的那一串算（joinIntoRequests 看的是这一串，不是 requestsOf 切完以后的那一块）：一行的台本提示被上限切进前一个请求时，
@@ -174,7 +174,7 @@
 //     并起来放得进一个请求（同第 5c 步的两个上限；发出去的字连这个请求开头要加的提示一起算，第 7a 步）；开头的提示一样（第 7a 步，不一样的并了，后一段的那条就丢了）。各段的提示跟着各自的字，并起来照样在原位。
 //     这一步不看 scene: false，也不看第 5c 步「前面有台本写的提示、这一行要加设定的提示就不并」那一条：挡了，短的那一行就合成不了（text_too_short）。
 //     所以短的一行并过来以后，下一行不另加设定的提示（开头的提示按并起来的第一句算），scene: false 时这两行也是一个请求、一个文件。
-//     并起来的那一段记成 joined（{ line, part } 的列表，写明并了哪几句）。比下限的字数按发出去的文字数，台本里的提示也算；开头的提示不算（下限管念出来的字够不够，开头的提示不念，第 7a 步）。
+//     并起来的那一段记成 joined（{ line, part } 的列表，写明并了哪几句）。比下限的字数按念出来的字数（lib/synthesis-limits.mjs 的 spokenLength）：方括号的提示、标签的名字都不算，开头的提示也不算（下限管念出来的字够不够，提示不念，第 7a 步）。
 //     这一步并完还短的，不在这里判：第 5c 步还会把它和隔着短停顿的后一段并进同一个请求（这一步只并中间没有停顿的）。第 5c 步之后，按并好的请求的文字（unit.spoken，
 //     并进请求的停顿的写法也算发出去的字）还不到下限的那一段，记成 failed（unit.error 是 { code: 'text_too_short', message: '比合成能力的下限短…', details: { chars, min } }），
 //     不调用能力，不是暂时出错，所以不标 transient：别的段照常做。joinShort 为 false 的不并，在这一步就按下限判，比下限短的记成 failed，第 5c 步也就不并它们（试合成：每条留出录音一段）。
@@ -187,7 +187,7 @@
 //      参数 { text, ref_audio, ref_text, enhancers? }。
 //      seed（两种调用一样）：环境声明了 seed-in-request，每个请求都加 seed: DUB_SEED（固定值，不随台本、不随这一次变：切开的几块用的是同一个），记在 unit.seed，
 //      plan.capabilities 里有 'seed-in-request': true；没声明就没有这个键，和以前一字不差。
-//      例外是 only 点到的段（「这一段换一条再配」）：同一个 seed、同样的请求，出来的音频是一样的（试听页 19、20、23 核过，逐样本一样），所以调用方给了 previousSeed、
+//      例外是 only 点到的段（「这一段换一条再配」）：同一个 seed、同样的请求，测过出同一条（试听页 19、20、23 核过逐样本一样），也测到过出两条不一样的（models/scene3.md「Sampling: `seed`」），要换一条就换 seed：调用方给了 previousSeed、
 //      它说这一段上一次配的时候用的是 S，这一次的 seed 就是 S + 1（S 到了 seed 的上限 2^53−1 就是 0），unit.seedChange 记着 { from: S }（这一段这一次没做成，失败的记录里也记着 seed 和 seedChange，
 //      下一次照它接着加）。previousSeed 返回 null（这一段从没做成过）的照旧用 DUB_SEED。
 //      不是自动重试：只有调用方点名重配（only）才换；没点到的、沿用的都不动。规划（planDub）一样算（settleUnits）。
@@ -196,10 +196,11 @@
 //      一个请求只带一个值：值不同的行不并进同一个请求（第 5a 步一场戏看它，规则在 lib/scene-in-request.mjs；第 5b 步短句并段也看它；第 5c 步同一个包同一章里的行值一样：一项自己是一章，一个包只用一套设定）。
 //      重跑时换了值（设定的也算，换了新版本的包），是新的请求，不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //      ref_text（两种调用一样）：参考段有提示标注（清单里的 annotatedText，逐字稿加上方括号提示的整句）就交它，模型就知道这段参考是怎么说的；没有就交逐字稿 text（lib/reference-pick.mjs 的 refTextOf）。
+//        同语言、台词开头是这个包的名字的，开头再写这个名字（第 7c 步）。
 //      text：unit.spoken（提示都在原位，并进请求的停顿写成了量过的写法，第 5c 步）；前面加开头的提示（第 7a 步）；
 //      只声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着，提示里面不换；整句转义，句子里的尖括号标签也转义了，见第 4 步）。
 //      声明了 phoneme-markers 的，音素标签第 4 步已经在 spoken 里，这里不再换。
-//      拼接的人怎么处理 unit 的停顿、并起来的段：写在 references/dub-details.md 的「拼接的细则」，这里不重复。
+//      拼接的人怎么处理 unit 的停顿、并起来的段：写在 references/dub-details.md 的「Stitching details」，这里不重复。
 //      enhancers：包里服务 voice-cloning 的增强件，以 { id, model, modelVersion, referenceVersion, capability, load } 递给能力，load() 才读文件。
 //      环境认识对应的模型就用上，并在返回里用 enhancers_used 报出用了哪几个（id）；不认识的会忽略 enhancers，照常生成。
 //      这一次有没有用上增强件，写在 enhancers 里：一个都没用上、而包里有，statement 是 'enhancers_not_used'，附上没用上的增强件是哪个模型的，
@@ -209,7 +210,7 @@
 //      说明（instructions）不在里面：不发给模型（「带一点四川口音」这种概括的标签，模型不知道具体怎么念）。调用方不能再给说明（options.instructions、项的 instructions、命令行 --instructions）：
 //      读输入时就报 dub_input_invalid（field 是 instructions 或 script[i].instructions），--dry-run 也报，一次能力都不调；消息说要的说法在台本里写具体的提示，写在发生的位置。
 //      设定的说明是给写台本的人看的：用了带说明的设定（没用设定、--no-setup 的没有），notes 里每个这样的包有一条 setup_instructions，列出说明原文和哪几句用了这套设定，
-//      告诉写台本的人照说明在台本里写具体的（用词、语气词写进台词，读音不同的常用字写成读那个音的字，声调、尾音、节奏的变化在发生的那几个字前面写一个短提示），指到 models/scene3.md「写什么」「跨语言和口音」。
+//      告诉写台本的人照说明在台本里写具体的（用词、语气词写进台词，读音不同的常用字写成读那个音的字，声调、尾音、节奏的变化在发生的那几个字前面写一个短提示），指到 models/scene3.md「What to write」「Cross-language and accent」。
 //      加在哪个请求上：每个请求一条，写在它的最前面。一个请求是一个 unit：一行一个请求的一段，或者并起来的几句（5b、5c）。这条提示是这个请求从台本的哪一句开始（unit.line，
 //      第 1、2 步拆出来的一句：两处停顿、换行、章节、换声音之间的一截），按那一句算的：那一项的调用方给的（项的 labels），那个包的设定。
 //      那一句开头是台本自己写的提示（方括号的，或者舞台说明换成的，例如一行开头的（小声）），这个请求不加：照台本。同一句被第 5 步切开的后几段，也照这一句的开头算。
@@ -229,7 +230,7 @@
 //        都在花钱之前，规划（planDub）也报。限长以内的，请求的文字和 unit.openingCue 和以前一字不差。
 //      报告：unit.openingCue（一场戏是 unit.scene.turns[i].openingCue）{ cue, added, parts }：cue 是合成的提示；added 是加了没有（false：那一句开头台本自己写了提示）；
 //      parts 是用上的每一项 { value, from }，from 是 'caller'（调用方给的）或 'setup'（设定的）。
-//   7c 角色名和语言提示：台本规定每行以角色的名字开头（models/scene3.md「角色名写在最前面」）。
+//   7c 角色名和语言提示：台本规定每行以角色的名字开头（models/scene3.md「Put the character name first」）。
 //      一行被切成几个请求的（长停顿切开、放不下切开），后面的请求开头重复这一行开头的第一个方括号（第一个方括号就是名字；旧台本第一个是情绪的，也照样重复），算开头写了提示，不再加设定的开头的提示（第 7a 步）。
 //      跨语言的请求（第 3a 步比出来的：参考段不是这一行的语言，给了 allowCrossLanguage）：行开头写名字对 [参考语言里的名字|台词语言里的名字]（lib/cross-language.mjs 的 namePairOf）。发给模型的是：
 //        text      [Harry Potter][说戏]台词 [language: zh]    名字对只留参考语言里的名字，结尾写台词的语言。一个请求一处，一场戏写在最后一轮的末尾
@@ -238,6 +239,9 @@
 //      跨语言的行开头没写名字对：报 dub_cross_language_unnamed，花钱之前停（规划也报），只看这一次要合成的段。
 //      languageMarks: false：不要求名字对，不加两边的语言提示，台本怎么写就怎么发（要带参考那种语言的口音时用；做包自己的试合成也这样：量的是声音本身）。
 //      同语言的请求不写语言提示，不看名字对；台本写了名字对的，发的是参考语言里的名字。
+//      同语言的一行一个请求，台词开头是这个包的名字（[包名]，清单的 name）的，参考的文字开头也写这个名字：[沈迟][calm]门响我就听见了。两边对称：只在台词开头写名字、
+//      参考上不写时，配音的模型有时把整句配得比参考低几个半音到一个八度（读数在 models/scene3.md「Put the character name first」）。开头是说戏、别的名字的不写；一场戏的不写；
+//      languageMarks: false 的不写（台本怎么写就怎么发）。报告：unit.referenceName 是写上的名字，没写就没有这一项。重跑时不一样的不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //      报告：unit.languageMarks { language, referenceLanguage, referenceName }（referenceName 是 null：没写名字对，languageMarks: false 时不记整项）；一场戏的 unit.languageMarks 只有 language，参考那半在 scene.speakers[i].languageMarks。重跑时不一样的不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //   7b 语速（设定，见上面「设定」）：unit.speed 不是 null、也不是 1 的段，合成以后（包里脚本的 audio 钩子之后）变速，规则同第 8 步和拼接：lib/mix.mjs 的 changeSpeed（ffmpeg 的 atempo，
 //      保持音高），上下限是 SPEED_LIMITS，要的倍数超出了按最近的那一头变；交出去的音频是 ffmpeg 给的 WAV。一场戏整场变（一场里的语速都一样，scene-in-request 在语速变的地方切开）。
@@ -284,8 +288,8 @@
 // 加起来照写的，不封顶（和 [pause …] 一样）；同一行里的都挂在前一句后面、相加。隔一行的缝上，前一句的后面和后一句的前面各写各的，不相加，由拼接的人各插各的（lib/mix.mjs）。放不下一份音频的，拼接时报错（lib/mix.mjs）。
 //
 // 模型：能力的返回里报了 model（实际用的模型），记在 unit.model；适配器这一次换了模型（例如原来要用的模型不可用），返回里另有 modelChange: { from, reason }，
-// 原样记在 unit.modelChange（没换就没有这一项）。约定只写在 adapters/README.md「换了模型」，读法在 lib/capability-calls.mjs 的 reportedModel。
-// dub 自己不换模型，不拿别的能力顶替，也不重试（换不换由平台定，见 adapters/README.md「换了模型」），能力抛的错照下一段对待。告诉使用者哪几句换了，是命令行层的事（cli/commands/dub.mjs 的输出）。
+// 原样记在 unit.modelChange（没换就没有这一项）。约定只写在 adapters/README.md「When the model changes」，读法在 lib/capability-calls.mjs 的 reportedModel。
+// dub 自己不换模型，不拿别的能力顶替，也不重试（换不换由平台定，见 adapters/README.md「When the model changes」），能力抛的错照下一段对待。告诉使用者哪几句换了，是命令行层的事（cli/commands/dub.mjs 的输出）。
 //
 // 一段失败了怎么办：能力抛的错如果标了 details.transient（服务暂时出错，约定见 vocab/capability-signatures.md），或者标了 details.textRejected
 // （只和这一次的文字有关，换一句就成，同一约定），这一段记成 failed（unit.error 是 { code, message, details }），别的段照常做，整体 ok 是 false；
@@ -339,22 +343,24 @@
 //                            这几句也不换成那个包（换声音只认 [voice:名字]）；message 引前几句，建议把开头的「名字：」换成 [voice:名字]。
 //                            details: { lines: [{ line, name, pack }] }：line 同 lines[i].index（从 0 起），name 是台本里写的名字，pack 是那个包的 ID
 //   speech_maybe_unfinished  运行时：一段出来的音频不到按字数估的一半（第 9a 步），可能没念完。每段一条，按段的编号。
-//                            details: { unit, expectedMs, actualMs }：段的编号（从 0 起）、估的至少多少毫秒、出来的多少毫秒；message 写明这几样，建议听结尾、--only 重配或者加章节标记切短（跟着写 CHAPTER_SPLIT_REMINDER）
+//                            details: { unit, expectedMs, actualMs }：段的编号（从 0 起）、估的至少多少毫秒、出来的多少毫秒；message 写明这几样和这一段开头的字，说这一段照样交出、不自己重配，要不要重配（--only 或者加章节标记切短，跟着写 CHAPTER_SPLIT_REMINDER）
 //   target_duration_missed   运行时：有几段没有变到目标时长（第 8 步）：要的倍数超出了变速的上下限、按最近的那一头变的，或者环境没有 ffmpeg、没变速的。
 //                            details: { units }，每项是 { unit（段的编号，从 0 起）, ...这一段的 targetDuration }
 //   unrecognized_directions  台本里有几处 30 个字以内的括号（（…）、(…)、【…】、*…*），词表一个词也认不出（第 2 步，pick.directions 里 recognized 为 false），照样换成提示、不念：
 //                            可能是原文括号里要念的正文。只提醒，不改字；message 引前几处，建议要念的改成不带括号的写法（逗号、破折号）。结构规则认出的「副词 + 地说」（（认真地说））也在里面。
+//                            词表只认出一部分、不是英文写的（（他眼睛一亮，满脸堆笑）只认出「笑」）也在里面：它原样放进方括号发出去，是中文的提示（pick.directions 里 notEnglish 为 true，recognized 为 true），
+//                            message 叫写台本的人改成两三个词的英文提示（models/scene3.md「What to write」）。整个都认得的、英文写的又认出一部分的（(he smiles at her)）、只有快慢的不在里面
 //                            details: { directions: [{ line, raw }] }：line 同 lines[i].index（从 0 起），raw 是括号里的字（同 directions 的 raw），按出现的次序
 //   carried_over             有几段沿用上一次做好的（options.reuse，见上面「沿用」；规划里也有），不再合成、不花钱。details: { units }（段的编号，从 0 起）
 //   setup_instructions      用了带说明（instructions，口音这类）的设定（第 7a 步）：说明不发给模型，列给写台本的人看。每个这样的包一条（没用设定、--no-setup、设定没有说明的没有）。
 //                            details: { setup, instructions, lines, pack? }：设定的名字、说明原文、哪几句用了这套设定（同 lines[i].index，从 0 起；几个包时 pack 是包 ID，message 开头点名包）；
-//                            message 写明 dub 不把它发给模型，叫写台本的人照说明在台本里写具体的，指到 models/scene3.md「写什么」「跨语言和口音」
+//                            message 写明 dub 不把它发给模型，叫写台本的人照说明在台本里写具体的，指到 models/scene3.md「What to write」「Cross-language and accent」
 //   one_shot_style_skipped   情绪或风格是一下子的声音（vocab/cues.json 的 oneShot），没合进开头的提示（第 7a 步「限长」）。同一个包、同一个来处、同一项、同一个声音一条。
 //                            details: { item, style, from, setup?, lines, pack? }：item 是 'emotion' 或 'style'，style 是那个声音的规范名字（情绪的值整个是一下子的声音的一个词才算），from 是 'caller' 或 'setup'（setup 时另有设定的名字），
 //                            哪几句（同 lines[i].index，从 0 起；开头台本自己写了提示的不算）；message 说要这一下就写在台本里它发生的地方（例如 [sighs]）
 //   long_cues                台本里一处提示（方括号写的、舞台说明换成的，第 2 步）超过 lib/cue-length.mjs 的 MAX_CUE_WORDS 个词。只提醒，不改字，照原样发。
 //                            details: { cues: [{ line, cue, words }], limit }：line 同 lines[i].index（从 0 起），cue 是那一处提示（连方括号），words 是数出来几个词，按出现的次序；
-//                            message 引前几处，说一处提示写两三个词，指到 models/scene3.md「写什么」
+//                            message 引前几处，说一处提示写两三个词，指到 models/scene3.md「What to write」
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、给了说明（options.instructions、项的 instructions，已拿掉，第 7a 步；details.field 是 instructions 或 script[i].instructions）、项的 speed 不是正数、expressiveness（options.expressiveness 或项的，不是 0 到 100 的整数；details.field 是 expressiveness 或 script[i].expressiveness）不对、only 或 maxChars 或 maxSpokenChars 或 concurrency 或 speed
@@ -428,11 +434,11 @@ export const DUB_SEED = 1;
  */
 export const CUT_PAUSE_MS = 540;
 /**
- * 叫人在一段中间加章节标记切开时，同一句里跟着写的提醒（references/dub.md「长文怎么切」的「一块听不到上一块」）：声音标记不跨章（tools/markup.mjs），
+ * 叫人在一段中间加章节标记切开时，同一句里跟着写的提醒（references/dub.md「How long text is split」的「A piece cannot hear the previous one.」）：声音标记不跨章（tools/markup.mjs），
  * 标题后面接着说的不是第一个包的，不重写 [voice:名字] 就回到第一个包；章节是台本自己的边界，不记切口的默认停顿（第 5c 步「切口的气口」），要停一口气得自己写。
  * 说明 scene_too_long、speech_maybe_unfinished 用它；命令行的 dub、mix 叫人加章节标记的地方也用它（cli/commands/dub.mjs、cli/commands/mix.mjs）。
  */
-export const CHAPTER_SPLIT_REMINDER = '标题后面接着说的不是第一个包的，在标题下一行开头重写 [voice:名字]，不写就回到第一个包；要停一口气，在标题下一行开头写 [pause 0.5s]，章节处不加默认的停顿';
+export const CHAPTER_SPLIT_REMINDER = 'If what follows a heading is not for the first pack, rewrite [voice:name] at the start of the line under the heading, or the voice goes back to the first pack; for a breath of silence, write [pause 0.5s] at the start of the line under the heading, since a chapter break adds no default pause';
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
 /**
@@ -462,20 +468,20 @@ const isExpressiveness = (value) => Number.isInteger(value) && value >= 0 && val
  * @throws {VoicePackError} dub_input_invalid（details: { field }）
  */
 function rejectInstructions(field, given) {
-  throw invalid(field, `${given} 不再收：dub 不再把说明发给模型（「带一点四川口音」这种概括的标签，模型不知道具体怎么念）。要的说法，在台本里写具体的提示，写在发生的位置：用词、语气词直接写进台词，读音不同的常用字写成读那个音的字，声调、尾音、节奏的变化在发生的那几个字前面写一个短提示（写法见 models/scene3.md「写什么」「跨语言和口音」）`);
+  throw invalid(field, `${given} is no longer accepted: dub no longer sends instructions to the model (a summary label such as "a slight Sichuan accent" does not tell the model how to say anything). To get that way of speaking, write specific cues in the script, where they happen: put wording and particles directly in the line, write a common character that is read differently as a character with that reading, and put a short cue in front of the few characters where tone, ending sound or rhythm changes (how to write them: models/scene3.md「What to write」「Cross-language and accent」)`);
 }
 
 function readScript(script) {
   if (typeof script === 'string') return [{ text: script, labels: undefined, speed: undefined, expressiveness: undefined, targetDurationMs: undefined }];
-  if (!Array.isArray(script)) throw invalid('script', '台本必须是字符串（带台本标记的整段台本），或者数组：每项 { text, labels?, speed?, expressiveness?, targetDurationMs? }');
+  if (!Array.isArray(script)) throw invalid('script', 'script must be a string (the whole script, with script markup) or an array: each item { text, labels?, speed?, expressiveness?, targetDurationMs? }');
   return script.map((item, index) => {
     const at = `script[${index}]`;
     const entry = typeof item === 'string' ? { text: item } : item;
-    if (!isPlainObject(entry) || typeof entry.text !== 'string') throw invalid(`${at}.text`, `${at}.text 必须是字符串（这一项的台本）`);
+    if (!isPlainObject(entry) || typeof entry.text !== 'string') throw invalid(`${at}.text`, `${at}.text must be a string (the script of this item)`);
     if (entry.instructions !== undefined) rejectInstructions(`${at}.instructions`, `${at}.instructions`);
-    if (entry.speed !== undefined && !isSpeed(entry.speed)) throw invalid(`${at}.speed`, `${at}.speed 必须是正数（这一项的语速：1 不变，0.85 放慢，1.15 加快；合成以后变速），或者不给`);
-    if (entry.expressiveness !== undefined && !isExpressiveness(entry.expressiveness)) throw invalid(`${at}.expressiveness`, `${at}.expressiveness 必须是 0 到 100 的整数（这一项的起伏：越大越多变，越小越平稳；交给合成能力），或者不给`);
-    if (entry.targetDurationMs !== undefined && !isTargetMs(entry.targetDurationMs)) throw invalid(`${at}.targetDurationMs`, `${at}.targetDurationMs 必须是正整数（这一项配出来要多少毫秒），或者不给`);
+    if (entry.speed !== undefined && !isSpeed(entry.speed)) throw invalid(`${at}.speed`, `${at}.speed must be a positive number (speed of this item: 1 unchanged, 0.85 slower, 1.15 faster; applied after synthesis), or omitted`);
+    if (entry.expressiveness !== undefined && !isExpressiveness(entry.expressiveness)) throw invalid(`${at}.expressiveness`, `${at}.expressiveness must be an integer from 0 to 100 (expressiveness of this item: higher is more varied, lower is steadier; left to the synthesis capability), or omitted`);
+    if (entry.targetDurationMs !== undefined && !isTargetMs(entry.targetDurationMs)) throw invalid(`${at}.targetDurationMs`, `${at}.targetDurationMs must be a positive integer (how many milliseconds this item should come out at), or omitted`);
     return { text: entry.text, labels: entry.labels, speed: entry.speed, expressiveness: entry.expressiveness, targetDurationMs: entry.targetDurationMs };
   });
 }
@@ -491,39 +497,39 @@ const isPerPackOption = (value) => {
 const isSetupOption = (setup) => setup === false || isPerPackOption(setup);
 
 function readOptions(options) {
-  if (!isPlainObject(options)) throw invalid('options', 'options 必须是对象');
+  if (!isPlainObject(options)) throw invalid('options', 'options must be an object');
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
-  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) throw invalid('concurrency', `concurrency 必须是 1–${MAX_CONCURRENCY} 的整数`);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) throw invalid('concurrency', `concurrency must be an integer from 1 to ${MAX_CONCURRENCY}`);
   const maxChars = options.maxChars ?? null;
-  if (maxChars !== null && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) throw invalid('maxChars', `maxChars 必须是不小于 ${MIN_MAX_CHARS} 的整数`);
+  if (maxChars !== null && (!Number.isInteger(maxChars) || maxChars < MIN_MAX_CHARS)) throw invalid('maxChars', `maxChars must be an integer of at least ${MIN_MAX_CHARS}`);
   const maxSpokenChars = options.maxSpokenChars === undefined ? DEFAULT_MAX_SPOKEN_CHARS : options.maxSpokenChars; // 不给是默认的软上限，null 是不要（lib/synthesis-limits.mjs）
-  if (maxSpokenChars !== null && (!Number.isInteger(maxSpokenChars) || maxSpokenChars < MIN_MAX_CHARS)) throw invalid('maxSpokenChars', `maxSpokenChars 必须是不小于 ${MIN_MAX_CHARS} 的整数（一个请求最多多少个要念的字），或者 null（不按要念的字切），或者不给（默认 ${DEFAULT_MAX_SPOKEN_CHARS}）`);
-  if (options.onUnit !== undefined && typeof options.onUnit !== 'function') throw invalid('onUnit', 'onUnit 必须是函数');
-  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', 'onPlan 必须是函数');
-  if (options.reuse !== undefined && typeof options.reuse !== 'function') throw invalid('reuse', 'reuse 必须是函数：reuse(unit) 返回上一次做好的这一段要并进来的字段，或者 null');
-  if (options.previousSeed !== undefined && typeof options.previousSeed !== 'function') throw invalid('previousSeed', 'previousSeed 必须是函数：previousSeed(unit) 返回 only 点到的这一段上一次配它用的 seed，或者 null');
-  if (options.setup !== undefined && !isSetupOption(options.setup)) throw invalid('setup', 'setup 必须是字符串（设定的名字，音色包清单里 setups 的 name），或者一张表 { 包名或包 ID: 设定的名字 }（几个包时每个包点各自的），或者 false（不用设定），或者不给');
-  if (options.referenceTag !== undefined && !isPerPackOption(options.referenceTag)) throw invalid('referenceTag', 'referenceTag 必须是字符串（音色基底标签，每个包都用它），或者一张表 { 包名或包 ID: 音色基底标签 }（只给点到的包），或者不给');
+  if (maxSpokenChars !== null && (!Number.isInteger(maxSpokenChars) || maxSpokenChars < MIN_MAX_CHARS)) throw invalid('maxSpokenChars', `maxSpokenChars must be an integer of at least ${MIN_MAX_CHARS} (the most spoken characters in one request), or null (do not split by spoken characters), or omitted (default ${DEFAULT_MAX_SPOKEN_CHARS})`);
+  if (options.onUnit !== undefined && typeof options.onUnit !== 'function') throw invalid('onUnit', 'onUnit must be a function');
+  if (options.onPlan !== undefined && typeof options.onPlan !== 'function') throw invalid('onPlan', 'onPlan must be a function');
+  if (options.reuse !== undefined && typeof options.reuse !== 'function') throw invalid('reuse', 'reuse must be a function: reuse(unit) returns the fields of this piece, finished last time, to merge in, or null');
+  if (options.previousSeed !== undefined && typeof options.previousSeed !== 'function') throw invalid('previousSeed', 'previousSeed must be a function: previousSeed(unit) returns the seed that the piece picked by only was dubbed with last time, or null');
+  if (options.setup !== undefined && !isSetupOption(options.setup)) throw invalid('setup', 'setup must be a string (the name of a setup, the name in setups in the voice pack manifest), or a table { pack name or pack ID: setup name } (with several packs, name one for each pack), or false (use no setup), or omitted');
+  if (options.referenceTag !== undefined && !isPerPackOption(options.referenceTag)) throw invalid('referenceTag', 'referenceTag must be a string (a reference tag, used for every pack), or a table { pack name or pack ID: reference tag } (only for the packs named), or omitted');
   const minChars = options.minChars ?? null;
-  if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars 必须是不小于 1 的整数（合成能力一次至少多少个字），或者不给');
+  if (minChars !== null && (!Number.isInteger(minChars) || minChars < 1)) throw invalid('minChars', 'minChars must be an integer of at least 1 (the fewest characters the synthesis capability takes at once), or omitted');
   const maxPauseInRequestMs = options.maxPauseInRequestMs ?? DEFAULT_MAX_PAUSE_IN_REQUEST_MS; // 不给就用基础部分的默认值（lib/pause-in-request.mjs）
-  if (!Number.isInteger(maxPauseInRequestMs) || maxPauseInRequestMs < 0) throw invalid('maxPauseInRequestMs', 'maxPauseInRequestMs 必须是不小于 0 的整数（一个请求里一处停顿最多多少毫秒，环境声明的；0 就是停顿都切开，交给拼接），或者不给');
+  if (!Number.isInteger(maxPauseInRequestMs) || maxPauseInRequestMs < 0) throw invalid('maxPauseInRequestMs', 'maxPauseInRequestMs must be an integer of at least 0 (the longest single pause allowed inside one request, in milliseconds, as declared by the environment; 0 splits at every pause and leaves it to stitching), or omitted');
   // 旧的名字（一个请求里写进 <speak> 的停顿加起来最多多少）不再收：意思变了，给了就报错，不悄悄当成新的
-  if (options.maxPauseInTextMs !== undefined) throw invalid('maxPauseInTextMs', 'maxPauseInTextMs 不再收：一个请求里一处停顿最多多长，改叫 maxPauseInRequestMs（每一处各比各的，不是加起来比）');
-  if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort 必须是 true 或 false');
-  if (options.runtimesOf !== undefined && typeof options.runtimesOf !== 'function') throw invalid('runtimesOf', 'runtimesOf 必须是函数：runtimesOf(pack) 返回这个包的脚本运行时');
-  if (options.scene !== undefined && typeof options.scene !== 'boolean') throw invalid('scene', 'scene 必须是 true 或 false（false：一行一个请求，不按一场戏一个请求）');
+  if (options.maxPauseInTextMs !== undefined) throw invalid('maxPauseInTextMs', 'maxPauseInTextMs is no longer accepted: the longest single pause inside one request is now called maxPauseInRequestMs (each pause is checked on its own, not summed)');
+  if (options.joinShort !== undefined && typeof options.joinShort !== 'boolean') throw invalid('joinShort', 'joinShort must be true or false');
+  if (options.runtimesOf !== undefined && typeof options.runtimesOf !== 'function') throw invalid('runtimesOf', 'runtimesOf must be a function: runtimesOf(pack) returns the script runtimes of this pack');
+  if (options.scene !== undefined && typeof options.scene !== 'boolean') throw invalid('scene', 'scene must be true or false (false: one request per line, not one request per scene)');
   const maxSpeakers = options.maxSpeakers ?? Number.POSITIVE_INFINITY; // 不给就不限
-  if (options.maxSpeakers !== undefined && options.maxSpeakers !== null && (!Number.isInteger(maxSpeakers) || maxSpeakers < 2)) throw invalid('maxSpeakers', 'maxSpeakers 必须是不小于 2 的整数（环境收得下的一场戏最多几个说话人），或者不给');
+  if (options.maxSpeakers !== undefined && options.maxSpeakers !== null && (!Number.isInteger(maxSpeakers) || maxSpeakers < 2)) throw invalid('maxSpeakers', 'maxSpeakers must be an integer of at least 2 (the most speakers in one scene that the environment accepts), or omitted');
   const targetDurationMs = options.targetDurationMs ?? null;
-  if (targetDurationMs !== null && !isTargetMs(targetDurationMs)) throw invalid('targetDurationMs', 'targetDurationMs 必须是正整数（每一项配出来要多少毫秒），或者不给');
-  if (options.instructions !== undefined) rejectInstructions('instructions', 'options.instructions（命令行 --instructions）');
-  if (options.speed !== undefined && !isSpeed(options.speed)) throw invalid('speed', 'speed 必须是正数（调用方给的语速：1 不变，0.85 放慢，1.15 加快；合成以后变速），或者不给');
-  if (options.expressiveness !== undefined && !isExpressiveness(options.expressiveness)) throw invalid('expressiveness', 'expressiveness 必须是 0 到 100 的整数（调用方给的起伏：越大越多变，越小越平稳；交给合成能力），或者不给');
+  if (targetDurationMs !== null && !isTargetMs(targetDurationMs)) throw invalid('targetDurationMs', 'targetDurationMs must be a positive integer (how many milliseconds each item should come out at), or omitted');
+  if (options.instructions !== undefined) rejectInstructions('instructions', 'options.instructions (command line --instructions)');
+  if (options.speed !== undefined && !isSpeed(options.speed)) throw invalid('speed', 'speed must be a positive number (the speed the caller gives: 1 unchanged, 0.85 slower, 1.15 faster; applied after synthesis), or omitted');
+  if (options.expressiveness !== undefined && !isExpressiveness(options.expressiveness)) throw invalid('expressiveness', 'expressiveness must be an integer from 0 to 100 (the expressiveness the caller gives: higher is more varied, lower is steadier; left to the synthesis capability), or omitted');
   const minSimilarity = options.minSimilarity ?? null;
-  if (minSimilarity !== null && (typeof minSimilarity !== 'number' || !Number.isFinite(minSimilarity))) throw invalid('minSimilarity', 'minSimilarity 必须是有限的数（说话人相似度低于它的段标出来，第 9 步；数的范围看环境的 speaker-verification），或者不给');
-  if (options.allowCrossLanguage !== undefined && typeof options.allowCrossLanguage !== 'boolean') throw invalid('allowCrossLanguage', 'allowCrossLanguage 必须是 true 或 false（true：参考段不是这一段台词的语言也照配，跨语言克隆，会带口音；见文件头第 3a 步）');
-  if (options.languageMarks !== undefined && typeof options.languageMarks !== 'boolean') throw invalid('languageMarks', 'languageMarks 必须是 true 或 false（false：跨语言的行不要求开头写名字对，也不加两边的语言提示，台本怎么写就怎么发；见文件头第 7c 步）');
+  if (minSimilarity !== null && (typeof minSimilarity !== 'number' || !Number.isFinite(minSimilarity))) throw invalid('minSimilarity', 'minSimilarity must be a finite number (pieces whose speaker similarity is below it are flagged, step 9; the range of the number depends on speaker-verification in the environment), or omitted');
+  if (options.allowCrossLanguage !== undefined && typeof options.allowCrossLanguage !== 'boolean') throw invalid('allowCrossLanguage', 'allowCrossLanguage must be true or false (true: dub even when the reference segment is not in the language of this line, a cross-language clone, which carries an accent; see step 3a in the file header)');
+  if (options.languageMarks !== undefined && typeof options.languageMarks !== 'boolean') throw invalid('languageMarks', 'languageMarks must be true or false (false: a cross-language line does not need a name pair at its start and gets no language cue on either side, the script is sent as written; see step 7c in the file header)');
   return { concurrency, maxChars, maxSpokenChars, minChars, maxPauseInRequestMs, maxSpeakers, targetDurationMs, minSimilarity, scene: options.scene ?? true, joinShort: options.joinShort ?? true, allowCrossLanguage: options.allowCrossLanguage ?? false, languageMarks: options.languageMarks ?? true, onUnit: options.onUnit, onPlan: options.onPlan, reuse: options.reuse, previousSeed: options.previousSeed, labels: options.labels, speed: options.speed, expressiveness: options.expressiveness, setup: options.setup ?? null, referenceTag: options.referenceTag ?? null, only: options.only, runtimesOf: options.runtimesOf };
 }
 
@@ -532,10 +538,10 @@ function readOptions(options) {
 /** 给的包：一个，或者几个（数组）。统一成数组，第一个是台本开头用的声音。同一个包给了两次是输入错误。 */
 function packsOf(input) {
   const packs = Array.isArray(input) ? input : [input];
-  if (packs.length === 0) throw invalid('pack', '要给至少一个音色包');
+  if (packs.length === 0) throw invalid('pack', 'Give at least one voice pack');
   const seen = new Set();
   for (const pack of packs) {
-    if (seen.has(pack.manifest.id)) throw new VoicePackError('dub_input_invalid', `包 ${pack.manifest.id} 给了两次：同一个包只给一次`, { details: { field: 'pack' } });
+    if (seen.has(pack.manifest.id)) throw new VoicePackError('dub_input_invalid', `Pack ${pack.manifest.id} was given twice: give each pack once`, { details: { field: 'pack' } });
     seen.add(pack.manifest.id);
   }
   return packs;
@@ -555,7 +561,7 @@ function chooseSetup(pack, name) {
     const found = setups.find((setup) => setup.name === name);
     if (found !== undefined) return { setup: found, by: 'option' };
     const names = setups.map((setup) => setup.name);
-    throw new VoicePackError('setup_unknown', `包 ${pack.manifest.name}（${pack.manifest.id}）里没有叫 ${JSON.stringify(name)} 的设定：${names.length === 0 ? '这个包里一套设定也没有' : `有 ${names.map((item) => JSON.stringify(item)).join('、')}`}`, { details: { setup: name, pack: { id: pack.manifest.id, name: pack.manifest.name }, setups: names } });
+    throw new VoicePackError('setup_unknown', `Pack ${pack.manifest.name} (${pack.manifest.id}) has no setup named ${JSON.stringify(name)}: ${names.length === 0 ? 'the pack has no setups at all' : `it has ${names.map((item) => JSON.stringify(item)).join(', ')}`}`, { details: { setup: name, pack: { id: pack.manifest.id, name: pack.manifest.name }, setups: names } });
   }
   const found = setups.find((setup) => setup.default === true);
   return found === undefined ? null : { setup: found, by: 'default' };
@@ -570,7 +576,7 @@ function chooseSetup(pack, name) {
 export const packsNamed = (packs, name) => packs.filter((pack) => [pack.manifest.id, pack.manifest.name].some((item) => item.trim().toLowerCase() === name.trim().toLowerCase()));
 
 /**
- * 「名字：台词」（对话、创作者给的台本常这样写）：一句要念的字（去掉提示以后的，line.words）以给的某个包的名字或包 ID 开头（不分大小写，同 [voice:] 认包），
+ * 「名字：台词」（对话、使用者给的台本常这样写）：一句要念的字（去掉提示以后的，line.words）以给的某个包的名字或包 ID 开头（不分大小写，同 [voice:] 认包），
  * 后面（中间可以有空白）跟着「：」或「:」。dub 只提醒、不改字，也不换声音（换声音只认 [voice:名字]）。返回 [{ line, name, pack, prefix }]：line 是 lines[i].index，
  * name 是台本里写的那个名字，pack 是那个包的 ID，prefix 是台本里写的「名字：」那一截（连冒号）。几个包的名字都对得上时取先给的包。
  */
@@ -598,12 +604,12 @@ function namePrefixNote(found, lines) {
   const QUOTED = 3; // 说明里只引前几句，全部的在 details 里
   const clip = (text) => ([...text].length > 30 ? `${[...text].slice(0, 30).join('')}…` : text);
   // 引台本里写的字，去掉提示（line.words 里音素标记、语言标签换成了 U+FFFC，不给人看）
-  const quoted = found.slice(0, QUOTED).map((entry) => `「${clip(lines[entry.line].text.replace(CUES_IN_TEXT, '').replace(/[ \t]{2,}/g, ' ').trim())}」`).join('');
-  const more = found.length > QUOTED ? `等 ${found.length} 句` : '';
-  const advice = [...new Map(found.map((entry) => [entry.prefix, `「${entry.prefix}」换成 [voice:${entry.name}]`])).values()];
+  const quoted = found.slice(0, QUOTED).map((entry) => `"${clip(lines[entry.line].text.replace(CUES_IN_TEXT, '').replace(/[ \t]{2,}/g, ' ').trim())}"`).join(', ');
+  const more = found.length > QUOTED ? ` etc. (${found.length} lines)` : '';
+  const advice = [...new Map(found.map((entry) => [entry.prefix, `the leading "${entry.prefix}" with [voice:${entry.name}]`])).values()];
   return {
     code: 'speaker_name_in_line',
-    message: `有 ${found.length} 句要念的字以包的名字或包 ID 开头、后面跟着冒号：${quoted}${more}。名字会照原样念出来，这几句也不会换成那个包的声音（换声音只认 [voice:名字]）。是说话人的话，把开头的${advice.join('、')}`,
+    message: `${found.length} ${found.length === 1 ? 'line' : 'lines'} whose spoken text starts with a pack name or pack ID followed by a colon: ${quoted}${more}. The name is read aloud as written, and the voice does not switch to that pack (only [voice:name] switches the voice). If it marks a speaker, replace ${advice.join(', ')}`,
     details: { lines: found.map(({ line, name, pack }) => ({ line, name, pack })) },
   };
 }
@@ -615,29 +621,30 @@ function longCuesNote(lines) {
   const QUOTED = 3; // 说明里只引前几处，全部的在 details 里
   const found = lines.flatMap((line) => (line.text.match(CUES_IN_TEXT) ?? []).filter((cue) => namePairOf(cue) === null).map((cue) => ({ line: line.index, cue, words: cueWords(cue.slice(1, -1)) }))).filter((entry) => entry.words > MAX_CUE_WORDS);
   if (found.length === 0) return null;
-  const quoted = found.slice(0, QUOTED).map((entry) => `第 ${entry.line + 1} 句 ${entry.cue}（${entry.words} 个词）`).join('、');
-  const more = found.length > QUOTED ? ` 等 ${found.length} 处` : '';
+  const quoted = found.slice(0, QUOTED).map((entry) => `line ${entry.line + 1} ${entry.cue} (${entry.words} words)`).join(', ');
+  const more = found.length > QUOTED ? ` etc. (${found.length} cues)` : '';
   return {
     code: 'long_cues',
-    message: `有 ${found.length} 处提示超过 ${MAX_CUE_WORDS} 个词（汉字、假名两个算一个词）：${quoted}${more}。一处提示写两三个词，只写这一处怎么说，不写成句子（厂商的技术报告说一处提示通常几个词；写法见 models/scene3.md「写什么」）。舞台说明（30 个字以内的括号）也是原样搬进方括号的。这里只提醒，照原样发`,
+    message: `${found.length} ${found.length === 1 ? 'cue is' : 'cues are'} longer than ${MAX_CUE_WORDS} words (two Chinese characters or kana count as one word): ${quoted}${more}. Write two or three words per cue, only how this one spot is said, not a sentence (the vendor's technical report says a cue is usually a few words; how to write them: models/scene3.md「What to write」). A stage direction (a parenthesis of up to 30 characters) is also carried into the square brackets as it is. This is only a notice; the text is sent as it is`,
     details: { cues: found, limit: MAX_CUE_WORDS },
   };
 }
 
 /**
- * 规划的说明 unrecognized_directions（文件头「说明」）：括号里词表一个词也认不出、照样拿掉不念的几处（第 2 步，lib/line-hints.mjs 的 cuesInPlace 记成 recognized: false）。
+ * 规划的说明 unrecognized_directions（文件头「说明」）：括号里词表一个词也认不出、照样拿掉不念的几处（第 2 步，lib/line-hints.mjs 的 cuesInPlace 记成 recognized: false），
+ * 和词表只认出一部分、发出去的提示里还是别的文字（notEnglish: true，cueFor 原样放进方括号的那种：（他眼睛一亮，满脸堆笑））的几处。
  * 没有这样的括号是 null。只有提示、接不到哪一句上、丢掉的那几处不在 lines 里，不列。
  */
 function unrecognizedNote(lines) {
   const QUOTED = 5; // 说明里只引前几处（同样的字只引一次），全部的在 details 里
-  const found = lines.flatMap((line) => line.directions.filter((direction) => direction.recognized === false).map((direction) => ({ line: line.index, raw: direction.raw })));
+  const found = lines.flatMap((line) => line.directions.filter((direction) => direction.recognized === false || direction.notEnglish === true).map((direction) => ({ line: line.index, raw: direction.raw })));
   if (found.length === 0) return null;
   const distinct = [...new Set(found.map((entry) => entry.raw))];
-  const quoted = distinct.slice(0, QUOTED).map((raw) => `「${raw}」`).join('');
-  const more = distinct.length > QUOTED ? `等 ${distinct.length} 种` : '';
+  const quoted = distinct.slice(0, QUOTED).map((raw) => `"${raw}"`).join(', ');
+  const more = distinct.length > QUOTED ? ` etc. (${distinct.length} different ones)` : '';
   return {
     code: 'unrecognized_directions',
-    message: `有 ${found.length} 处括号里的字词表认不出：${quoted}${more}。配音时 30 个字以内的括号都当舞台说明，这几处换成方括号的提示交给模型，括号里的字不念。是原文里要念的正文的，先改成不带括号的写法（逗号、破折号）再配；是舞台说明的不用管`,
+    message: `${found.length} ${found.length === 1 ? 'parenthesis' : 'parentheses'} whose words the stage-direction vocabulary does not recognize, or recognizes only in part (a parenthesis not in English): ${quoted}${more}. When dubbing, every parenthesis of up to 30 characters counts as a stage direction: these are turned into square-bracket cues for the model and the words inside are not spoken. If one is body text that should be spoken, first rewrite it without parentheses (commas, dashes), then dub. If it is a stage direction not in English, it goes to the model as written: rewrite it as an English cue of two or three words (models/scene3.md「What to write」). If it is a stage direction in English, ignore this`,
     details: { directions: found },
   };
 }
@@ -647,18 +654,18 @@ function unrecognizedNote(lines) {
  * 台本里的 [voice:]：只有一个包时，报错和以前一字不差。
  */
 const NAMED_IN_SCRIPT = {
-  mention: (list) => `台本里的 [voice:${list.join('、')}]`,
-  onePack: (list, pack) => `台本里的 [voice:${list.join('、')}] 不是这个包（${pack.manifest.name}，${pack.manifest.id}）：一个包只有一个声音，换声音的台本需要别的包`,
+  mention: (list) => `[voice:${list.join(', ')}] in the script`,
+  onePack: (list, pack) => `[voice:${list.join(', ')}] in the script is not this pack (${pack.manifest.name}, ${pack.manifest.id}): a pack has only one voice; a script that switches voices needs other packs`,
 };
-const NAMED_IN_SETUP = { mention: (list) => `options.setup 里点的包 ${list.map((item) => JSON.stringify(item)).join('、')}` };
-const NAMED_IN_REFERENCE_TAG = { mention: (list) => `options.referenceTag 里点的包 ${list.map((item) => JSON.stringify(item)).join('、')}` };
+const NAMED_IN_SETUP = { mention: (list) => `${list.map((item) => JSON.stringify(item)).join(', ')} named in options.setup` };
+const NAMED_IN_REFERENCE_TAG = { mention: (list) => `${list.map((item) => JSON.stringify(item)).join(', ')} named in options.referenceTag` };
 
 /**
  * 认包的名字（台本里的 [voice:名字]，或者 options.setup 表里的键）：对不上任何一个包是 voice_unknown，对上不止一个是 voice_ambiguous。
  * where 是 NAMED_IN_SCRIPT 或 NAMED_IN_SETUP。
  */
 function checkPackNames(packs, names, where) {
-  const described = (pack) => `${pack.manifest.name}，${pack.manifest.id}`;
+  const described = (pack) => `${pack.manifest.name}, ${pack.manifest.id}`;
   const { mention } = where;
   const unknown = [...new Set(names.filter((name) => packsNamed(packs, name).length === 0))];
   if (unknown.length > 0) {
@@ -666,11 +673,11 @@ function checkPackNames(packs, names, where) {
       const [pack] = packs;
       throw new VoicePackError('voice_unknown', where.onePack(unknown, pack), { details: { voices: unknown, pack: { id: pack.manifest.id, name: pack.manifest.name } } });
     }
-    throw new VoicePackError('voice_unknown', `${mention(unknown)} 不是给出的任何一个包（${packs.map((pack) => `${pack.manifest.name}（${pack.manifest.id}）`).join('、')}）：名字或包 ID 对得上才行`, { details: { voices: unknown, packs: packs.map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+    throw new VoicePackError('voice_unknown', `No pack given matches ${mention(unknown)} (packs given: ${packs.map((pack) => `${pack.manifest.name} (${pack.manifest.id})`).join(', ')}): the name or pack ID must match`, { details: { voices: unknown, packs: packs.map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
   }
   const ambiguous = [...new Set(names.filter((name) => packsNamed(packs, name).length > 1))];
   if (ambiguous.length > 0) {
-    throw new VoicePackError('voice_ambiguous', `${mention(ambiguous)} 对上不止一个包（${packsNamed(packs, ambiguous[0]).map(described).join('；')}）：用包 ID 指定`, { details: { voices: ambiguous, packs: packsNamed(packs, ambiguous[0]).map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
+    throw new VoicePackError('voice_ambiguous', `More than one pack matches ${mention(ambiguous)} (${packsNamed(packs, ambiguous[0]).map(described).join('; ')}): specify the pack ID`, { details: { voices: ambiguous, packs: packsNamed(packs, ambiguous[0]).map((pack) => ({ id: pack.manifest.id, name: pack.manifest.name })) } });
   }
 }
 
@@ -697,7 +704,7 @@ function perPackValues(packs, value, field) {
   const values = new Map(packs.map((pack) => [pack, null]));
   for (const key of keys) {
     const [pack] = packsNamed(packs, key);
-    if (values.get(pack) !== null) throw invalid(field, `options.${field} 里同一个包点了两次（${pack.manifest.name}，${pack.manifest.id}）：每个包只点一次`);
+    if (values.get(pack) !== null) throw invalid(field, `options.${field} names the same pack twice (${pack.manifest.name}, ${pack.manifest.id}): name each pack once`);
     values.set(pack, value[key]);
   }
   return values;
@@ -1060,10 +1067,10 @@ function unpairedTags(text) {
 
 /** 注意 tag_pair_split（文件头「说明」）：found 是 [{ unit, tags }]，unit 是段的编号（从 0 起），tags 是 unpairedTags 的结果。 */
 function tagPairNote(found) {
-  const where = found.map(({ unit, tags }) => `第 ${unit + 1} 段（${tags.join('、')}）`).join('，');
+  const where = found.map(({ unit, tags }) => `piece ${unit + 1} (${tags.join(', ')})`).join('; ');
   return {
     code: 'tag_pair_split',
-    message: `有 ${found.length} 段发出去的文字里，成对的标签没配上对：${where}。模型拿到的是半对。多半是一对标签被拆到了两个请求里：中间有请求里放不下的 [pause …]，或者跨了行、章节、换声音；也可能是台本里少写了一头。一对标签写在一行里，中间不写这些；要停顿的，在停顿两边各写一对`,
+    message: `In ${found.length} ${found.length === 1 ? 'piece' : 'pieces'} of the text sent out, paired tags do not pair up: ${where}. The model gets half a pair. Most likely a pair was split across two requests: a [pause …] in between does not fit in a request, or the pair spans a line break, a chapter or a voice change; or one end is missing from the script. Write a pair of tags within one line, with none of these in between; to pause, write a pair on each side of the pause`,
     details: { units: found },
   };
 }
@@ -1099,7 +1106,7 @@ function joinShortUnits(units, { min, limits, sameTarget }) {
   units.forEach((unit) => {
     const last = out.length - 1;
     // 场景的 unit（第 5a 步）不并：它不是一句短话，下限（voice-cloning 的）管不到它
-    if (last >= 0 && !isScene(out[last]) && !isScene(unit) && count(out[last].spoken) < min && canJoin(out[last], unit, limits, sameTarget)) {
+    if (last >= 0 && !isScene(out[last]) && !isScene(unit) && spokenLength(out[last].spoken) < min && canJoin(out[last], unit, limits, sameTarget)) {
       out[last] = joinedUnit(out[last], unit);
       return;
     }
@@ -1111,14 +1118,14 @@ function joinShortUnits(units, { min, limits, sameTarget }) {
 /** 比下限短、并不了的那一段的错。不是暂时出错：不标 transient，不重做（见文件头第 5b 步）。 */
 const tooShortError = (spoken, min) => ({
   code: TEXT_TOO_SHORT,
-  message: `这一段比合成能力的下限短：只有 ${count(spoken)} 个字，下限是 ${min} 个字，没有合成`,
-  details: { chars: count(spoken), min },
+  message: `This piece is shorter than the minimum of the synthesis capability: ${spokenLength(spoken)} characters, the minimum is ${min}; not synthesized`,
+  details: { chars: spokenLength(spoken), min },
 });
 
 /** 还要做的段（不是一场戏）里，发出去的字比下限 min 短的，记成 failed（text_too_short）。什么时候判，见文件头第 5b 步。 */
 function markTooShort(units, min) {
   for (const unit of units) {
-    if (unit.status !== 'planned' || isScene(unit) || count(unit.spoken) >= min) continue;
+    if (unit.status !== 'planned' || isScene(unit) || spokenLength(unit.spoken) >= min) continue;
     unit.status = 'failed';
     unit.error = tooShortError(unit.spoken, min);
   }
@@ -1126,7 +1133,7 @@ function markTooShort(units, min) {
 
 /** 还没有一句成功、已经有 TEXT_REJECTED_LIMIT 句被服务商拒了（文件头「一段失败了怎么办」）：停下。rejected 是被服务商拒的段，按被拒的次序。 */
 const textRejectedStop = (rejected) =>
-  new VoicePackError('dub_text_rejected', `已经有 ${rejected.length} 句被服务商拒了，而且还没有一句成功：这可能不是这些句子的文字的问题，是参考或别的输入被拦了（那样每一句都会被拒）。已经停下，不再开始新的句子；已经做完的段照常交给 onUnit，被拒的段和句子见 details.rejected`, {
+  new VoicePackError('dub_text_rejected', `${rejected.length} lines have been rejected by the provider and none has succeeded yet: this may not be a problem with the text of these lines but a reference or other input being blocked (then every line is rejected). Stopped, no new lines are started; pieces already finished are passed to onUnit as usual; the rejected pieces and lines are in details.rejected`, {
     details: { limit: TEXT_REJECTED_LIMIT, rejected: rejected.map((unit) => ({ unit: unit.index, line: unit.line })) },
   });
 /**
@@ -1173,8 +1180,8 @@ function openingOf(line, setup) {
   const added = !opensWithCue(line.text);
   const words = composed.cue === null ? 0 : cueWords(composed.cue);
   if (added && words > MAX_OPENING_CUE_WORDS) {
-    const from = Object.entries(composed.parts).map(([item, part]) => `${OPENING_ITEM_NAMES[item]}来自${part.from === 'caller' ? '调用方' : '设定'}`).join('、');
-    throw new VoicePackError('dub_input_invalid', `第 ${line.index + 1} 句开头的提示 ${composed.cue} 数出来 ${words} 个词，超过上限 ${MAX_OPENING_CUE_WORDS} 个词（${from}；汉字、假名两个算一个词）。情绪、风格用标签词表（vocab/cues.json）里的短词：调用方给的改短；设定的用调用方给的同一项盖过它（命令行用更短的 --emotion、--style），或者不用设定（命令行 --no-setup），或者改包里的设定`, { details: { field: 'openingCue', line: line.index, cue: composed.cue, words, limit: MAX_OPENING_CUE_WORDS } });
+    const from = Object.entries(composed.parts).map(([item, part]) => `${OPENING_ITEM_NAMES[item]} from ${part.from === 'caller' ? 'the caller' : 'the setup'}`).join(', ');
+    throw new VoicePackError('dub_input_invalid', `The opening cue ${composed.cue} of line ${line.index + 1} counts ${words} words, over the limit of ${MAX_OPENING_CUE_WORDS} words (${from}; two Chinese characters or kana count as one word). For emotion and style use the short words of the tag vocabulary (vocab/cues.json): shorten what the caller gave; for what the setup gave, override it with the same item from the caller (on the command line a shorter --emotion or --style), or use no setup (command line --no-setup), or change the setup in the pack`, { details: { field: 'openingCue', line: line.index, cue: composed.cue, words, limit: MAX_OPENING_CUE_WORDS } });
   }
   return { opening: composed.cue === null ? null : { cue: composed.cue, added, parts: composed.parts }, skipped: added ? composed.skipped : [] };
 }
@@ -1191,11 +1198,11 @@ function skippedCueNotes(skipped, many) {
     groups.set(key, seen);
   }
   return [...groups.values()].map((group) => {
-    const source = group.from === 'setup' ? `设定 ${JSON.stringify(group.setup)} 的` : '调用方给的';
-    const message = `${source}${OPENING_ITEM_NAMES[group.item]} ${group.value} 是一下子的声音，不合进每个请求开头的提示（开头的提示管整句怎么说，并进去就成了整句的说法）：第 ${group.lines.map((line) => line + 1).join('、')} 句。要这一下，在台本里它发生的地方写，例如叹气写 [sighs]（写法见 models/scene3.md「一下子的声音和停顿」）`;
+    const source = group.from === 'setup' ? `from setup ${JSON.stringify(group.setup)}` : 'given by the caller';
+    const message = `The ${OPENING_ITEM_NAMES[group.item]} "${group.value}" ${source} is a sudden sound, so it is not merged into the opening cue of each request (the opening cue sets how the whole line is said; merged in, it would become the way the whole line is said): ${group.lines.length === 1 ? 'line' : 'lines'} ${group.lines.map((line) => line + 1).join(', ')}. To get that sound, write it in the script where it happens, for example [sighs] for a sigh (how to write them: models/scene3.md「Sudden sounds and pauses」)`;
     return {
       code: 'one_shot_style_skipped',
-      message: many ? `${group.pack.manifest.name}：${message}` : message,
+      message: many ? `${group.pack.manifest.name}: ${message}` : message,
       details: { item: group.item, style: group.value, from: group.from, ...(group.from === 'setup' ? { setup: group.setup } : {}), lines: group.lines, ...(many ? { pack: group.pack.manifest.id } : {}) },
     };
   });
@@ -1213,16 +1220,16 @@ function setupInstructionsNotes(entries, many) {
     groups.set(entry.pack, seen);
   }
   return [...groups.values()].map((group) => {
-    const message = `设定 ${JSON.stringify(group.setup)} 的说明是写给写台本的人看的，dub 不把它发给模型：「${group.instructions}」，第 ${group.lines.map((line) => line + 1).join('、')} 句用了这套设定。照说明在台本里写具体的：用词、语气词直接写进台词，读音不同的常用字写成读那个音的字，声调、尾音、节奏的变化在发生的那几个字前面写一个短提示，写在发生的位置（写法见 models/scene3.md「写什么」「跨语言和口音」）`;
+    const message = `The instructions of setup ${JSON.stringify(group.setup)} are for the person writing the script, and dub does not send them to the model: "${group.instructions}"; ${group.lines.length === 1 ? 'line' : 'lines'} ${group.lines.map((line) => line + 1).join(', ')} use this setup. Follow the instructions by writing the specifics in the script, where they happen: put wording and particles directly in the line, write a common character that is read differently as a character with that reading, and put a short cue in front of the few characters where tone, ending sound or rhythm changes (how to write them: models/scene3.md「What to write」「Cross-language and accent」)`;
     return {
       code: 'setup_instructions',
-      message: many ? `${group.pack.manifest.name}：${message}` : message,
+      message: many ? `${group.pack.manifest.name}: ${message}` : message,
       details: { setup: group.setup, instructions: group.instructions, lines: group.lines, ...(many ? { pack: group.pack.manifest.id } : {}) },
     };
   });
 }
 /** 开头的提示的几项，给人看的名字。 */
-const OPENING_ITEM_NAMES = Object.freeze({ emotion: '情绪', style: '风格', energy: '能量' });
+const OPENING_ITEM_NAMES = Object.freeze({ emotion: 'emotion', style: 'style', energy: 'energy' });
 /** 标签里合成提示用的三项（语言不在提示里：它用来挑参考）。 */
 const pickItems = (labels) => ({ emotion: labels?.emotion, style: labels?.style, energy: labels?.energy });
 /** 两段开头的提示一样（都没有也算一样）：不一样的不并进一个请求（第 5b、5c 步），不然后一段的那条提示就丢了。 */
@@ -1231,8 +1238,8 @@ const sameOpening = (a, b) => (a.openingCue?.cue ?? null) === (b.openingCue?.cue
 const cueToAdd = (opening) => (opening?.added === true ? opening.cue : null);
 /** 发给模型的台词（第 7c 步）：名字对只留参考语言里的名字；跨语言的请求结尾写语言。 */
 const markedLine = (text, marks) => (marks === undefined ? lineNameOnly(text) : withLineLanguage(lineNameOnly(text), marks.language));
-/** 发给模型的参考的文字（第 7c 步）：跨语言的，开头写台词语言里的名字，结尾写参考的语言。 */
-const markedReference = (text, marks) => (marks === undefined ? text : withReferenceMarks(text, marks));
+/** 发给模型的参考的文字（第 7c 步）：跨语言的，开头写台词语言里的名字，结尾写参考的语言；同语言、台词开头是包名的（name），开头写这个名字。 */
+const markedReference = (text, marks, name) => (marks !== undefined ? withReferenceMarks(text, marks) : name === undefined ? text : `[${name}]${text}`);
 /** 这一段做请求的开头时，开头的提示占几个字（提示加上它和文字之间的空格；不加就是 0）：算进 maxChars（第 7a 步）。 */
 function openingChars(unit) {
   const cue = cueToAdd(unit.openingCue);
@@ -1251,7 +1258,7 @@ function roomFits(max, cue) {
   return (text) => {
     if (count(text) <= room) return true;
     if (cue !== null && room < MIN_ROOM) {
-      throw new VoicePackError('dub_input_invalid', `开头的提示 ${cue} 连后面的一个空格占 ${count(cue) + 1} 个字，一个请求最多发出去 ${max} 个字（maxChars），留给台词的只剩 ${room} 个，不到 ${MIN_ROOM} 个：这一句放不进一个请求，照这样切，每段只有几个字。给更大的 maxChars（命令行 --max-chars），或者把开头的提示改短（调用方给的情绪、风格、能量，或者设定的）`, { details: { field: 'maxChars', maxChars: max, cue, room, min: MIN_ROOM } });
+      throw new VoicePackError('dub_input_invalid', `The opening cue ${cue} with the space after it takes ${count(cue) + 1} characters, and a request sends at most ${max} characters (maxChars), leaving only ${room} for the line, fewer than ${MIN_ROOM}: this line does not fit in one request, and cut this way each piece would have only a few characters. Give a larger maxChars (command line --max-chars), or shorten the opening cue (the emotion, style or energy given by the caller or by the setup)`, { details: { field: 'maxChars', maxChars: max, cue, room, min: MIN_ROOM } });
     }
     return false;
   };
@@ -1446,7 +1453,7 @@ function joinIntoRequests(units, { lines, limits, maxPauseMs, hasScripts, pickOf
 }
 
 /** 切口的说法（unit.cutBefore、注意 cut_to_fit 的 at）。 */
-const CUT_LABELS = { scene: '场景的边界', paragraph: '段落的边界', sentence: '一行里面' };
+const CUT_LABELS = { scene: 'scene boundary', paragraph: 'paragraph boundary', sentence: 'inside a line' };
 /**
  * 注意 cut_to_fit（第 5a、5c 步）：有几处是因为一个请求放不下（两个上限，见 fitsRequest 上面）才切开的，在哪种边界上，各在第几段前面。
  * 一行自己放不下、在这一行里面切的单独说一句。照最后的段上的 cutBefore 列（一场戏切开的也在里面）；一处都没有是 null。
@@ -1455,12 +1462,12 @@ function cutNote(units, { maxChars, maxSpokenChars }) {
   const cuts = units.filter((unit) => Object.hasOwn(CUT_LABELS, unit.cutBefore ?? '')).map((unit) => ({ at: unit.index, kind: unit.cutBefore }));
   if (cuts.length === 0) return null;
   const counted = ['scene', 'paragraph', 'sentence'].map((kind) => [kind, cuts.filter((cut) => cut.kind === kind)]).filter(([, list]) => list.length > 0);
-  const where = counted.map(([kind, list]) => `${CUT_LABELS[kind]} ${list.length} 处（第 ${list.map((cut) => cut.at + 1).join('、')} 段前面）`).join('，');
-  const inLine = cuts.some((cut) => cut.kind === 'sentence') ? '。一行里面的切口：那一行自己就放不下一个请求，在它的句子之间切开了（一句还放不下的，在逗号一类的地方，超过发出去的字的上限才硬切）' : '';
-  const caps = [...(maxSpokenChars === null ? [] : [`要念的字 ${maxSpokenChars} 个`]), ...(maxChars === null ? [] : [`发出去的字 ${maxChars} 个（连开头的提示）`])].join('，');
+  const where = counted.map(([kind, list]) => `${CUT_LABELS[kind]}: ${list.length} (before ${list.length === 1 ? 'piece' : 'pieces'} ${list.map((cut) => cut.at + 1).join(', ')})`).join('; ');
+  const inLine = cuts.some((cut) => cut.kind === 'sentence') ? '. Cuts inside a line: that line alone did not fit in one request, so it was cut between its sentences (a sentence that still does not fit is cut at commas and the like, and hard-cut only when it is over the limit on characters sent)' : '';
+  const caps = [...(maxSpokenChars === null ? [] : [`${maxSpokenChars} spoken characters`]), ...(maxChars === null ? [] : [`${maxChars} characters sent (including the opening cue)`])].join(', ');
   return {
     code: 'cut_to_fit',
-    message: `有 ${cuts.length} 处是因为一个请求放不下（上限：${caps}）才切开的：${where}${inLine}。切开的几块用同一段参考（一场戏切成的几场，每个人都用切开以前整场挑到最多的那一段；单独配的一行照它自己那一行挑），前后接不上的地方多半在这些切口，听的时候留意`,
+    message: `${cuts.length} ${cuts.length === 1 ? 'cut was' : 'cuts were'} made because a request could not hold the text (limits: ${caps}): ${where}${inLine}. The pieces on either side of a cut use the same reference segment (a scene cut into several scenes: each speaker uses the segment picked most often across the whole scene before the cut; a line dubbed on its own picks for that line itself). Where the pieces do not join up is most likely at these cuts; listen there`,
     details: { maxChars, maxSpokenChars, cuts: cuts.map((cut) => ({ unit: cut.at, at: cut.kind })) },
   };
 }
@@ -1704,7 +1711,7 @@ function crossLanguageStop(found) {
   const entries = found.map(({ entry }) => entry);
   const alone = new Set(found.filter((item) => item.alone).map(({ entry }) => entry));
   const givenBy = new Map(found.filter((item) => item.given !== null).map(({ entry, given }) => [entry, given]));
-  const numbers = (list) => [...new Set(list.map((entry) => entry.unit + 1))].join('、');
+  const numbers = (list) => [...new Set(list.map((entry) => entry.unit + 1))].join(', ');
   const groups = new Map();
   for (const entry of entries) {
     const key = JSON.stringify([entry.pack.id, entry.speaker ?? null, entry.segmentId, languagePair(entry)]);
@@ -1713,8 +1720,8 @@ function crossLanguageStop(found) {
   }
   const listed = [...groups.values()].map((list) => {
     const [first] = list;
-    return `第 ${numbers(list)} 段（${first.speaker === undefined ? '' : `一场戏里的说话人 ${first.speaker}，`}${first.pack.name} 的参考段 ${first.segmentId}，${languagePair(first)}）`;
-  }).join('；');
+    return `piece(s) ${numbers(list)} (${first.speaker === undefined ? '' : `speaker ${first.speaker} in a scene, `}reference segment ${first.segmentId} of ${first.pack.name}, ${languagePair(first)})`;
+  }).join('; ');
   const has = entries.filter((entry) => entry.hasLanguage);
   const lacking = entries.filter((entry) => !entry.hasLanguage);
   const givenCaller = has.filter((entry) => givenBy.get(entry) === 'caller');
@@ -1722,19 +1729,19 @@ function crossLanguageStop(found) {
   const tagged = has.filter((entry) => !givenBy.has(entry) && (alone.has(entry) || entry.speaker === undefined));
   const apart = has.filter((entry) => !givenBy.has(entry) && !alone.has(entry) && entry.speaker !== undefined);
   const kinds = [
-    [lacking, '给这个包补一段这种语言的参考，用 make-pack --previous 发新版本，再用新版本配'],
-    [givenCaller, '包里有这种语言的参考段，只是给了语言（库里 labels.language，命令行 --language），整份台本按它挑参考，这几行的字却不是这种语言：不给 --language，dub 从文字认，用这种语言的参考'],
-    [givenSetup, '包里有这种语言的参考段，只是这一次用的设定写了语言（labels.language），按它挑了参考，这几行的字却不是这种语言：给 --language 写台词的语言（盖过设定的），或者换一套设定（--setup <名字>），或者不用设定（--no-setup）'],
-    [tagged.filter((entry) => entry.by !== 'setup'), '包里有这种语言的参考段，只是这种语言里没有这个标签（音色基底标签）：换一个这种语言里有的标签（命令行 --reference-tag），或者不指定标签'],
-    [tagged.filter((entry) => entry.by === 'setup'), '包里有这种语言的参考段，只是这一次用的设定的默认参考（referenceTag）在这种语言里没有：用 --reference-tag 指一个这种语言里有的标签（盖过设定的），或者换一套设定（--setup <名字>），或者不用设定（--no-setup）'],
-    [apart, '包里有这种语言的参考段，只是合并的一场里一个说话人整场只用一段参考：分开配（scene: false，命令行 --no-scene），每一行各用各的语言的参考'],
+    [lacking, 'add a reference segment in this language to the pack, issue a new version with make-pack --previous, then dub with the new version'],
+    [givenCaller, 'the pack has a reference segment in this language, but a language was given (labels.language in the library, --language on the command line), the whole script picks references by it, and the words of these lines are not in that language: do not give --language, then dub recognizes the language from the text and uses a reference in that language'],
+    [givenSetup, 'the pack has a reference segment in this language, but the setup used this time sets a language (labels.language), the reference was picked by it, and the words of these lines are not in that language: give --language with the language of the lines (it overrides the setup), or use another setup (--setup <name>), or use no setup (--no-setup)'],
+    [tagged.filter((entry) => entry.by !== 'setup'), 'the pack has a reference segment in this language, but none with this tag (reference tag) in that language: use a tag that exists in that language (command line --reference-tag), or give no tag'],
+    [tagged.filter((entry) => entry.by === 'setup'), 'the pack has a reference segment in this language, but the default reference of the setup used this time (referenceTag) does not exist in that language: use --reference-tag to give a tag that exists in that language (it overrides the setup), or use another setup (--setup <name>), or use no setup (--no-setup)'],
+    [apart, 'the pack has a reference segment in this language, but in a merged scene each speaker uses one reference segment for the whole scene: dub them apart (scene: false, command line --no-scene), so each line uses a reference in its own language'],
   ].filter(([list]) => list.length > 0);
   // 只有一种情形就不再点段号（上面已经列了）；几种情形混着，每一种前面写是哪几段
-  const ways = kinds.map(([list, way]) => (kinds.length === 1 ? way : `第 ${numbers(list)} 段：${way}`));
+  const ways = kinds.map(([list, way]) => (kinds.length === 1 ? way : `piece(s) ${numbers(list)}: ${way}`));
   // 要补参考的，说补的参考从哪来；参考段的语言都一样就写出来（可能带一点 ja 的口音）
   const froms = [...new Set(lacking.map((entry) => entry.from))];
-  const sources = lacking.length === 0 ? '' : `。补的${referenceSources(froms.length === 1 ? froms[0] : undefined)}`;
-  return new VoicePackError('dub_cross_language', `有 ${new Set(entries.map((entry) => entry.unit)).size} 段用的参考段不是这一段台词的语言，照这样配会带上参考那种语言的口音，所以停下了，什么都没合成：${listed}。不问使用者：包里没有这种语言的，台词写成目标语言，每行开头写名字对（[参考语言里的名字|台词语言里的名字]，例如 [Harry Potter|哈利·波特]），加 allowCrossLanguage: true（命令行 --allow-cross-language）再配，照跨语言克隆配，dub 把两边的名字和语言写进请求（models/scene3.md「跨语言和口音」）；使用者要带口音时写那种口音，再加 languageMarks: false（命令行 --no-language-marks）。包里有这种语言的，或者使用者自己要补参考的：${ways.join('；')}${sources}`, {
+  const sources = lacking.length === 0 ? '' : `. For the reference to be added: ${referenceSources(froms.length === 1 ? froms[0] : undefined)}`;
+  return new VoicePackError('dub_cross_language', `${new Set(entries.map((entry) => entry.unit)).size} piece(s) use a reference segment that is not in the language of their line; dubbed this way they would carry the accent of the reference language, so it stopped and synthesized nothing: ${listed}. Do not ask the user. If the pack has no reference in this language: write the lines in the target language, start each line with a name pair ([name in the reference language|name in the line language], for example [Harry Potter|哈利·波特]), add allowCrossLanguage: true (command line --allow-cross-language) and dub again as a cross-language clone; dub writes the names and languages of both sides into the request (models/scene3.md「Cross-language and accent」); if the user wants that accent, write the accent in the script, then add languageMarks: false (command line --no-language-marks). If the pack has a reference in this language, or the user wants to add a reference: ${ways.join('; ')}${sources}`, {
     details: { units: entries },
   });
 }
@@ -1778,6 +1785,18 @@ function repeatOpeningBracket(units, lines) {
 }
 
 /**
+ * 第 7c 步：同语言的一行一个请求，台词开头是这个包的名字（[包名]，清单的 name）的，记下 unit.referenceName，发送时参考的文字开头也写它（第 7 步）。
+ * 跨语言的（有 languageMarks，名字照名字对写）、一场戏的不记；开头是说戏、别的名字的不记。
+ */
+function applyReferenceNames(units, packs) {
+  for (const unit of units) {
+    if (isScene(unit) || unit.languageMarks !== undefined || unit.status === 'failed') continue;
+    const { name } = ownerOfUnit(packs, unit).manifest;
+    if (unit.spoken.trimStart().startsWith(`[${name}]`)) unit.referenceName = name;
+  }
+}
+
+/**
  * 第 7c 步：跨语言的请求记下要写的语言和名字（unit.languageMarks，一场戏的参考那半在 scene.speakers[i].languageMarks，发送时照它写，第 7 步）。
  * 返回 [{ entry, lines }]：跨语言、开头没有名字对的，lines 是这一项里缺名字对的那几句（assertCrossLanguageNamed 照它停）。
  */
@@ -1806,8 +1825,8 @@ function assertCrossLanguageNamed(plan, settings, unnamed) {
   const planned = new Set(plan.units.filter((unit) => unit.status === 'planned').map((unit) => unit.index));
   const stopped = unnamed.filter(({ entry }) => planned.has(entry.unit));
   if (stopped.length === 0) return;
-  const listed = stopped.map(({ entry, lines }) => `第 ${entry.unit + 1} 段（${entry.speaker === undefined ? '' : `一场戏里的说话人 ${entry.speaker}，`}${entry.pack.name}，${languagePair(entry)}，第 ${lines.map((line) => line + 1).join('、')} 句）`).join('；');
-  throw new VoicePackError('dub_cross_language_unnamed', `有 ${new Set(stopped.map(({ entry }) => entry.unit)).size} 段是跨语言配的，开头没有写名字对，什么都没合成：${listed}。这些行开头写 [参考语言里的名字|台词语言里的名字]（例如 [Harry Potter|哈利·波特]），排在所有提示前面，再配。名字用两种语言各写一次，dub 分开写进台词和参考（models/scene3.md「跨语言和口音」）。要带参考那种语言的口音的，方括号写那种口音，加 languageMarks: false（命令行 --no-language-marks）`, {
+  const listed = stopped.map(({ entry, lines }) => `piece ${entry.unit + 1} (${entry.speaker === undefined ? '' : `speaker ${entry.speaker} in a scene, `}${entry.pack.name}, ${languagePair(entry)}, line(s) ${lines.map((line) => line + 1).join(', ')})`).join('; ');
+  throw new VoicePackError('dub_cross_language_unnamed', `${new Set(stopped.map(({ entry }) => entry.unit)).size} piece(s) are dubbed cross-language but their lines do not start with a name pair, so nothing was synthesized: ${listed}. Start these lines with [name in the reference language|name in the line language] (for example [Harry Potter|哈利·波特]), before all cues, then dub again. Write the name once in each language; dub puts them separately into the line and the reference (models/scene3.md「Cross-language and accent」). To keep the accent of the reference language, write that accent in square brackets and add languageMarks: false (command line --no-language-marks)`, {
     details: { units: stopped.map(({ entry, lines }) => ({ unit: entry.unit, pack: entry.pack, ...(entry.speaker === undefined ? {} : { speaker: entry.speaker }), from: entry.from, to: entry.to ?? null, ...(entry.script === undefined ? {} : { script: entry.script }), lines })) },
   });
 }
@@ -1825,7 +1844,7 @@ async function buildPlan(env, packInput, script, options) {
   // 第 8 步：给了目标时长的段只和同一项的段并成一段（5b），没给的是 null，和以前一样并
   const targetKeyOf = (unit) => (unit.targetDuration === undefined ? null : lines[unit.line].source);
   const sameTarget = (a, b) => targetKeyOf(a) === targetKeyOf(b);
-  const named = (pack, message) => (many ? `${pack.manifest.name}：${message}` : message); // 几个包时，说明里点名是哪个包
+  const named = (pack, message) => (many ? `${pack.manifest.name}: ${message}` : message); // 几个包时，说明里点名是哪个包
 
   const notes = [];
   // 读音词表的音素（第 4 步）：环境声明了 phoneme-markers，写成音素标签（拼音、Arpabet、罗马字，和别名在同一次替换里，标签直接写进 spoken）；
@@ -1950,7 +1969,7 @@ async function buildPlan(env, packInput, script, options) {
     units = grouped.units;
     sceneJoins = grouped.joins;
     if (grouped.scenes > 0) {
-      notes.push({ code: 'scene_in_request', message: `有 ${grouped.scenes} 场（共 ${grouped.lines} 行）按一场戏一个请求合成（text-to-dialogue）：每个说话人整场用他各行挑到最多的那一段参考，每一行的提示写在这一轮的文字里。一个请求只有一个音频，这几场里每一行没有各自的音频；要每行一个文件（或只重做一行），用 scene: false（命令行 --no-scene）`, details: { scenes: grouped.scenes, lines: grouped.lines } });
+      notes.push({ code: 'scene_in_request', message: `${grouped.scenes} scene(s) (${grouped.lines} line(s) in all) are synthesized as one request per scene (text-to-dialogue): each speaker uses, for the whole scene, the reference segment picked most often across their lines; the cues of each line are written in the text of that turn. One request gives one audio, so in these scenes no line has its own audio; to get one file per line (or to redo a single line), use scene: false (command line --no-scene)`, details: { scenes: grouped.scenes, lines: grouped.lines } });
     }
   }
   // 5b：有下限的，短句并段（joinShort 为 false 的不并：比下限短的这里就记成 failed，第 5c 步也就不并它们）。没有下限就什么都不做
@@ -1958,7 +1977,7 @@ async function buildPlan(env, packInput, script, options) {
     if (settings.joinShort) units = joinShortUnits(units, { min: settings.minChars, limits: settings, sameTarget });
     else markTooShort(units, settings.minChars);
     const joined = units.filter((unit) => unit.joined !== undefined).length;
-    if (joined > 0) notes.push({ code: 'short_lines_joined', message: `有 ${joined} 段是把比合成能力的下限（${settings.minChars} 个字）短的句子和相邻的句子并在一起合成的（同一个参考、同一个语速，中间没有停顿；各句的提示在各自的位置）`, details: { min: settings.minChars, units: joined } });
+    if (joined > 0) notes.push({ code: 'short_lines_joined', message: `${joined} piece(s) were made by joining lines shorter than the synthesis minimum (${settings.minChars} characters) with neighbouring lines (same reference, same speed, no pause between them; the cues of each line stay at their own positions)`, details: { min: settings.minChars, units: joined } });
   }
   // 5c：一段话一次请求：同一段话的相邻几段并进一次请求，短停顿写在文字里，长的切开（见 joinIntoRequests）
   const hasScripts = (unit) => perPack.get(ownerOfUnit(packs, unit)).scripts.length > 0;
@@ -1968,11 +1987,11 @@ async function buildPlan(env, packInput, script, options) {
   // 比下限短的（第 5b 步）按并好的请求判：第 5c 步并进请求、够了下限的照常合成，还不到的那一段记成 failed（不调用能力，见文件头）
   if (settings.minChars !== null && settings.joinShort) markTooShort(units, settings.minChars);
   const joins = sceneJoins + paused.joins;
-  if (joins > 0) notes.push({ code: 'pauses_in_request', message: `有 ${joins} 处停顿并进了一次请求（写在文字里：标点、[pause] 这类量过的写法，见 lib/pause-in-request.mjs），这几处的停顿不再交给拼接的人`, details: { joins } });
+  if (joins > 0) notes.push({ code: 'pauses_in_request', message: `${joins} pause(s) were put into a request (written in the text: punctuation, [pause] and similar forms that were measured, see lib/pause-in-request.mjs); the joining step no longer adds these pauses`, details: { joins } });
   const cutToFit = cutNote(units, settings); // 放不下切开的：第 5c 步的，和第 5a 步一场戏切开的
   if (cutToFit !== null) notes.push(cutToFit);
   if (paused.languageCuts.length > 0) {
-    notes.push({ code: 'language_cut', message: `有 ${paused.languageCuts.length} 处是因为换了语言切开的（包里有那种语言的默认段，前后用的参考段不同）：第 ${paused.languageCuts.map((at) => at + 1).join('、')} 段前面。一小段混着语言的话要留在一个请求里：写在同一行里（一行只挑一段参考）；或者给语言（命令行 --language），整段按这一种语言挑一段参考，另一种语言的整行也照这段参考配，是跨语言克隆，带口音，要加 --allow-cross-language`, details: { units: paused.languageCuts } });
+    notes.push({ code: 'language_cut', message: `${paused.languageCuts.length} cut(s) were made because the language changed (the pack has a default segment in that language, and the reference segments before and after differ): before piece(s) ${paused.languageCuts.map((at) => at + 1).join(', ')}. A short passage that mixes languages must stay in one request: write it in one line (a line picks only one reference segment); or give the language (command line --language), so the whole piece picks one segment for that one language, and the lines wholly in the other language are dubbed from this segment too (a cross-language clone, with an accent, needs --allow-cross-language)`, details: { units: paused.languageCuts } });
   }
   // 成对的标签没配上对的段（多半是一对标签被长停顿、换行这些拆开了）：只提醒，不改字
   const unpaired = units.map((unit) => ({ unit: unit.index, tags: unpairedTags(unit.spoken) })).filter((item) => item.tags.length > 0);
@@ -1984,8 +2003,8 @@ async function buildPlan(env, packInput, script, options) {
     if (parts.length === 1) continue;
     const own = sources[item].targetDurationMs !== undefined;
     const field = own ? `script[${item}].targetDurationMs` : 'targetDurationMs';
-    const where = typeof script === 'string' ? '台本' : `台本第 ${item + 1} 项`;
-    throw new VoicePackError('dub_input_invalid', `${where}给了目标时长（${field}），可是它配成了 ${parts.length} 段（第 ${parts.map((unit) => unit.index + 1).join('、')} 段）：目标时长对的是一段音频，几段分开合成、中间还要插停顿，对不上一个目标。把它拆成几项、各给各的目标时长；或者去掉把它切开的东西（请求里放不下的停顿、章节、换声音、行与行之间换了语言或开头的提示，或者一个请求放不下、被切开的长句（命令行可以给更大的 --max-chars））`, { details: { field, item, units: parts.map((unit) => unit.index) } });
+    const where = typeof script === 'string' ? 'The script' : `Item ${item + 1} of the script`;
+    throw new VoicePackError('dub_input_invalid', `${where} has a target duration (${field}), but it is dubbed as ${parts.length} piece(s) (pieces ${parts.map((unit) => unit.index + 1).join(', ')}): a target duration applies to one audio, and pieces synthesized separately with pauses inserted between them cannot match one target. Split it into several items, each with its own target duration; or remove what cuts it apart (pauses that do not fit in a request, chapters, voice changes, a change of language or of leading cues between lines, or a long line that does not fit in one request and was cut (the command line can take a larger --max-chars))`, { details: { field, item, units: parts.map((unit) => unit.index) } });
   }
   // SSML 的拼音音素（只声明了 phoneme-in-text）：每一句记下用上了哪几个（unit.phonemes，只在用上时才有），用上的词记在它的包里（从 unapplied 去掉）。发送时在 runUnit 里写成 SSML。
   // 声明了 phoneme-markers 的，音素标签在第 4 步已经写进 spoken，不走这里
@@ -2015,7 +2034,7 @@ async function buildPlan(env, packInput, script, options) {
     if (unregistered.length > 0) {
       notes.push({
         code: 'scripts_without_feature',
-        message: named(pack, `包里有 ${unregistered.length} 个脚本没有登记功能（清单里没写 feature）：${unregistered.map((item) => `${item.entry}（${item.runtime}）`).join('、')}；没登记功能的脚本不属于任何功能，配音只运行登记在 ${FEATURE} 名下的脚本，所以这次没有运行它们（要让配音运行，作者要在清单里把它们登记到 ${FEATURE} 名下；也可以照包的配音指引手动运行）`),
+        message: named(pack, `The pack has ${unregistered.length} script(s) with no feature registered (the manifest has no feature): ${unregistered.map((item) => `${item.entry} (${item.runtime})`).join(', ')}; a script with no feature belongs to no feature, and dubbing only runs the scripts registered under ${FEATURE}, so they were not run this time (for dubbing to run them, the author has to register them under ${FEATURE} in the manifest; you can also run them by hand following the pack's dubbing guidance)`),
         scripts: unregistered,
         details: { scripts: unregistered },
       });
@@ -2026,12 +2045,13 @@ async function buildPlan(env, packInput, script, options) {
   repeatOpeningBracket(units, lines);
   const wholeLinesOfAll = new Map(packs.flatMap((pack) => [...perPack.get(pack).wholeLines]));
   const unnamed = settings.languageMarks ? applyLanguageMarks(units, { packs, wholeLines: wholeLinesOfAll, lines }) : [];
+  if (settings.languageMarks) applyReferenceNames(units, packs);
   // 要用到脚本运行时的包：几个包时只看这次真用到的（没有句子的包，不要它的运行时）
   const inUse = packsInUse(packs, units);
   // 用上的音素从 unapplied 去掉（只有用到的；没用到的仍报着，它是词表里有、这句话里没有）；用上的按词、读法汇总成 lexicon.phonemes（没有用上就没有这一项）
   const lexiconUnapplied = packs.flatMap((pack) => perPack.get(pack).unapplied.filter((item) => !(item.reason === 'phoneme' && perPack.get(pack).usedTerms.has(item.term))));
   for (const unit of units) for (const item of unit.phonemes ?? []) countPhoneme(item);
-  // 装不下的停顿，花钱之前就拦下：照拼接的次序排一遍停顿（mix 的规则 8 的下限），规则和估法写在 references/dub.md「停顿放不放得下」。成品的格式按参考段估；
+  // 装不下的停顿，花钱之前就拦下：照拼接的次序排一遍停顿（mix 的规则 8 的下限），规则和估法写在 references/dub.md「Whether the pauses fit」。成品的格式按参考段估；
   // 估不出来，这里核不了，写一条注意说明这一次没核（台本里没有停顿就没什么可核），拼接时照常核。
   const format = await productFormatOf(packs);
   const pauses = units.map((unit) => ({ number: unit.index + 1, pauseBeforeMs: unit.pauseBeforeMs, pauseAfterMs: unit.pauseAfterMs }));
@@ -2039,7 +2059,7 @@ async function buildPlan(env, packInput, script, options) {
   else if (pauses.some((unit) => unit.pauseBeforeMs > 0 || unit.pauseAfterMs > 0)) {
     notes.push({
       code: 'pause_length_unchecked',
-      message: '停顿加起来放不放得下一份 WAV，这一次没有核：参考段里没有一段读得出采样率（外部的、读不到的、认不出格式的都不算），成品的格式估不出来。拼接时按成品的实际采样率核，放不下会在那时报错。',
+      message: 'Whether the pauses added together fit in one WAV was not checked this time: no reference segment has a readable sample rate (external ones, unreadable ones and ones in an unrecognized format do not count), so the format of the output cannot be estimated. The check is done at mixing time with the actual sample rate of the output; if they do not fit, it fails then.',
       details: { reason: 'no_reference_format' },
     });
   }
@@ -2087,7 +2107,7 @@ export async function planDub(env, pack, script, options = {}) {
 async function settleUnits(plan, settings) {
   // 编号是并段之后的（units[i].index，并段会重新编号）
   if (settings.only !== undefined && (!Array.isArray(settings.only) || settings.only.some((index) => !Number.isInteger(index) || index < 0 || index >= plan.units.length))) {
-    throw invalid('only', `only 必须是数组，里面是 0–${plan.units.length - 1} 的整数（规划里每一段的编号）`);
+    throw invalid('only', `only must be an array of integers 0–${plan.units.length - 1} (the numbers of the pieces in the plan)`);
   }
   const only = settings.only === undefined ? null : new Set(settings.only);
   for (const unit of plan.units) if (unit.status === 'planned' && only !== null && !only.has(unit.index)) unit.status = 'skipped';
@@ -2097,7 +2117,7 @@ async function settleUnits(plan, settings) {
       if (unit.status !== 'planned' || !only.has(unit.index) || unit.seed === undefined) continue;
       const was = await settings.previousSeed(unit);
       if (was === null || was === undefined) continue;
-      if (!Number.isSafeInteger(was) || was < 0) throw invalid('previousSeed', `previousSeed 必须返回 0 到 ${Number.MAX_SAFE_INTEGER} 的整数（上一次配这一段用的 seed），或者 null`);
+      if (!Number.isSafeInteger(was) || was < 0) throw invalid('previousSeed', `previousSeed must return an integer from 0 to ${Number.MAX_SAFE_INTEGER} (the seed the last dubbing of this piece used), or null`);
       unit.seed = was === Number.MAX_SAFE_INTEGER ? 0 : was + 1; // 到了 seed 的上限（签名的范围）就从 0 再来
       unit.seedChange = { from: was };
     }
@@ -2108,13 +2128,13 @@ async function settleUnits(plan, settings) {
     if (!(unit.status === 'skipped' || (unit.status === 'planned' && only === null))) continue;
     const earlier = await settings.reuse(unit);
     if (earlier === null || earlier === undefined) continue;
-    if (!isPlainObject(earlier)) throw invalid('reuse', 'reuse 必须返回一个对象（上一次做好的这一段要并进来的字段），或者 null');
+    if (!isPlainObject(earlier)) throw invalid('reuse', 'reuse must return an object (the fields of the piece finished last time that are merged in), or null');
     Object.assign(unit, earlier, { status: 'ok', carriedOver: true });
     if (isScene(unit) && unit.speakerSimilarity?.speakers !== undefined) unit.speakerSimilarity = sceneSimilarity(unit); // 每个说话人用的参考跟着并进来的 scene
     carried.push(unit.index);
   }
   if (carried.length > 0) {
-    plan.notes.push({ code: 'carried_over', message: `有 ${carried.length} 段沿用上一次做好的音频，不再合成、不花钱：第 ${carried.map((index) => index + 1).join('、')} 段`, details: { units: carried } });
+    plan.notes.push({ code: 'carried_over', message: `${carried.length} piece(s) keep the audio finished last time, not synthesized again, no cost: pieces ${carried.map((index) => index + 1).join(', ')}`, details: { units: carried } });
   }
 }
 
@@ -2131,7 +2151,7 @@ export async function dubScript(env, pack, script, options = {}) {
   const ownerOf = (unit) => ownerOfUnit(packs, unit);
   // 规划不调任何能力：规划好了，交给 onPlan 说费用，再合成
   const { plan, wholeLines, phonemesOf, moods, unnamed } = await buildPlan(env, packs, script, options);
-  if (plan.units.length === 0) throw new VoicePackError('dub_nothing_to_say', '台本里没有可说的话（只有标记和舞台提示）');
+  if (plan.units.length === 0) throw new VoicePackError('dub_nothing_to_say', 'The script has nothing to say (only markers and stage directions)');
   // 不做的几段标成 skipped、能沿用的并进来（settleUnits），在 onPlan 之前（onPlan 看到的就是这个状态）。规划里已经记成 failed 的（比下限短、并不了的）不调用能力
   await settleUnits(plan, settings);
   assertNotCrossLanguage(plan, settings, { packs, wholeLines }); // 第 3a 步：这一次要合成的段里有跨语言的，没给 allowCrossLanguage 就停下（花钱之前）
@@ -2194,7 +2214,7 @@ export async function dubScript(env, pack, script, options = {}) {
           const sceneLines = [...new Set(unit.joined.map((member) => member.line))];
           plan.notes.push({
             code: 'scene_too_long',
-            message: `第 ${unit.index + 1} 段（一场戏一个请求，共 ${unit.scene.turns.length} 轮，从「${[...unit.scene.turns[0].text].slice(0, 20).join('')}」开始）平台说装不下，没有合成：这一场的话和参考加起来超过了一个请求能说的长度。不自动切开，也不重发。要么在这一场中间加一个章节标记（# 标题）把它切成两场（${CHAPTER_SPLIT_REMINDER}），要么用 scene: false（命令行 --no-scene）一行一个请求`,
+            message: `Piece ${unit.index + 1} (one request per scene, ${unit.scene.turns.length} turn(s), starting from "${[...unit.scene.turns[0].text].slice(0, 20).join('')}") does not fit, the platform said, so nothing was synthesized: the lines and the references of this scene together exceed the length one request can speak. It is not cut automatically and not sent again. Either add a chapter marker (# title) in the middle of this scene to cut it into two scenes (${CHAPTER_SPLIT_REMINDER}), or use scene: false (command line --no-scene) for one request per line`,
             details: { unit: unit.index, lines: sceneLines },
           });
         } else if (isTextRejected(error) && !checkedBeforeCall(error)) {
@@ -2255,7 +2275,7 @@ export async function dubScript(env, pack, script, options = {}) {
       if (output.text !== undefined) spoken = output.text;
     }
     // 脚本的 text 钩子可能把要说的话改短了：比下限短的，不调用能力（和规划时一样，记成 failed）
-    if (settings.minChars !== null && count(spoken) < settings.minChars) {
+    if (settings.minChars !== null && spokenLength(spoken) < settings.minChars) {
       unit.status = 'failed';
       unit.spoken = spoken;
       unit.error = tooShortError(spoken, settings.minChars);
@@ -2265,7 +2285,7 @@ export async function dubScript(env, pack, script, options = {}) {
     const { segment, clip } = references.get(referenceKey(unit.pack, unit.pick.segmentId));
     // 开头的提示（设定、调用方给的，文件头「设定」）写在最前面；SSML 的拼音音素：发送前在文字上换成标签（只声明了 phoneme-in-text 才有；没有声明、声明的是 phoneme-markers（标签已经在 spoken 里）、或这一句没有用到的，文字原样，提示里面不换）
     const sentText = applyPhonemes(markedLine(withOpeningCue(spoken, cueToAdd(unit.openingCue)), unit.languageMarks), phonemesOf.get(owner) ?? [], { ssml: false }).text;
-    const call = { text: sentText, ref_audio: clip, ref_text: markedReference(refTextOf(segment), unit.languageMarks), ...(unit.seed === undefined ? {} : { seed: unit.seed }), ...(unit.expressiveness === undefined ? {} : { expressiveness: unit.expressiveness }) }; // seed：环境收 seed 才有；expressiveness：取到了才有，调用方给的或设定固定的（都在第 7 步）
+    const call = { text: sentText, ref_audio: clip, ref_text: markedReference(refTextOf(segment), unit.languageMarks, unit.referenceName), ...(unit.seed === undefined ? {} : { seed: unit.seed }), ...(unit.expressiveness === undefined ? {} : { expressiveness: unit.expressiveness }) }; // seed：环境收 seed 才有；expressiveness：取到了才有，调用方给的或设定固定的（都在第 7 步）
     if (offers.length > 0) call.enhancers = offers;
 
     let result;
@@ -2327,12 +2347,12 @@ export async function dubScript(env, pack, script, options = {}) {
   // 第 8 步：变不到目标时长的段（超出变速的上下限、按最近的那一头变的；环境没有 ffmpeg、没变速的），合成完一起说
   const missed = plan.units.filter((unit) => unit.status === 'ok' && unit.targetDuration !== undefined && (unit.targetDuration.limit !== undefined || unit.targetDuration.speed === null));
   if (missed.length > 0) {
-    const how = (fit) => (fit.speed === null ? '环境没有 ffmpeg，没有变速' : `超出变速的${fit.limit === 'max' ? '上限' : '下限'}，按 ${fit.speed} 倍变的`);
-    const off = (fit) => (fit.offByMs === null ? '量不出长度' : fit.offByMs > 0 ? `长 ${fit.offByMs} 毫秒` : `短 ${-fit.offByMs} 毫秒`);
-    const listed = missed.map(({ index, targetDuration: fit }) => `第 ${index + 1} 段目标 ${fit.targetMs} 毫秒、实际 ${fit.actualMs === null ? '量不出' : `${fit.actualMs} 毫秒`}（${off(fit)}，${how(fit)}）`);
+    const how = (fit) => (fit.speed === null ? 'the environment has no ffmpeg, no speed change' : `beyond the ${fit.limit === 'max' ? 'upper' : 'lower'} limit of the speed change, changed by a factor of ${fit.speed}`);
+    const off = (fit) => (fit.offByMs === null ? 'length not measurable' : fit.offByMs > 0 ? `${fit.offByMs} ms too long` : `${-fit.offByMs} ms too short`);
+    const listed = missed.map(({ index, targetDuration: fit }) => `piece ${index + 1} target ${fit.targetMs} ms, actual ${fit.actualMs === null ? 'not measurable' : `${fit.actualMs} ms`} (${off(fit)}, ${how(fit)})`);
     plan.notes.push({
       code: 'target_duration_missed',
-      message: `有 ${missed.length} 段没有变到目标时长（变速只在 ${SPEED_LIMITS.min} 到 ${SPEED_LIMITS.max} 倍之间做，超出的按最近的那一头变，不硬变；变速要 ffmpeg）：${listed.join('；')}。差得多的，改这一句的台词（长了就删字，短了就加字）再配`,
+      message: `${missed.length} piece(s) did not reach the target duration (the speed change is only made between ${SPEED_LIMITS.min} and ${SPEED_LIMITS.max} times, beyond that it changes to the nearest limit and does not force it; the speed change needs ffmpeg): ${listed.join('; ')}. For pieces far off, edit the text of the line (delete characters if too long, add if too short) and dub again`,
       details: { units: missed.map(({ index, targetDuration: fit }) => ({ unit: index, ...fit })) },
     });
   }
@@ -2341,9 +2361,12 @@ export async function dubScript(env, pack, script, options = {}) {
   for (const index of [...unfinished.keys()].sort((a, b) => a - b)) {
     const found = unfinished.get(index);
     const seconds = (ms) => (ms / 1000).toFixed(1);
+    const unit = plan.units.find((item) => item.index === index);
+    const said = (unit?.spoken ?? unit?.scene?.turns?.map((turn) => turn.text).join(' ') ?? '').replace(/\s+/g, ' ').trim();
+    const opening = said === '' ? '' : ` (starts with "${[...said].slice(0, 20).join('')}${[...said].length > 20 ? '…' : ''}")`;
     plan.notes.push({
       code: 'speech_maybe_unfinished',
-      message: `第 ${index + 1} 段可能没念完：按字数估至少要 ${seconds(found.expectedMs)} 秒，出来的只有 ${seconds(found.actualMs)} 秒，不到一半（模型一个请求念不完时不一定报错，是念到一半就停）。听一下这一段的结尾；没念完的，用 --only ${index + 1} 重配，或者在中间加章节标记把它切短（${CHAPTER_SPLIT_REMINDER}）`,
+      message: `Piece ${index + 1}${opening} may not have been spoken to the end: by character count it needs at least ${seconds(found.expectedMs)} s, but only ${seconds(found.actualMs)} s came out, less than half (when a model cannot speak a whole request it does not always report an error, it just stops halfway). The piece is delivered as it is, and dub does not redub it by itself; ask the user to listen to its ending, and the user decides whether to redub (redub with --only ${index + 1}, or add a chapter marker in the middle to cut it shorter: ${CHAPTER_SPLIT_REMINDER})`,
       details: found,
     });
   }
@@ -2353,7 +2376,7 @@ export async function dubScript(env, pack, script, options = {}) {
   if (unchanged.length > 0) {
     plan.notes.push({
       code: 'speed_not_applied',
-      message: `有 ${unchanged.length} 段要变速（调用方或设定给的语速），环境没有 ffmpeg，照原速交出：第 ${unchanged.map((unit) => unit.index + 1).join('、')} 段。dub.json 里这几段的 speed 还记着要的语速，拼接（mix）时有 ffmpeg 会按它变`,
+      message: `${unchanged.length} piece(s) need a speed change (the speed given by the caller or the setup), but the environment has no ffmpeg, so they are delivered at the original speed: pieces ${unchanged.map((unit) => unit.index + 1).join(', ')}. dub.json still records the wanted speed in the speed of these pieces; when mix runs with ffmpeg available it changes them by it`,
       details: { units: unchanged.map((unit) => unit.index) },
     });
   }
@@ -2473,7 +2496,7 @@ const sceneSimilarity = (unit) => ({
     status: 'unmeasurable',
     label: UNMEASURABLE_LABEL,
     reason: 'scene_in_request',
-    message: `${UNMEASURABLE_LABEL}：一场戏一个请求，一个音频里没有每个说话人的边界，量不出这个人的那几句；要量，用 scene: false（命令行 --no-scene）一行一个请求`,
+    message: `${UNMEASURABLE_LABEL}: one request per scene, and one audio has no boundaries between the speakers, so this person's lines cannot be measured; to measure, use scene: false (command line --no-scene) for one request per line`,
   })),
 });
 
@@ -2488,7 +2511,7 @@ function ownerOfUnit(packs, unit) {
 function ownerOfPack(packs, id, index) {
   if (id === undefined) return packs[0];
   const owner = packs.find((pack) => pack.manifest.id === id);
-  if (owner === undefined) throw new Error(`段 ${index} 记着的包 ${id} 不在这次给的包里`);
+  if (owner === undefined) throw new Error(`Piece ${index} records pack ${id}, which is not among the packs given this time`);
   return owner;
 }
 

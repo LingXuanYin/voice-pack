@@ -1,35 +1,35 @@
-# 官方发布：官方地址、文件布局、版本索引
+# Official releases: official address, file layout, version index
 
-官方基础部分（运行环境只认官方版本）发布在官方地址的一个目录里。补全（取回官方基础部分）、嵌入这个库的 app 导出完整包、发布，三处都照这一份，布局的代码只有一份：`lib/releases.mjs`。签名的格式、信任名单、命令见 `SIGNATURES.md`，这里不重复。
+The official base part (the runtime environment accepts only official versions) is published in a directory at the official address. Complete (fetching the official base part back), exporting a full pack from an app that embeds this library, and publishing all follow this one file, and the layout code exists in one place: `lib/releases.mjs`. The signature format, the trust list, and the commands are in `SIGNATURES.md` and not repeated here.
 
-## 官方地址
+## The official address
 
-信任名单 `trust.json` 里的 `official_url`：一个 `https` 地址，以 `/` 结尾，是官方基础部分所在的目录，不带用户名口令、查询串、片段。协议 2.0 起是 `https://lingxuanyin.github.io/voice-pack/releases/`：voice-pack 仓库的 GitHub Pages 站点里的 `releases/` 目录，所有已发布的版本（1.0.0 起）都在这里，签名文件和 1.x 时代发布的一字不差。官方地址上没有 `index.json`（对它的请求回 404）时，读的一方按「还没发布」处理（`official_unpublished`）。
+The `official_url` in the trust list `trust.json`: an `https` address ending with `/`, the directory where the official base part lives, with no username or password, query string, or fragment. Since protocol 2.0 it is `https://lingxuanyin.github.io/voice-pack/releases/`: the `releases/` directory in the GitHub Pages site of the voice-pack repository, where all published versions (from 1.0.0) are; the signature files are identical, byte for byte, to those published in the 1.x era. When there is no `index.json` at the official address (a request for it gets 404), the reading side treats it as "not published yet" (`official_unpublished`).
 
-1.x 的程序里写死的是老地址，一个 Cohub 公开文件的目录（`https://public.cohub.live/p/59c3cf35-a588-40b1-9e64-c5c9caeb417d/voice-pack-base/`）。那里 1.0.0 到 1.0.9（没有 1.0.3：它没有发布过）原样留着，给已经装在外面的 1.x 程序用，不再往上发新版本。
+What is hard-coded in the 1.x programs is the old address, a directory of public Cohub files (`https://public.cohub.live/p/59c3cf35-a588-40b1-9e64-c5c9caeb417d/voice-pack-base/`). 1.0.0 to 1.0.9 (there is no 1.0.3: it was never published) are left there unchanged, for the 1.x programs already installed out there, and no new versions are published to it any more.
 
-信任名单跟着协议核心走，每个部分都带着，所以只拿到一个部分也知道去哪里取官方版本。验签不看这个字段（`SIGNATURES.md`「信任名单」）。
+The trust list travels with the protocol core and every part carries it, so having only one part is enough to know where to fetch the official versions. Signature verification does not look at this field (`SIGNATURES.md`「Trust list」).
 
-## 目录里有什么
+## What is in the directory
 
-目录里平放四种文件，没有子目录：
+The directory holds four kinds of files, flat, with no subdirectories:
 
-| 文件 | 内容 | 发布以后 |
+| File | Contents | After publishing |
 |---|---|---|
-| `<名字>-<版本>.voicepack.zip` | 这个版本的基础部分，是分享文件（`FORMAT.md` 第 8 节），和 `pack` 命令默认的文件名一致 | 不可变 |
-| `<名字>-<版本>.voicepack.zip.minisig` | 上面那个 zip 的签名 | 不可变 |
-| `index.json` | 版本索引：发布过哪些版本 | 每发布一个版本更新一次 |
-| `index.json.minisig` | 版本索引的签名 | 同上 |
+| `<name>-<version>.voicepack.zip` | The base part of this version, as a share file (`FORMAT.md` section 8), matching the default file name of the `pack` command | Immutable |
+| `<name>-<version>.voicepack.zip.minisig` | The signature of the zip above | Immutable |
+| `index.json` | The version index: which versions have been published | Updated every time a version is published |
+| `index.json.minisig` | The signature of the version index | Same as above |
 
-`<名字>` 跟这个版本的协议主版本走（`FORMAT.md` 第 13、14 节，代码里是 `lib/names.mjs`）：协议 2.x 和 3.x 的版本叫 `voice-pack-<版本>.voicepack.zip`，协议 1.x 的版本（1.0.0 到 1.0.9，没有 1.0.3）叫 `cohub-voice-studio-<版本>.voicepack.zip`。一个目录里两种名字的文件并存，版本号不会重复，所以不会冲突。
+`<name>` follows the protocol major version of this version (`FORMAT.md` sections 13 and 14, and `lib/names.mjs` in code): versions of protocol 2.x and 3.x are called `voice-pack-<version>.voicepack.zip`, and versions of protocol 1.x (1.0.0 to 1.0.9, no 1.0.3) are called `cohub-voice-studio-<version>.voicepack.zip`. Files with the two names coexist in one directory, and version numbers do not repeat, so they do not collide.
 
-`<版本>` 是官方版本号：语义化版本号，不带构建信息（`+` 以后的部分不参与版本的优先级，两个只差构建信息的版本会得到两个文件名，却算同一个版本，所以不允许）。
+`<version>` is the official version number: a semantic version without build metadata (the part after `+` takes no part in version precedence; two versions that differ only in build metadata would get two file names yet count as the same version, so they are not allowed).
 
-**已发布的版本不可变**：同一个版本号永远是同样的字节，zip 和它的签名发布以后不再改。要改内容就换版本号。理由：已经流出去的完整包、已经取到的补全结果、别人记下的 SHA-256，都以「这个版本号就是这份内容」为前提。
+**A published version is immutable**: the same version number is always the same bytes; once published, the zip and its signature are not changed again. To change the content, change the version number. Reason: complete packs already out in the world, complete results already fetched, and SHA-256 values others have noted all assume that "this version number is this content".
 
-## 版本索引（`index.json`）
+## Version index (`index.json`)
 
-UTF-8 的 JSON，两个空格缩进，LF 换行，末尾一个换行：同样的内容写出同样的字节，签名才稳定。
+JSON in UTF-8, two-space indentation, LF line endings, one newline at the end: the same content writes the same bytes, so the signature is stable.
 
 ```json
 {
@@ -41,82 +41,84 @@ UTF-8 的 JSON，两个空格缩进，LF 换行，末尾一个换行：同样的
 }
 ```
 
-| 字段 | 含义 |
+(The `sha256` placeholder `<64 位小写十六进制>` means 64 lowercase hex digits.)
+
+| Field | Meaning |
 |---|---|
-| `protocol` | 这份索引按哪一版的索引写法写的（「主.次」）。主版本读不懂就不读；次版本比自己新的，不认识的字段忽略。索引的写法从 2.0 起没变，协议 3.0 的程序照旧写 `"2.0"`（`lib/releases.mjs` 的 `INDEX_PROTOCOL`，为什么不写 3.0、读得懂哪几个主版本，见它的文件头） |
-| `versions[]` | 发布过的每个版本，按语义化版本号的优先级从小到大排，版本号不重复 |
-| `versions[].version` | 官方版本号 |
-| `versions[].protocol` | 这个版本的基础部分清单里的协议版本。补全时不用下载就能挑出协议主版本对得上的版本；这一项的 zip 叫什么，也按它的协议主版本定（见上面「目录里有什么」） |
-| `versions[].size`、`versions[].sha256` | 这个版本的 zip 的字节数和 SHA-256，对 zip 文件的原始字节算 |
+| `protocol` | Which version of the index notation this index is written in ("major.minor"). If the major version is not understood, do not read it; if the minor version is newer than your own, ignore the fields you do not recognize. The index notation has not changed since 2.0, and programs of protocol 3.0 still write `"2.0"` (`INDEX_PROTOCOL` in `lib/releases.mjs`; why it is not 3.0 and which major versions can be read are in its file header) |
+| `versions[]` | Every published version, sorted from low to high by semantic version precedence, with no repeated version numbers |
+| `versions[].version` | The official version number |
+| `versions[].protocol` | The protocol version in the manifest of this version's base part. With it, complete can pick a version whose protocol major version matches without downloading; what the zip of this entry is called is also decided by its protocol major version (see "What is in the directory" above) |
+| `versions[].size`, `versions[].sha256` | The byte size and SHA-256 of this version's zip, computed over the raw bytes of the zip file |
 
-索引由官方签名，签名在 `index.json.minisig`。**读索引的人先验签再信它**（`verifyMessage`，用信任名单）。索引没有签名、验不过，就当它不存在可信的内容，不在它上面做任何事。
+The index is signed by the official key, and the signature is in `index.json.minisig`. **Whoever reads the index verifies the signature first and only then trusts it** (`verifyMessage`, with the trust list). If the index has no signature or fails verification, treat it as having no trustworthy content, and do nothing on the basis of it.
 
-## 怎么取一个版本
+## How to fetch a version
 
-读的一方（补全、app 导出完整包）：
+The reading side (complete, an app exporting a full pack):
 
-1. 取信任名单里的官方地址（`officialUrlOf`）。
-2. 读 `index.json` 和 `index.json.minisig`（每次请求带新的 `cb` 参数，发布刚生效时两个文件可能不配套，见「缓存」），验签，再解析（`parseVersionIndex`）。签名是信任名单外的钥匙签的（官方换过钥匙，名单是旧的）时有一条退路，见「私钥丢了或泄露了」。
-3. 在 `versions[]` 里挑版本。挑哪一个是读的一方自己的事：补全找「同一个主版本里、不低于最低版本、协议主版本对得上」的最高版本（规则和理由见 `FORMAT.md`「补全」）；嵌入这个库的 app 固定用一个版本，导出完整包时按版本号取（`fetchOfficialVersion`），不去问「现在最新是哪个」，并且要等这个版本发布了才发布 app。
-4. 读这个版本的 zip 和 zip 的签名。zip 的字节数和 SHA-256 要和索引里的一样，zip 自己的签名要验过（`verifyMessage`），再检查 zip 里的内容：`inspectShareFile(zip, { verifySignature: createSignatureVerifier(信任名单) })`（入口必须选验签策略，不选就抛 `signature_policy_missing`，见 `SIGNATURES.md`「调用方必须选验签的策略」；`createSignatureVerifier` 在 `lib/official.mjs`，zip 里基础部分和协议核心的两份清单签名由它验）。
-5. 全部通过才用。任何一步不过，就报错并点名是哪一步，不兜底、不换别的版本。
+1. Take the official address from the trust list (`officialUrlOf`).
+2. Read `index.json` and `index.json.minisig` (each request carries a fresh `cb` parameter, because right after a publish the two files may not match, see "Caching"), verify the signature, then parse (`parseVersionIndex`). When the signature is made by a key outside the trust list (the official key was changed and the list is old) there is a fallback, see "A lost or leaked private key".
+3. Pick a version from `versions[]`. Which one is the reading side's own business: complete looks for the highest version "within the same major version, not lower than the minimum version, and with a matching protocol major version" (rules and reasons in `FORMAT.md`「Complete」); an app embedding this library uses one fixed version, and when exporting a full pack it fetches by version number (`fetchOfficialVersion`) and does not ask "which is the latest now", and it publishes the app only after this version has been published.
+4. Read this version's zip and the zip's signature. The zip's byte size and SHA-256 must equal those in the index, the zip's own signature must verify (`verifyMessage`), and then check the contents of the zip: `inspectShareFile(zip, { verifySignature: createSignatureVerifier(trust list) })` (the entry point must choose a signature verification policy, and not choosing throws `signature_policy_missing`, see `SIGNATURES.md`「The caller must choose a signature verification policy」; `createSignatureVerifier` is in `lib/official.mjs`, and it verifies the signatures of the two manifests of the base part and the protocol core inside the zip).
+5. Use it only if everything passes. If any step fails, report an error that names the step; no fallback and no switching to another version.
 
-读文件用 `readPublished(env, 地址, 选项)`：只用注入的 `env.fetch`；`404` 是「还没发布」（返回 `{ found: false }`）；网络出错、超时、`5xx`、`429` 重试（默认共 3 次，间隔 1 秒起每次翻倍）；别的失败（`401`、`403` 等）直接报 `published_unreadable`，不当成「没有」。读响应有字节上限，超了就停。
+To read files use `readPublished(env, address, options)`: it uses only the injected `env.fetch`; `404` means "not published yet" (it returns `{ found: false }`); a network error, timeout, `5xx`, or `429` is retried (3 tries in total by default, with an interval of 1 second that doubles each time); other failures (`401`, `403`, etc.) report `published_unreadable` directly and are not treated as "absent". Reading a response has a byte limit, and it stops when exceeded.
 
-## 缓存
+## Caching
 
-**官方地址（GitHub Pages）的实测。** 2026-10-21 04:49 到 04:51（UTC）用 `curl -D -` 看响应头量的。量的是同一个托管上、同一个账号的另一个站点，不是 voice-pack 自己的地址：第一次发布以前，那个地址上还没有东西可量。
+**Measurements of the official address (GitHub Pages).** Measured from 04:49 to 04:51 (UTC) on 2026-10-21 by looking at response headers with `curl -D -`. What was measured is another site on the same hosting under the same account, not voice-pack's own address: before the first publish there was nothing at that address to measure.
 
-- 200 的响应带 `Cache-Control: max-age=600` 和约十分钟以后的 `Expires`；200 和 404 的响应都带 `Access-Control-Allow-Origin: *`。
-- 前面有 CDN（响应头里有 `X-Served-By`、`X-Cache`）：第一次请求 `MISS`、`Age: 0`，之后 `HIT`，`Age` 往上涨。
-- **查询串不算缓存键**：请求 `?cb=<甲>`，`MISS`；几秒后请求一个从没请求过的 `?cb=<乙>`，`HIT`、`Age: 5`，`ETag` 一样；再请求不带查询的同一个文件，`HIT`、`Age: 10`。
-- 请求里带 `Cache-Control: no-cache` 绕不过 CDN：`HIT`、`Age: 18`。
-- 404 的回答也被缓存：同一个不存在的文件，第一次 `MISS`，第二次 `HIT`、`Age: 4`。404 的响应里没有量到 `Cache-Control`，它能缓存多久没有量过。
-- `http://` 的请求回 301，指到 `https://`。
+- A 200 response carries `Cache-Control: max-age=600` and an `Expires` about ten minutes later; 200 and 404 responses both carry `Access-Control-Allow-Origin: *`.
+- There is a CDN in front (the response headers have `X-Served-By`, `X-Cache`): the first request is `MISS` with `Age: 0`, later ones are `HIT` and `Age` keeps rising.
+- **The query string is not part of the cache key**: a request with `?cb=<A>` was `MISS`; a few seconds later a request with a never-requested `?cb=<B>` was `HIT`, `Age: 5`, same `ETag`; then a request for the same file without a query was `HIT`, `Age: 10`.
+- Putting `Cache-Control: no-cache` in the request cannot get around the CDN: `HIT`, `Age: 18`.
+- A 404 answer is cached too: for the same nonexistent file, the first request was `MISS` and the second `HIT`, `Age: 4`. No `Cache-Control` was measured in the 404 response, and how long it can be cached has not been measured.
+- A request over `http://` gets 301, pointing to `https://`.
 
-**读的一方怎么办。**
+**What the reading side does.**
 
-- **版本 zip 和它的签名不可变，缓存对它们没有坏处，用原地址读**（补全、嵌入这个库的 app 导出完整包）。
-- **版本索引和它的签名会被覆盖，读它们要带 `cb` 参数**：`readPublished` 加 `cacheBust: true`，每次请求带一个新的随机值。它避开的是读的一方自己的缓存：HTTP 缓存按完整的地址存，换一个 `cb` 就是另一个条目（按 HTTP 的规则推出来的，没有在浏览器里实测）。它穿不过官方地址的 CDN。这个办法不需要自定义请求头，浏览器里跨域读不会多一次预检；请求头 `Cache-Control: no-cache` 在两个地址上都没有用，所以不用它。
-- **发布一个新版本以后，大约十分钟（`max-age`）里，读到的索引和签名可能是发布以前的，也可能新旧不配**：
-  - 读到发布以前的一对：没有问题，它们仍然是官方签的、彼此对得上，只是没有列出刚发布的版本。要这个版本的读不到它：按版本号取的报 `version_unpublished`，补全挑不出符合要求的版本的报 `base_version_unavailable`。
-  - 读到新索引配旧签名，或者旧索引配新签名（两个文件各缓存各的）：验签不过，`signature_invalid`。读的一方验签失败时，隔 3 秒换一个新的 `cb` 重读一次（`readVersionIndex`），但换 `cb` 穿不过 CDN，多半读到的还是缓存里的那一对，重读没有用，照样报错。缓存过期以后这一对就对上了：发布刚生效时遇到它，约十分钟以后再试。
-- **「还没有」也会被缓存**：发布以前有人读过的文件（例如第一次发布以前的 `index.json`），发布以后一段时间里还可能读到 404，读的一方把它当成「还没发布」（`official_unpublished`、`zip_missing`）；多久没有量过，过一阵再试。
+- **Version zips and their signatures are immutable, so caching does them no harm; read from the original address** (complete, an app embedding this library exporting a full pack).
+- **The version index and its signature are overwritten; add the `cb` parameter when reading them**: `readPublished` with `cacheBust: true` carries a fresh random value with each request. What it avoids is the reading side's own cache: the HTTP cache stores by the full address, so a different `cb` is a different entry (derived from the HTTP rules, not measured in a browser). It cannot get through the official address's CDN. This method needs no custom request header, so a cross-origin read in a browser does not cost an extra preflight; the request header `Cache-Control: no-cache` is useless at both addresses, so it is not used.
+- **For about ten minutes (`max-age`) after a new version is published, the index and signature you read may predate it or may not match each other**:
+  - If you read a pair from before the publish: no problem, they are still officially signed and match each other, they just do not list the version just published. A reader who wants that version cannot get it: a fetch by version number reports `version_unpublished`, and complete, if it cannot pick a version that meets the requirements, reports `base_version_unavailable`.
+  - If you read the new index with the old signature, or the old index with the new signature (the two files are each cached on their own): signature verification fails, `signature_invalid`. When the reading side fails verification, it waits 3 seconds, changes to a new `cb` and reads once more (`readVersionIndex`), but changing `cb` does not get through the CDN, and what is read is mostly still the cached pair, so the re-read does not help and the error is reported all the same. After the cache expires the pair matches: if you hit it right after a publish takes effect, try again in about ten minutes.
+- **A response saying it does not exist yet is cached too**: a file that someone read before the publish (for example `index.json` before the first publish) may still return 404 for a while after the publish, and the reading side treats it as "not published yet" (`official_unpublished`, `zip_missing`); how long this lasts has not been measured; try again after a while.
 
-**老地址**（1.x 的程序还读它）。2026-10-15 对那里一个已发布的静态文件的实测，托管前面是 Cloudflare：
+**Old address** (1.x programs still read it). Measured on 2026-10-15 on a published static file there, with Cloudflare in front of the hosting:
 
-- 响应头是 `Cache-Control: public, max-age=14400, stale-while-revalidate=3600`。按 HTTP 的规则，浏览器的缓存可以把文件当成新鲜的存四个小时，期间不问网络（按规则推出来的，没有在浏览器里实测）。
-- 边缘节点上的副本比这短得多：对一个全新的缓存条目每 30 秒 `HEAD` 一次，`cf-cache-status` 先是 `MISS`，然后一直 `HIT`，`Age` 涨到 272 秒；303 秒时是 `UPDATING`（过期了，这一次还回旧副本，同时去源站更新）；再下一次 `Age` 回到 30、`HIT`。所以一份副本的寿命约 5 分钟。
-- 地址后面加一个查询参数（`?cb=...`）是另一个缓存条目：第一次 `MISS`，第二次 `HIT`，源站返回的还是同一个文件（`ETag` 和长度不变）。在那里 `cb` 穿得过 CDN，官方地址上不行。
-- 请求里带 `Cache-Control: no-cache`（再加 `Pragma: no-cache` 也一样）没有用：照样回缓存里的副本（`Age` 不归零）。
+- The response header is `Cache-Control: public, max-age=14400, stale-while-revalidate=3600`. By the HTTP rules, a browser cache can treat the file as fresh for four hours and not ask the network in that time (derived from the rules, not measured in a browser).
+- The copy on the edge node is much shorter-lived: with a `HEAD` every 30 seconds on a brand-new cache entry, `cf-cache-status` was first `MISS`, then `HIT` all the way, with `Age` rising to 272 seconds; at 303 seconds it was `UPDATING` (expired, this time it still returns the old copy while updating from the origin); the next time `Age` went back to 30 and `HIT`. So a copy lives about 5 minutes.
+- Adding a query parameter (`?cb=...`) to the address is another cache entry: the first time `MISS`, the second `HIT`, and the origin returns the same file (`ETag` and length unchanged). There `cb` gets through the CDN; at the official address it does not.
+- Putting `Cache-Control: no-cache` in the request (adding `Pragma: no-cache` is the same) is useless: the cached copy is returned all the same (`Age` is not reset to zero).
 
-**跨域。** 浏览器里的 app 可以直接读这两个地址。官方地址所在的托管的响应带 `Access-Control-Allow-Origin: *`（上面的实测，在另一个站点上量的）；老地址回显请求的 `Origin`，同时 `Vary: Origin`，`Access-Control-Allow-Headers` 回显请求里问的头（2026-10-15 对 `Origin: https://cohub.live` 实测）。
+**Cross-origin requests.** An app in a browser can read both addresses directly. The hosting of the official address returns `Access-Control-Allow-Origin: *` in its responses (the measurement above, taken on another site); the old address echoes the request's `Origin`, with `Vary: Origin`, and `Access-Control-Allow-Headers` echoes the headers asked for in the request (measured on 2026-10-15 with `Origin: https://cohub.live`).
 
-## 怎么发布
+## How to publish
 
-官方版本由发布者的发布脚本做，不手工传：打包、签名、更新版本索引，再把 `main`、`gh-pages` 两个分支和版本标签 `v<版本>` 用一次 `git push --atomic` 推到 `LingXuanYin/voice-pack`；官方地址就是 `gh-pages` 分支上的 `releases/` 目录。预发布版（版本号带 `-`，例如 `3.0.0-beta.25`）只推标签和 `gh-pages`：`main`（两种装法装的东西）和页面留在上一个正式版；它的四个文件和正式版一样进 `releases/`、进索引，同样不可变，挑版本时不自动取（`FORMAT.md`「补全」）。这里只记会影响读的一方的几条：
+Official versions are made by the publisher's release script, not uploaded by hand: package, sign, update the version index, then push the two branches `main` and `gh-pages` and the version tag `v<version>` to `LingXuanYin/voice-pack` with one `git push --atomic`; the official address is the `releases/` directory on the `gh-pages` branch. A prerelease (the version number has a `-`, for example `3.0.0-beta.25`) pushes only the tag and `gh-pages`: `main` (what the two ways of installing install) and the page stay at the previous stable version; its four files go into `releases/` and into the index like a stable version's and are likewise immutable, and they are not fetched automatically when picking a version (`FORMAT.md`「Complete」). Only the points that affect the reading side are recorded here:
 
-- 版本号写在文件里：基础部分的在根上的 `manifest-fields.json`，协议核心的在 `protocol/manifest-fields.json`，各管各的。基础部分的任何一个文件变了，版本号就要升（`protocol/` 里的文件变了，协议核心自己的版本号也要升）；同一个版本号只发布一次，已经发布过的版本号不能带着不一样的内容再发布一遍（`release_conflict`）。
-- zip 是全部存储（不压缩）的分享文件，签名是确定性的，所以同一份基础部分、同一把钥匙，打出的 zip 和签名字节完全相同，在 Node、Bun 上都一样（`FORMAT.md` 8.3）。发布时靠这一点核对已经发布的版本：字节一样才算同一个版本。
-- 一个版本的四个文件（它的 zip、zip 的签名、更新后的索引、索引的签名）在 `gh-pages` 的同一个提交里，所以索引里列出的版本，它的 zip 和签名随同一个提交一起发布（缓存的延迟另说，见「缓存」）。`main`、`gh-pages`、标签（预发布版是 `gh-pages` 和标签）要么一起到达，要么都没到（`--atomic`），不会出现只发了一半的版本。
-- 版本 zip 和它的签名发布时绝不覆盖已存在的文件（已存在就该报错，这正是不可变要的）；只有版本索引和它的签名每次发布都重写，由当时的钥匙签。
+- The version number is written in files: the base part's in `manifest-fields.json` at the root, the protocol core's in `protocol/manifest-fields.json`, each for its own. If any file of the base part changes, the version number must go up (if a file in `protocol/` changes, the protocol core's own version number must go up too); one version number is published only once, and an already published version number cannot be published again with different content (`release_conflict`).
+- The zip is a share file stored entirely uncompressed, and the signature is deterministic, so the same base part and the same key produce a zip and a signature with exactly the same bytes, the same on Node and Bun (`FORMAT.md` 8.3). At publish time this is used to check against the already published version: only identical bytes count as the same version.
+- The four files of a version (its zip, the zip's signature, the updated index, the index's signature) are in the same commit on `gh-pages`, so for a version listed in the index, its zip and signature are published together in the same commit (cache delay aside, see "Caching"). `main`, `gh-pages` and the tag (for a prerelease, `gh-pages` and the tag) either all arrive or none arrive (`--atomic`), and there is never a half-published version.
+- A version zip and its signature never overwrite an existing file when published (if it exists, an error should be reported; this is exactly what immutability needs); only the version index and its signature are rewritten at every publish, signed by the key of that time.
 
-## 私钥丢了或泄露了
+## A lost or leaked private key
 
-换钥匙的做法（新公钥加进信任名单，旧公钥留着）见 `SIGNATURES.md`「私钥丢了或泄露了」。和这里有关的，是换了钥匙以后读的一方怎么办：
+For how to change the key (the new public key is added to the trust list and the old public key is kept), see `SIGNATURES.md`「A lost or leaked private key」. What matters here is what the reading side does after the key is changed:
 
-- **版本 zip 和它的签名不变**：已发布版本的 zip 和签名永远留在官方地址上，不删、不覆盖。换钥匙以后，旧版本的 zip 还是旧钥匙签的，里面基础部分和协议核心的两份清单也是。
-- **版本索引变了**：每发布一个版本，索引就由当时的钥匙重签，所以换钥匙以后它是新钥匙签的。换钥匙之前做的、只有角色部分的包，协议核心里带的信任名单只有旧公钥，验不了现在的索引：读索引抛 `signature_untrusted_key`。
-- **退路**：读索引的一方（补全，app 按版本号取基础部分）遇到这一种错，不信这份索引，退回到自己要的那个版本本身。
-  1. 要哪个版本：补全要包的 `requires.baseMin` 本身（不是「同一个主版本里最高的」：那一份多半是新钥匙签的，旧名单验不了；`baseMin` 带构建信息，也就是 `+` 以后的部分，就去掉它再取：构建信息不参与版本的优先级，官方版本号也不带）；app 要自己对应的那个版本。
-  2. 不经索引，直接读 `<名字>-<版本>.voicepack.zip` 和它的 `.minisig`（文件名见上面「目录里有什么」；`<名字>` 按包要的协议主版本定：`requires.protocolMajor`）。
-  3. 核对和「怎么取一个版本」第 4 步一样：用信任名单验 zip 的签名，再检查 zip 里的内容（含基础部分和协议核心两份清单的官方签名），基础部分的版本号要等于要的那个。只少一样：zip 的字节数和 SHA-256 要和索引里的一样。没有可信的索引可对，而 zip 的签名已经担保了它的每个字节。
-  4. 协议主版本合不合，不能事先从索引里看，放进包里以后对整个包做互相校验时查（`protocol_incompatible`）。
-- **不退的**：索引的别的问题（签名对不上、没有签名文件、内容读不懂、读不到）照样报错，那些不是换钥匙造成的；退回去以后 zip 的问题（签名不对、没有签名文件、取不到、内容不合格）也照样报错，不再往后退，不换别的版本。
-- **代价**：退路取的是包要求的最低版本，不是现在最新的。旧包只认得旧名单里的钥匙，要用上新版本，用新版本的基础部分重新做一次包。
+- **The version zip and its signature do not change**: the zip and signature of a published version stay at the official address forever, not deleted and not overwritten. After the key is changed, the zip of an old version is still signed by the old key, and so are the two manifests of the base part and the protocol core inside it.
+- **The version index changes**: with every version published the index is re-signed by the key of that time, so after the key is changed it is signed by the new key. A pack made before the key change, that has only a role part, carries in its protocol core a trust list with only the old public key, and cannot verify the current index: reading the index throws `signature_untrusted_key`.
+- **Fallback**: the side that reads the index (complete, and an app that fetches the base part by version number), on meeting this error, does not trust this index and falls back to the very version it wants.
+  1. Which version: complete wants the `requires.baseMin` of the pack itself (not "the highest in the same major version": that one is mostly signed by the new key and the old list cannot verify it; if `baseMin` carries build metadata, that is, the part after `+`, remove it before fetching: build metadata takes no part in version precedence, and official version numbers do not carry it); an app wants the version it corresponds to.
+  2. Without going through the index, read `<name>-<version>.voicepack.zip` and its `.minisig` directly (for file names see "What is in the directory" above; `<name>` is decided by the protocol major version the pack requires: `requires.protocolMajor`).
+  3. The checks are the same as step 4 of "How to fetch a version": verify the zip's signature with the trust list, then check the contents of the zip (including the official signatures of the two manifests of the base part and the protocol core), and the version number of the base part must equal the one wanted. Only one thing is missing: the zip's byte size and SHA-256 must equal those in the index. There is no trustworthy index to compare against, and the zip's signature already vouches for each of its bytes.
+  4. Whether the protocol major version fits cannot be seen beforehand from the index; it is checked when mutual verification is done on the whole pack after it is put into the pack (`protocol_incompatible`).
+- **What is not rolled back**: other problems with the index (signature does not match, no signature file, content cannot be understood, cannot be read) are reported all the same, since they are not caused by the key change; after the fallback, problems with the zip (wrong signature, no signature file, cannot be fetched, content not acceptable) are also reported all the same, with no further fallback and no switching to another version.
+- **Cost**: the fallback fetches the lowest version the pack requires, not the current latest. An old pack recognizes only the keys in the old list; to use the new version, make the pack again with the base part of the new version.
 
-所以用旧版本做的包照样能补全。程序在 `lib/release-fetch.mjs`（`fetchOfficialVersionDirect`、`isUntrustedIndexError`）和 `lib/complete.mjs`。
+So packs made with an old version can still be completed. The programs are in `lib/release-fetch.mjs` (`fetchOfficialVersionDirect`, `isUntrustedIndexError`) and `lib/complete.mjs`.
 
-## 这份说明没管的事
+## What this document does not cover
 
-- 补全怎么挑版本：规则和理由在 `FORMAT.md`「补全」一节，程序在 `lib/complete.mjs`。读索引、取 zip、核对验签这几步在 `lib/release-fetch.mjs`，补全和 app 导出完整包用的是同一份。
+- How complete picks a version: the rules and reasons are in the section `FORMAT.md`「Complete」, and the program is in `lib/complete.mjs`. The steps of reading the index, fetching the zip, and verifying the signature are in `lib/release-fetch.mjs`, and complete and an app exporting a full pack use the same copy.

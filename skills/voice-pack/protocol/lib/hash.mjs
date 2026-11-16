@@ -16,14 +16,14 @@ import { toHex } from './bytes.mjs';
 function subtle() {
   const impl = globalThis.crypto?.subtle;
   if (!impl || typeof impl.digest !== 'function') {
-    throw new VoicePackError('crypto_unavailable', '这个平台没有 crypto.subtle（浏览器里只有 https 页面和 localhost 才有），算不了 SHA-256');
+    throw new VoicePackError('crypto_unavailable', 'This platform has no crypto.subtle (in a browser it exists only on https pages and localhost), so SHA-256 cannot be computed');
   }
   return impl;
 }
 
 function assertBytes(bytes) {
   if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError(`哈希的输入必须是 Uint8Array（原始字节），收到 ${typeof bytes}`);
+    throw new TypeError(`The hash input must be a Uint8Array (raw bytes), got ${typeof bytes}`);
   }
 }
 

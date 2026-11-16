@@ -217,10 +217,10 @@ export function pauseOutOfRange(where) {
   const limitSeconds = PAUSE_FORMAT_MAX_MS / 1000;
   const at = where?.place ?? (where?.text === undefined ? null : placeIn(where.text, where.index));
   const marker = where?.marker ?? null;
-  let what = '一处停顿';
-  if (at !== null) what = `台本第 ${at.line} 行第 ${at.column} 列的停顿 ${marker}`;
-  else if (marker !== null) what = `台本里的舞台提示 ${marker}`;
-  return new VoicePackError('pause_out_of_range', `${what}超过一份 WAV 能装的（${limitSeconds} 秒，按最低采样率 1 Hz 算）：任何采样率的音频都放不下它`, {
+  let what = 'A pause';
+  if (at !== null) what = `The pause ${marker} at line ${at.line}, column ${at.column} of the script`;
+  else if (marker !== null) what = `The stage direction ${marker} in the script`;
+  return new VoicePackError('pause_out_of_range', `${what} is longer than one WAV can hold (${limitSeconds} s, counted at the lowest sample rate, 1 Hz): audio at any sample rate cannot hold it`, {
     details: { marker, line: at?.line ?? null, column: at?.column ?? null, limitSeconds },
   });
 }
@@ -332,7 +332,7 @@ function bodyToSpans(body, defaultVoice, script, options) {
  */
 export function parseScript(text, { defaultVoice = null, lineStarts = false, pauseLines = false } = {}) {
   if (text === null || text === undefined || text === '') return [];
-  if (typeof text !== 'string') throw new TypeError('台本必须是字符串');
+  if (typeof text !== 'string') throw new TypeError('The script must be a string');
   const chapters = [];
   const script = normalize(text);
   const options = { lineStarts: lineStarts === true, pauseLines: pauseLines === true };

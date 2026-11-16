@@ -33,7 +33,7 @@
 //   manifest_*              清单不合格：照 protocol/lib/manifest.mjs 的 parseManifest
 //   pack_not_role           清单不是角色部分的。details.part 是它自己说的种类
 //   pack_protocol_old       包按协议 1.x、2.x 写（details: { protocol }，清单写的协议版本）：参考段的写法不一样（语言、音色基底标签，protocol/FORMAT.md 第 14 节），
-//                           这一版不读旧格式、不迁移；配音、变声在打开包时就停下，一次能力都不调。旧包照旧能用，用它那个主版本的程序（FORMAT.md 第 14 节「2.x 的包」）：
+//                           这一版不读旧格式、不迁移；配音、变声在打开包时就停下，一次能力都不调。旧包照旧能用，用它那个主版本的程序（FORMAT.md 第 14 节「2.x packs」）：
 //                           完整包用它自带的基础部分；只有角色部分的，用那个主版本（2.x、1.x）的基础部分（补全只在包要的主版本里挑，第 11 节）。说明里照这样写，主版本取自包的清单。
 //                           不借用 pack_invalid：那是协议核心打包失败的码（protocol/lib/pack.mjs）。make-pack --previous 碰上旧包另报 make_pack_previous_invalid / protocol_old（lib/pack-version.mjs）
 //   reference_unknown       没有这一段参考（留出录音不是参考，也算没有）。details.segment
@@ -76,11 +76,11 @@ function toReader(source) {
     return async (path) => {
       const bytes = await source.read(path);
       if (bytes === null || bytes === undefined) return null;
-      if (!(bytes instanceof Uint8Array)) throw new TypeError(`读取函数必须返回 Uint8Array（或 null），读 ${JSON.stringify(path)} 时收到 ${typeof bytes}`);
+      if (!(bytes instanceof Uint8Array)) throw new TypeError(`the read function must return a Uint8Array (or null); got ${typeof bytes} when reading ${JSON.stringify(path)}`);
       return bytes;
     };
   }
-  throw new TypeError('source 必须是文件集（Map<路径, Uint8Array>）或 { read(path) }');
+  throw new TypeError('source must be a file set (Map<path, Uint8Array>) or { read(path) }');
 }
 
 /** SKILL.md 里「配音指引」一节的正文。没有这一节、是空的、还是打包时放的提示，都给 null。 */
@@ -98,15 +98,15 @@ function guidanceOf(skillMd) {
  * @param {{ env?: object, verify?: boolean }} [options] env：取外部资源时用它的 fetch；verify：读包内文件时核对大小和 SHA-256（默认 false，见文件头）
  */
 export async function openVoicePack(source, { env, verify = false } = {}) {
-  if (typeof verify !== 'boolean') throw new TypeError(`verify 必须是 true 或 false，收到 ${JSON.stringify(verify)}`);
+  if (typeof verify !== 'boolean') throw new TypeError(`verify must be true or false, got ${JSON.stringify(verify)}`);
   const readSource = toReader(source);
   const manifestBytes = await readSource(MANIFEST_FILE);
-  if (manifestBytes === null) throw new VoicePackError('manifest_missing', `没有清单 ${MANIFEST_FILE}：这不是一个音色包的角色部分`, { details: { path: MANIFEST_FILE } });
+  if (manifestBytes === null) throw new VoicePackError('manifest_missing', `no manifest ${MANIFEST_FILE}: this is not the role part of a voice pack`, { details: { path: MANIFEST_FILE } });
   const manifest = parseManifest(manifestBytes);
-  if (manifest.part !== 'role') throw new VoicePackError('pack_not_role', `${MANIFEST_FILE} 说这是 ${manifest.part}，配音要的是角色部分（一个声音的参考集）`, { details: { part: manifest.part } });
+  if (manifest.part !== 'role') throw new VoicePackError('pack_not_role', `${MANIFEST_FILE} says this is ${manifest.part}; dubbing needs the role part (the reference set of one voice)`, { details: { part: manifest.part } });
   if (protocolMajorOf(manifest.protocol) !== protocolMajorOf(PROTOCOL_VERSION)) {
     const major = protocolMajorOf(manifest.protocol);
-    throw new VoicePackError('pack_protocol_old', `这个包按协议 ${manifest.protocol} 写：参考段的写法不一样（语言、音色基底标签，见 protocol/FORMAT.md 第 14 节），这一版（协议 ${PROTOCOL_VERSION}）不读旧格式。旧包照旧能用：完整包用它自带的基础部分；只有角色部分的，用 ${major}.x 的基础部分（补全只在包要的主版本里挑，FORMAT.md 第 11 节）。或者用新的素材做一个新包`, { details: { protocol: manifest.protocol } });
+    throw new VoicePackError('pack_protocol_old', `this pack was written for protocol ${manifest.protocol}: reference segments are written differently (language, reference tags; see protocol/FORMAT.md section 14), and this version (protocol ${PROTOCOL_VERSION}) does not read the old format. Old packs still work as before: a full pack uses the base part it carries; a role part on its own uses a ${major}.x base part (complete only picks within the major version the pack asks for, FORMAT.md section 11). Or make a new pack from the new materials`, { details: { protocol: manifest.protocol } });
   }
 
   const listed = new Map(manifest.files.map((entry) => [entry.path, entry]));
@@ -131,21 +131,21 @@ export async function openVoicePack(source, { env, verify = false } = {}) {
     try {
       response = await fetcher(entry.url);
     } catch (cause) {
-      throw new VoicePackError('external_unverifiable', `取不回外部资源 ${path}：从 ${entry.url} 取的时候网络出错（${cause?.message ?? cause}）`, { details: { ...base, reason: 'network' }, cause });
+      throw new VoicePackError('external_unverifiable', `cannot fetch external resource ${path}: network error while fetching from ${entry.url} (${cause?.message ?? cause})`, { details: { ...base, reason: 'network' }, cause });
     }
-    if (!response || response.ok !== true) throw new VoicePackError('external_fetch_failed', `外部资源 ${path} 取不到：${entry.url} 返回 ${response?.status ?? '没有响应'}`, { details: { ...base, status: response?.status ?? null } });
+    if (!response || response.ok !== true) throw new VoicePackError('external_fetch_failed', `external resource ${path} could not be fetched: ${entry.url} returned ${response?.status ?? 'no response'}`, { details: { ...base, status: response?.status ?? null } });
     let read;
     try {
       read = await readCapped(response, entry.size); // 和检查用同一个读法：超过清单里写的大小就停
     } catch (cause) {
-      throw new VoicePackError('external_unverifiable', `取不回外部资源 ${path}：读 ${entry.url} 的内容时出错（${cause?.message ?? cause}）`, { details: { ...base, reason: 'network' }, cause });
+      throw new VoicePackError('external_unverifiable', `cannot fetch external resource ${path}: error while reading the content of ${entry.url} (${cause?.message ?? cause})`, { details: { ...base, reason: 'network' }, cause });
     }
     if (read.tooLarge || read.bytes.length !== entry.size) {
       const got = read.tooLarge ? read.actual : read.bytes.length;
-      throw new VoicePackError('external_hash_mismatch', `外部资源 ${path} 和清单对不上：清单里写的是 ${entry.size} 字节，取回来的${read.tooLarge ? '超过了' : '是'} ${got} 字节`, { details: { ...base, reason: 'size', expected: entry.size, actual: got } });
+      throw new VoicePackError('external_hash_mismatch', `external resource ${path} does not match the manifest: the manifest says ${entry.size} bytes, the fetched content ${read.tooLarge ? 'exceeds' : 'is'} ${got} bytes`, { details: { ...base, reason: 'size', expected: entry.size, actual: got } });
     }
     const digest = await sha256Hex(read.bytes);
-    if (digest !== entry.sha256) throw new VoicePackError('external_hash_mismatch', `外部资源 ${path} 和清单对不上：SHA-256 不一样`, { details: { ...base, reason: 'sha256', expected: entry.sha256, actual: digest } });
+    if (digest !== entry.sha256) throw new VoicePackError('external_hash_mismatch', `external resource ${path} does not match the manifest: the SHA-256 differs`, { details: { ...base, reason: 'sha256', expected: entry.sha256, actual: digest } });
     return read.bytes;
   }
 
@@ -153,17 +153,17 @@ export async function openVoicePack(source, { env, verify = false } = {}) {
     const entry = listed.get(path);
     if (entry !== undefined) {
       const bytes = await readSource(path);
-      if (bytes === null) throw new VoicePackError('file_missing', `清单里列了 ${path}，包里没有`, { details: { path } });
+      if (bytes === null) throw new VoicePackError('file_missing', `the manifest lists ${path}, but the pack does not have it`, { details: { path } });
       if (verify) {
-        if (bytes.length !== entry.size) throw new VoicePackError('file_modified', `${path} 被改过：大小是 ${bytes.length} 字节，清单里记的是 ${entry.size} 字节`, { details: { path, reason: 'size', expected: entry.size, actual: bytes.length } });
+        if (bytes.length !== entry.size) throw new VoicePackError('file_modified', `${path} was modified: its size is ${bytes.length} bytes, the manifest records ${entry.size} bytes`, { details: { path, reason: 'size', expected: entry.size, actual: bytes.length } });
         const digest = await sha256Hex(bytes);
-        if (digest !== entry.sha256) throw new VoicePackError('file_modified', `${path} 被改过：SHA-256 和清单里记的不一样`, { details: { path, reason: 'sha256', expected: entry.sha256, actual: digest } });
+        if (digest !== entry.sha256) throw new VoicePackError('file_modified', `${path} was modified: its SHA-256 differs from the one in the manifest`, { details: { path, reason: 'sha256', expected: entry.sha256, actual: digest } });
       }
       return bytes;
     }
     const external = externals.get(path);
     if (external !== undefined) return fetchExternal(path, external);
-    throw new VoicePackError('file_unlisted', `清单没有列 ${path}：只读清单里列出的文件`, { details: { path } });
+    throw new VoicePackError('file_unlisted', `the manifest does not list ${path}: only files listed in the manifest are read`, { details: { path } });
   }
 
   const read = (path) => {
@@ -174,13 +174,13 @@ export async function openVoicePack(source, { env, verify = false } = {}) {
   // ---- 参考音频
   const referenceClip = (segmentId) => {
     const segment = manifest.reference.segments.find((candidate) => candidate.id === segmentId);
-    if (segment === undefined) throw new VoicePackError('reference_unknown', `参考集里没有这一段：${JSON.stringify(segmentId)}（留出录音不是参考）`, { details: { segment: String(segmentId) } });
+    if (segment === undefined) throw new VoicePackError('reference_unknown', `no such segment in the reference set: ${JSON.stringify(segmentId)} (a held-out recording is not a reference)`, { details: { segment: String(segmentId) } });
     return once(`clip:${segment.id}`, async () => {
       const bytes = await read(segment.audio);
       const sniffed = sniffAudio(bytes);
       const extension = segment.audio.slice(segment.audio.lastIndexOf('.') + 1).toLowerCase();
       const format = sniffed?.format ?? (Object.hasOwn(AUDIO_EXTENSIONS, extension) ? AUDIO_EXTENSIONS[extension] : null);
-      if (format === null) throw new VoicePackError('audio_unrecognized', `参考音频 ${segment.audio} 认不出是什么格式`, { details: { path: segment.audio } });
+      if (format === null) throw new VoicePackError('audio_unrecognized', `cannot recognize the format of reference audio ${segment.audio}`, { details: { path: segment.audio } });
       return { segment, clip: { bytes, mimeType: MIME_OF_FORMAT[format] } };
     });
   };
