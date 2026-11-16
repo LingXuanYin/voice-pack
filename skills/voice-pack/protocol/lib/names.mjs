@@ -4,7 +4,7 @@
 // 三个名字都跟协议主版本走，只在下面的 PROTOCOL_NAMES 这一张表里写一份（官方发布的文件名是 `<releaseFilePrefix>-<版本>.voicepack.zip`），
 // 别处都问下面的函数，不各写一份。
 //
-// 2.0 把名字从产品名换成协议自己的名字（FORMAT.md「协议版本 2.0 改了什么」），1.x 已经发出去的包照旧是老名字，所以两套都认：
+// 2.0 把名字从产品名换成协议自己的名字（FORMAT.md「13. What protocol version 2.0 changed, and how to read 1.x packs」），1.x 已经发出去的包照旧是老名字，所以两套都认：
 //   写   这一版库写的协议版本是 PROTOCOL_VERSION（version.mjs），新做的包、新打的分享文件用它的名字（CURRENT_NAMES）。
 //        打已有清单的包（打包命令、官方发布）用清单自己的协议版本对应的名字，同样的目录打出同样的字节。
 //   读   两套名字都认，但一个包里的名字要和它的协议版本对得上：2.0 的包里是老名字、1.x 的包里是新名字，检查不过（protocol_name_mismatch，check.mjs、share.mjs）。
@@ -50,7 +50,7 @@ export const READABLE_PROTOCOLS_TEXT = READABLE_PROTOCOL_MAJORS.map((major) => `
 export function protocolMajorOf(protocol) {
   if (typeof protocol === 'number') {
     if (Number.isSafeInteger(protocol) && protocol >= 0) return protocol;
-    throw new VoicePackError('invalid_version', `协议主版本要是非负整数：${JSON.stringify(protocol)}`, { details: { version: String(protocol) } });
+    throw new VoicePackError('invalid_version', `The protocol major version must be a non-negative integer: ${JSON.stringify(protocol)}`, { details: { version: String(protocol) } });
   }
   return parseProtocolVersion(protocol).major;
 }
@@ -69,7 +69,7 @@ export const isReadableProtocol = (protocol) => {
 export function namesOf(protocol) {
   const major = protocolMajorOf(protocol);
   if (!Object.hasOwn(PROTOCOL_NAMES, major)) {
-    throw new VoicePackError('protocol_unsupported', `协议 ${protocol} 的名字这一版库不认得：只认主版本 ${READABLE_PROTOCOLS_TEXT}`, { details: { protocol: String(protocol), supported: READABLE_PROTOCOLS_TEXT } });
+    throw new VoicePackError('protocol_unsupported', `This version of the library does not know the names for protocol ${protocol}: it only knows major versions ${READABLE_PROTOCOLS_TEXT}`, { details: { protocol: String(protocol), supported: READABLE_PROTOCOLS_TEXT } });
   }
   return PROTOCOL_NAMES[major];
 }

@@ -1,244 +1,244 @@
-# 音色包的格式
+# Voice pack format
 
-这份文件是音色包格式的正本：第三方照着它，不用我们的程序也能读、写、检查音色包。`protocol/lib/` 里的程序是按它实现的；两边对不上，以这份文件为准，改程序。
+This file is the authoritative text of the voice pack format: a third party can read, write and check voice packs from it alone, without our programs. The programs in `protocol/lib/` implement it; where the two disagree, this file wins and the program is changed.
 
-适用于协议版本 3.0（清单的 `protocol` 字段）。同一个主版本内，次版本只加不删：读到不认识的字段一律忽略。读的一方认得哪几个主版本，由它自己定：这份文件对应的程序读 1.x、2.x 和 3.x，别的主版本一律不读。2.0 和 1.x 的区别、1.x 的包怎么读，见第 13 节；3.0 是不兼容 2.x 的新主版本，见第 14 节。
+It applies to protocol version 3.0 (the `protocol` field of the manifest). Within one major version, minor versions only add and never remove: a reader ignores every field it does not recognise. Which major versions a reader accepts is up to the reader: the programs that go with this file read 1.x, 2.x and 3.x and no other major version. For how 2.0 differs from 1.x and how to read 1.x packs, see section 13; 3.0 is a new major version that is not compatible with 2.x, see section 14.
 
-文中的「必须」「不得」是对读写双方的硬性要求，「可以」是允许。凡是引了外面的资料、跑过的实测、或者只是估计的数字，都在旁边标了来源和等级。
+"Must" and "must not" in this file are hard requirements on both writer and reader; "may" is permission. Every number that comes from outside material, from a measurement that was run, or that is only an estimate is marked next to it with its source and grade.
 
-## 术语
+## Terms
 
-| 词 | 意思 |
+| Term | Meaning |
 |---|---|
-| 音色包 | 交换一个角色的音色时用的单位，由角色部分和基础部分组成，两部分都能单独分发 |
-| 角色部分 | 只属于一个角色的内容：参考集，以及可选的留出录音、配音指引、示例台词、脚本等 |
-| 基础部分 | 与角色无关的内容：通用流程、协议核心、词表、环境适配层、官方小工具。目录名跟协议主版本走：2.x 和 3.x 是 `voice-pack`，1.x 是 `cohub-voice-studio`（第 13、14 节） |
-| 协议核心 | 每个部分里都带着的子目录 `protocol/`：本文件、清单的 schema、公钥、读写和检查音色包的程序 |
-| 完整包 | 角色部分和基础部分都在里面的音色包 |
-| 包 ID | 一个音色包在各个版本之间不变的名字，也是它的目录名 |
-| 分享文件 | 把音色包的一个或两个部分打成的单个 zip 文件 |
-| 部分 | 角色部分、基础部分、协议核心三者之一：各有一份清单，各管各的目录 |
+| voice pack | The unit used to exchange one character's voice. It consists of a role part and a base part, and each part can be distributed on its own |
+| role part | The content that belongs to one character only: the reference set, and optionally held-out recordings, dubbing guidance, sample lines, scripts and so on |
+| base part | The content that does not depend on any character: the general procedures, the protocol core, vocabularies, the environment adapter layer, the official small tools. The directory name follows the protocol major version: for 2.x and 3.x it is `voice-pack`, for 1.x it is `cohub-voice-studio` (sections 13 and 14) |
+| protocol core | The subdirectory `protocol/` that every part carries: this file, the manifest schema, the public key, and the programs that read, write and check voice packs |
+| full pack | A voice pack that contains both the role part and the base part |
+| pack ID | The name of a voice pack that stays the same across versions; it is also its directory name |
+| share file | A single zip file made from one or both parts of a voice pack |
+| part | One of role part, base part, protocol core: each has its own manifest and manages its own directory |
 
-## 1. 包的形态和目录
+## 1. Pack form and directory
 
-两个部分都是标准的 Agent Skill 目录（规范：<https://agentskills.io/specification>），入口都是 `SKILL.md`。
+Both parts are standard Agent Skill directories (specification: <https://agentskills.io/specification>), and the entry point of each is `SKILL.md`.
 
-下面的图和目录名是 3.x 的，和 2.x 一样；1.x 的包只有基础部分的目录名不同（第 13 节）。
+The diagram and directory names below are for 3.x, and are the same as for 2.x; in a 1.x pack only the directory name of the base part differs (section 13).
 
 ```
-<包 ID>/                         完整包：角色部分在根上
-├── SKILL.md                     整个包的入口，角色部分的说明和配音指引
-├── manifest.json                角色部分的清单
-├── <角色部分自己的文件……>        参考音频、留出录音、脚本……
-├── protocol/                    协议核心，带自己的 manifest.json 和签名
-└── voice-pack/                  基础部分（只有角色部分的包没有这个目录）
+<pack ID>/                       full pack: the role part is at the root
+├── SKILL.md                     entry point of the whole pack: description of the role part and the dubbing guidance
+├── manifest.json                manifest of the role part
+├── <the role part's own files...>   reference audio, held-out recordings, scripts...
+├── protocol/                    protocol core, with its own manifest.json and signature
+└── voice-pack/                  base part (a pack with only the role part has no such directory)
     ├── SKILL.md
-    ├── manifest.json            基础部分的清单
-    ├── manifest.json.minisig    基础部分清单的签名
-    ├── <基础部分自己的文件……>
-    └── protocol/                协议核心（和上面同一份内容的又一份副本）
+    ├── manifest.json            manifest of the base part
+    ├── manifest.json.minisig    signature of the base part's manifest
+    ├── <the base part's own files...>
+    └── protocol/                protocol core (yet another copy of the same content as above)
 ```
 
-- 完整包：目录是包 ID。只有角色部分的包：同一个目录，没有 `voice-pack/`。只有基础部分：目录就是 `voice-pack/`，里面的结构和上图里那一段一样。
-- 每个部分都必须带着 `protocol/`。完整包里因此有两份协议核心，用基础部分里那份。
-- 每份清单管它所在的目录，列出里面除它自己和它的签名以外的每一个文件。子目录里另有清单的，交给那份清单管，这份清单不列。所以：角色部分的清单不列 `protocol/` 和 `voice-pack/` 里的文件；基础部分的清单不列它的 `protocol/` 里的文件；协议核心的清单列它目录里的全部文件。
-- 角色部分自己的文件（例如 `reference/`、`holdout/`、`scripts/`）名字不限，只要过「路径」一节的规则，并且列进清单。
-- 在 agent 环境里使用：把包目录放进项目的 `.agents/skills/`（Codex、Gemini CLI、Cursor、OpenCode 等读这里），再复制一份到 `.claude/skills/`（Claude Code 读这里）。
+- Full pack: the directory is the pack ID. Pack with only the role part: the same directory, without `voice-pack/`. Pack with only the base part: the directory is `voice-pack/`, and the structure inside it is the same as that part of the diagram above.
+- Every part must carry `protocol/`. A full pack therefore has two copies of the protocol core; use the one in the base part.
+- Each manifest governs the directory it sits in, and lists every file in it except itself and its signature. A subdirectory that has a manifest of its own is left to that manifest, and this manifest does not list it. So: the role part's manifest does not list the files in `protocol/` and `voice-pack/`; the base part's manifest does not list the files in its `protocol/`; the protocol core's manifest lists all the files in its directory.
+- The role part's own files (for example `reference/`, `holdout/`, `scripts/`) may be named freely, as long as they pass the rules of the "Paths" section and are listed in the manifest.
+- To use it in an agent environment: put the pack directory into the project's `.agents/skills/` (read by Codex, Gemini CLI, Cursor, OpenCode and others), and copy it again into `.claude/skills/` (read by Claude Code).
 
-## 2. 路径
+## 2. Paths
 
-清单里的路径、分享文件里的成员名，都是同一种写法，也都过同一套检查。
+Paths in a manifest and member names in a share file are written the same way and go through the same checks.
 
-**写法**
+**How a path is written**
 
-- 一律用 `/` 分隔，相对于它所在的目录（清单里的路径相对清单所在的目录，分享文件里的成员名相对 zip 的根）。不以 `/` 开头，也不以 `/` 结尾。
-- 路径本身区分大小写，按 Unicode 码点原样比较，不做规范化：清单里的路径要和包里的文件名逐个字符一致。
-- 排序按 UTF-8 字节序（等于按码点排，和系统语言无关）。不是 JavaScript 默认的按 UTF-16 码元排：那样基本平面高位的字符（U+E000 以上）和补充平面的字符（例如 emoji）的先后是反的。
+- Always use `/` as the separator, relative to the directory it belongs to (a path in a manifest is relative to the directory of the manifest; a member name in a share file is relative to the root of the zip). It does not start with `/` and does not end with `/`.
+- A path is case-sensitive and is compared as Unicode code points exactly as written, with no normalisation: a path in a manifest must match the file name in the pack character by character.
+- Sort by UTF-8 byte order (equal to code point order, independent of the system language). Do not sort by JavaScript's default UTF-16 code unit order: that reverses the order of high characters in the basic plane (U+E000 and above) and characters in supplementary planes (for example emoji).
 
-**不得出现的写法**（每一条旁边是理由；检查时报 `path_unsafe`，`details.reason` 是下面括号里的名字）
+**Forms that must not appear** (each has its reason next to it; the check reports `path_unsafe`, and `details.reason` is the name in brackets below)
 
-| 写法 | 理由 |
+| Form | Reason |
 |---|---|
-| 空路径、不是字符串（`empty`、`not_string`） | 没有意义 |
-| 孤立的代理码元（`invalid_unicode`） | 编码成 UTF-8 时会变成别的字符 |
-| 控制字符、DEL 和 C1 控制字符（U+007F–U+009F）、行分隔符和段分隔符（U+2028、U+2029）、书写方向控制符（U+061C、U+200E、U+200F、U+202A–U+202E、U+2066–U+2069）、字节序标记 U+FEFF（`control_char`） | 显示出来的名字和真实的名字不一样 |
-| 反斜杠 `\`（`backslash`） | Windows 把它当目录分隔符，Linux 只是个字符：同一个名字两边含义不同 |
-| 冒号 `:`（`colon`） | Windows 的盘符（`C:`）和 NTFS 备用数据流（`a.txt:s`） |
-| 以 `/` 开头（`absolute`） | 绝对路径 |
-| 空的一段，例如 `a//b`（`empty_segment`） | 解出来的位置不确定 |
-| `.` 这一段（`dot_segment`） | 同上 |
-| `..` 这一段（`parent_segment`） | 跳出所在的目录 |
-| 某一段以点或空格结尾（`trailing_dot_or_space`） | Windows 悄悄去掉它们，写下去的名字和读出来的不一样 |
-| 某一段是 Windows 的保留设备名：`CON`、`PRN`、`AUX`、`NUL`、`CONIN$`、`CONOUT$`、`COM0`–`COM9`、`LPT0`–`LPT9`，以及把上标数字 `¹` `²` `³` 当数字的 `COM¹`–`COM³`、`LPT¹`–`LPT³`；带不带扩展名、大小写都算（`reserved_name`） | 在 Windows 上打开它就是打开设备。依据：Microsoft Learn「Naming Files, Paths, and Namespaces」原文（2026-10-14 取回核对）：保留名「后面紧跟扩展名也一样，`NUL.txt` 就是 `NUL`」，上标数字「在每个目录里都是保留的」；`COM0`、`LPT0`、`CONIN$`、`CONOUT$` 不在那一页的名单里，同样是设备名，一并挡住 |
-| 某一段超过 255 个 UTF-8 字节（`segment_too_long`） | 常见文件系统的单段上限 |
-| 整条路径超过 1024 个 UTF-8 字节（`path_too_long`） | 兼顾各种系统的路径长度上限，留足余量 |
+| Empty path, or not a string (`empty`, `not_string`) | Meaningless |
+| Lone surrogate code unit (`invalid_unicode`) | It turns into some other character when encoded as UTF-8 |
+| Control characters, DEL and C1 control characters (U+007F–U+009F), line separator and paragraph separator (U+2028, U+2029), writing-direction control characters (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), byte order mark U+FEFF (`control_char`) | The displayed name differs from the real name |
+| Backslash `\` (`backslash`) | Windows treats it as a directory separator and Linux treats it as an ordinary character: the same name means different things on the two |
+| Colon `:` (`colon`) | Windows drive letters (`C:`) and NTFS alternate data streams (`a.txt:s`) |
+| Starts with `/` (`absolute`) | Absolute path |
+| An empty segment, for example `a//b` (`empty_segment`) | The location it resolves to is uncertain |
+| A `.` segment (`dot_segment`) | Same as above |
+| A `..` segment (`parent_segment`) | Jumps out of the directory it is in |
+| A segment that ends with a dot or a space (`trailing_dot_or_space`) | Windows silently strips them, so the name written differs from the name read back |
+| A segment that is a Windows reserved device name: `CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM0`–`COM9`, `LPT0`–`LPT9`, and `COM¹`–`COM³`, `LPT¹`–`LPT³` (which treat the superscript digits `¹` `²` `³` as digits); with or without an extension, in any case (`reserved_name`) | On Windows, opening it opens the device. Basis: the original text of Microsoft Learn "Naming Files, Paths, and Namespaces" (retrieved and checked 2026-10-14): a reserved name is also reserved "when followed immediately by an extension; for example, `NUL.txt` is the same as `NUL`", and the superscript digits are "reserved in every directory"; `COM0`, `LPT0`, `CONIN$` and `CONOUT$` are not on that page's list, but they are device names too, so they are blocked as well |
+| A segment longer than 255 UTF-8 bytes (`segment_too_long`) | The per-segment limit of common file systems |
+| A whole path longer than 1024 UTF-8 bytes (`path_too_long`) | Fits the path length limits of the various systems, with room to spare |
 
-**冲突**（检查时报 `path_conflict`）：同一份文件列表（或同一个 zip）里，下面三种情况都是错误，因为解到磁盘上会互相覆盖。
+**Conflict** (the check reports `path_conflict`): in one file list (or one zip), each of the three cases below is an error, because they would overwrite each other when extracted to disk.
 
-- 完全重名；
-- 按「NFC 规范化后转小写」比较相同（大小写、Unicode 写法不同，在 Windows 和 macOS 上落到同一个文件）；
-- 一个路径是文件，另一个路径又要把它当目录（`a` 和 `a/b`）。
+- Exactly the same name;
+- Equal when compared as "NFC-normalised, then lowercased" (names that differ in case or in Unicode form land on the same file on Windows and macOS);
+- One path is a file and another path treats it as a directory (`a` and `a/b`).
 
-清单里，文件列表和外部资源合起来查冲突。
+In a manifest, the file list and the external resources are checked for conflicts together.
 
-**成员名从来不当文件系统路径用。** 要把成员写到磁盘上，读取方自己拼路径：用目标目录加上过了上面检查的相对路径，拼出来以后再确认它仍然在目标目录里面。我们的 `unpack` 就是这么做的（`protocol/cli/disk.mjs` 的 `writeDirectory`）。
+**Member names are never used as file system paths.** To write a member to disk, the reader builds the path itself: the target directory plus a relative path that passed the checks above, and after building it confirms that it is still inside the target directory. Our `unpack` does exactly this (`writeDirectory` in `protocol/cli/disk.mjs`).
 
-## 3. 哈希
+## 3. Hashes
 
-- 算法是 SHA-256，写成 64 位小写十六进制。
-- 按文件的原始字节算：不转换换行（CRLF 和 LF 是两个不同的文件），不解码再编码，不看文件是什么格式。
-- 清单里的哈希永远是对解压后的原始字节算的，不是对 zip 里压缩后的字节。同一个文件，不同的 zip 写法（存储、不同压缩器压出来的 deflate）得到同一个哈希。
-- 同样的字节，在任何系统、任何运行时上算出同样的哈希，这是 SHA-256 的定义。
-- 把音色包放进 git 仓库时，要让 git 不转换换行：在包目录加 `.gitattributes`，写 `* -text`（或者 `* binary`）。Windows 的 git 默认可能在检出时把 LF 换成 CRLF，字节一变，哈希就对不上，检查会报文件被改过。分享文件是 zip，不受这个影响。
+- The algorithm is SHA-256, written as 64 lowercase hexadecimal digits.
+- It is computed over the original bytes of the file: no newline conversion (CRLF and LF make two different files), no decoding and re-encoding, no regard for what format the file is.
+- A hash in a manifest is always computed over the extracted original bytes, not over the compressed bytes in the zip. The same file, written into different zips (stored, or deflate produced by different compressors), gets the same hash.
+- The same bytes give the same hash on any system and any runtime; that is the definition of SHA-256.
+- When you put a voice pack into a git repository, make git not convert newlines: add a `.gitattributes` in the pack directory containing `* -text` (or `* binary`). Git on Windows may by default turn LF into CRLF at checkout; once the bytes change, the hashes no longer match and the check reports that a file has been modified. A share file is a zip and is not affected.
 
-## 4. 清单（`manifest.json`）
+## 4. Manifest (`manifest.json`)
 
-每个部分的目录根上有一份 `manifest.json`，列出这个部分的每一个文件和它的 SHA-256。三种清单靠 `part` 字段区分（`role`、`base`、`protocol`）。结构的 schema 是 `protocol/schema/manifest.schema.json`（JSON Schema 2020-12 的一个子集），下面是它的人话版；两边对不上，以 schema 为准。schema 表达不了的规则在「语义规则」一节。
+The root of each part's directory has a `manifest.json`, which lists every file of that part and its SHA-256. The three kinds of manifest are told apart by the `part` field (`role`, `base`, `protocol`). The structure's schema is `protocol/schema/manifest.schema.json` (a subset of JSON Schema 2020-12); what follows is the plain-language version of it, and where the two disagree, the schema wins. Rules the schema cannot express are in the "Semantic rules" section.
 
-### 4.1 写法
+### 4.1 How the manifest is written
 
-- 文件是 UTF-8 的 JSON，不带字节序标记，大小不超过 1 MiB（见「解包上限」）。
-- 读取方接受任何合法的 JSON 排版。我们的写入程序固定写成：两个空格缩进、LF 换行、末尾一个换行，键按 `protocol/lib/seal.mjs` 里 `KEY_ORDER` 的次序写（不是下面表格里的次序）；不在 `KEY_ORDER` 里的键（不认识的、以后新加的字段）排在最后，按字典序（逐个 UTF-16 码元比，键名都是 ASCII 时就是 ASCII 的次序）。同一份内容写出同样的字节，因为签名是对这些字节做的。
-- 数组里的对象、键的次序对含义没有影响；列表（`files`、`externals`）的次序有要求，见「语义规则」。
-- 字符串的长度按 Unicode 码点算。
+- The file is UTF-8 JSON, without a byte order mark, and no larger than 1 MiB (see "Unpacking limits").
+- A reader accepts any valid JSON layout. Our writer always writes: two-space indentation, LF newlines, one newline at the end, and keys in the order of `KEY_ORDER` in `protocol/lib/seal.mjs` (not the order in the tables below); keys not in `KEY_ORDER` (unrecognised ones, fields added later) go last, in lexicographic order (compared by UTF-16 code unit; when all key names are ASCII, that is ASCII order). The same content produces the same bytes, because the signature is made over these bytes.
+- The order of objects in arrays and of keys has no effect on meaning; the order of the lists (`files`, `externals`) is constrained, see "Semantic rules".
+- String length is counted in Unicode code points.
 
-### 4.2 三种清单共有的字段
+### 4.2 Fields common to the three manifests
 
-| 字段 | 类型 | 说明 |
+| Field | Type | Description |
 |---|---|---|
-| `protocol` | 字符串 | 协议版本「主.次」，例如 `"1.0"`。这份清单是按哪一版协议写的 |
-| `part` | 字符串 | `role`、`base`、`protocol` 之一 |
-| `version` | 字符串 | 这个部分的版本号，语义化版本（semver.org 2.0.0），最长 128 个字符 |
-| `files` | 数组 | 这个部分目录里除清单和签名以外的每一个文件：`{ path, size, sha256 }`，最多 65534 项。`path` 见「路径」，`size` 是字节数（非负整数），`sha256` 见「哈希」 |
+| `protocol` | string | Protocol version "major.minor", for example `"1.0"`. The version of the protocol this manifest was written for |
+| `part` | string | One of `role`, `base`, `protocol` |
+| `version` | string | The version number of this part, a semantic version (semver.org 2.0.0), at most 128 characters |
+| `files` | array | Every file in this part's directory except the manifest and the signature: `{ path, size, sha256 }`, at most 65534 entries. For `path` see "Paths"; `size` is the number of bytes (a non-negative integer); for `sha256` see "Hashes" |
 
-协议核心的清单，1.0 里只定义了这四个字段。基础部分的清单在这四个字段之外，还有一个可选的 `runtimes`，见「基础部分的清单」。
+The protocol core's manifest has only these four fields defined in 1.0. The base part's manifest has, besides these four, an optional `runtimes`, see "Manifest of the base part".
 
-### 4.3 基础部分的清单
+### 4.3 Manifest of the base part
 
-在共有的四个字段之外，`part` 是 `base` 的清单有一个可选字段：
+Besides the four common fields, a manifest with `part` set to `base` has one optional field:
 
-| 字段 | 必填 | 说明 |
+| Field | Required | Description |
 |---|---|---|
-| `runtimes` | 可选 | 登记这个部分的程序要向运行环境要的命令行工具：`{ runtime, optional, purpose }`，最多 32 项。`runtime` 是运行时的名字（写法见下），同一个名字只登记一次；`optional` 是布尔值，必须写明：`true` 表示环境没有它，只有用到它的功能报错，其他功能照常，`false` 表示这个部分整个离不开它；`purpose` 是用来做什么，1–200 个字符 |
+| `runtimes` | optional | Registers the command-line tools that this part's programs ask the runtime environment for: `{ runtime, optional, purpose }`, at most 32 entries. `runtime` is the name of the runtime (how to write it: see below), and one name is registered only once; `optional` is a boolean and must be written explicitly: `true` means that if the environment does not have it, only the functions that use it report an error and the others work as usual, `false` means this part cannot do without it as a whole; `purpose` is what it is used for, 1–200 characters |
 
-**运行时**是同一个概念，只有一种写法：运行环境提供的命令行工具，名字取注入的运行环境里 `runtimes` 容器的键（`protocol/README.md`「运行环境」），例如 `ffmpeg`、`node`。名字的写法：小写字母开头，后面是小写字母、数字、点、下划线、加号、连字符，最长 32 个字符。角色部分的脚本用 `runtime` 说「这个脚本由哪个运行时运行」，基础部分用 `runtimes` 说「我要向环境要哪些工具」，两处的名字是同一批、同一种写法（schema 里只定义一处：`$defs.runtimeName`）。登记只是公开声明，检查不要求环境里真有这个运行时；缺了的时候，由用到它的功能在用的时候报 `runtime_missing`。
+**Runtime** is one concept with one way of writing: a command-line tool provided by the runtime environment, whose name is taken from a key of the `runtimes` container of the injected runtime environment (`protocol/README.md`「Runtime environment」), for example `ffmpeg`, `node`. How the name is written: it starts with a lowercase letter, followed by lowercase letters, digits, dots, underscores, plus signs and hyphens, at most 32 characters. A script in the role part uses `runtime` to say "which runtime runs this script", and the base part uses `runtimes` to say "which tools I ask the environment for"; the names in the two places are the same set and are written the same way (the schema defines it in one place only: `$defs.runtimeName`). Registration is only a public declaration, and the check does not require the runtime to actually exist in the environment; when it is missing, the function that uses it reports `runtime_missing` at the time of use.
 
-官方基础部分现在登记一项：`ffmpeg`，`optional` 是 `true`，用途是解码 WAV 以外的音频、合成以后变速（语速、目标时长）、从视频里取音轨（原话见下面说的 `manifest-fields.json` 里的 `purpose`）。登记的内容和版本号放在基础部分根上的 `manifest-fields.json`（清单里除文件列表以外的字段，提交进仓库），发布时用 `seal --part base --fields manifest-fields.json` 写进清单；协议核心的版本号同理，放在 `protocol/manifest-fields.json`（只有 `version`）。官方版本的版本号就写在这两个文件里：发布时靠它决定发布哪个版本，已经发布过的版本号再发布，内容不一样就拒绝（`RELEASES.md`）。登记要和代码一致：代码里用 `@runtime <名字>` 登记了的运行时，清单里要有；清单里登记了的，代码里要有人在用。
+The official base part currently registers one entry: `ffmpeg`, with `optional` set to `true`, used to decode audio other than WAV, to change speed after synthesis (speaking rate, target duration), and to take the audio track out of a video (the original wording is the `purpose` in the `manifest-fields.json` mentioned below). The registered content and the version number are kept in `manifest-fields.json` at the root of the base part (the manifest's fields other than the file list, committed into the repository), and at release time `seal --part base --fields manifest-fields.json` writes them into the manifest; the protocol core's version number is handled the same way, kept in `protocol/manifest-fields.json` (which has only `version`). The version number of an official release is written in these two files: at release time it decides which version is released, and a version number that has already been released and is released again with different content is refused (`RELEASES.md`). The registration must be consistent with the code: a runtime that the code registers with `@runtime <name>` must be in the manifest; one registered in the manifest must be used by something in the code.
 
-### 4.4 角色部分的清单
+### 4.4 Manifest of the role part
 
-在 4.2 的四个共有字段之外，`part` 是 `role` 的清单还有（`必填` 的缺了就是不合格）：
+Besides the four common fields in 4.2, a manifest with `part` set to `role` has the following (one marked "required" that is missing makes the manifest invalid):
 
-| 字段 | 必填 | 说明 |
+| Field | Required | Description |
 |---|---|---|
-| `id` | 必填 | 包 ID，见「包 ID」 |
-| `name` | 必填 | 显示名，1–100 个字符 |
-| `changelog` | 必填 | 这个版本的变更说明，1–4000 个字符 |
-| `madeWith` | 必填 | `{ baseVersion }`：做这个包时用的基础部分版本（相当于「Made with」后面的版本号）。不记这个包是从哪个包来的 |
-| `requires` | 必填 | `{ protocolMajor, baseMin }`：要求基础部分的协议主版本（整数），以及基础部分的最低版本（semver）。`baseMin` 写发布时协议主版本就是 `protocolMajor` 的那个主版本里的版本（`protocolMajor` 是 3，就写 3.x 的版本，3.0.0 的预发布版也算，例如 3.0.0-beta.25）：补全只在 `baseMin` 的主版本里挑、又只挑协议主版本对得上的（第 11 节「取哪个版本」），主版本写错了，只有角色部分的包就补全不了 |
-| `features` | 必填 | 每个功能要的所需能力：键是功能名，值是 `{ capabilities: [能力名…] }`，能力名取自基础部分的能力词表（`vocab/capabilities.json`）。最多 64 个功能，每个功能最多 64 项能力。环境缺某项能力时，只有用到它的功能报错 |
-| `reference` | 必填 | 参考集：`{ defaultSegment, languageDefaults?, segments }`。`segments` 至少 1 段、最多 500 段；`defaultSegment` 是其中一段的 `id`；`languageDefaults` 是别的语言各自的默认段，写法见下「默认段」 |
-| `holdout` | 可选 | 留出录音：只用来量还原度，从不当参考。段的写法见下，最多 500 段 |
-| `externals` | 可选 | 外部资源：不放在包里、放在 URL 上，用 SHA-256 核对：`{ path, url, size, sha256 }`，最多 1000 项。`url` 必须是 `https://`，最长 2048 个字符。外部资源用路径引用，和包内文件一视同仁 |
-| `scripts` | 可选 | 脚本：`{ entry, runtime, feature? }`，登记入口和运行时，不声明权限。`entry` 必须是包内文件（不能是外部资源）；`runtime` 是运行时的名字，写法见「基础部分的清单」；最多 100 项。`feature` 说它属于哪个功能：只有写了的脚本才会随那个功能自动运行，没写的不属于任何功能，不会被自动运行（包的配音指引可以教 agent 手动用它，约定见 `lib/pack-script.mjs` 的文件头）。这不是问题，检查照样通过；`check` 命令的文字输出会点名这样的脚本 |
-| `enhancers` | 可选 | 增强件：只对某个模型有效、在那个模型上还原度更高的文件：`{ id, path, model, modelVersion, capability, referenceVersion }`。`referenceVersion` 是做它时用的那一版参考集（semver）。包不依赖增强件。最多 100 项 |
-| `direction` | 可选 | 配音指引里的结构化部分：`{ description?, tags? }`：一句音色描述（最长 500 个字符）、音色标签（每个 1–64 个字符，最多 32 个，不重复） |
-| `sampleLines` | 可选 | 示例台词：说明这个声音平时说什么、怎么说，字符串数组，每条是一句台词。最多 50 条，每条 1–500 个字符（按码点算），每条不能只有空白或看不见的字符（「语义规则」第 11 条）；同一句写两遍不算错。台词里可以带舞台提示，例如（耳语）、*笑*，写法和读法同基础部分的舞台提示（`lib/line-hints.mjs` 的文件头，词表 `vocab/cues.json`）；格式只存这条字符串、不解析它，所以不另设标签字段。字段叫 `sampleLines`，不叫 `samples`：有的音色社区的数据里 `samples` 指试听音频的网址 |
-| `cardLine` | 可选 | 卡片试听那一句：预览卡片（「分享文件」）和产品的卡片上放的一句台词和它的录音，`{ audio, text, seed?, expressiveness? }`。`text` 是台词，写法同 `sampleLines` 的一条：1–500 个字符（按码点算），不能只有空白或看不见的字符（「语义规则」第 11 条），可以带舞台提示，格式只存这条字符串、不解析它。`audio` 是它的录音，必须是文件列表里的文件（不能是外部资源：卡片要把它内嵌进去，「语义规则」第 4 条），和别的包内文件一样带大小和哈希。录音是用这个包自己的声音配的（基础部分的做包程序配，怎么配在它的 `lib/make-pack-card-line.mjs`）。`seed` 可选：配这一句时交给合成能力的 seed，0 到 2^53−1 的整数，环境收 seed 时才有（不收的不写）。同一个 seed 加同样的请求配出来是一样的，所以做包程序用同样的请求重配这一句时换一个（上一版的加 1），要记下上一版用的是哪个；格式只存这个数，配音、预览卡片都不读它。它不是参考，也不是留出录音：配音、变声、量还原度、挑默认段都不读它。`expressiveness` 可选：配这一句时单独取的起伏（做包时明说了才有），0 到 100 的整数（刻度见 `vocab/capability-signatures.md`）；只有这一句用这个值，别的照原来；沿用这一句的新版本不因它报 `expressiveness_changed`。卡片上放它还是默认段，由生成卡片的程序定（「分享文件」的 index.html）。卡片上写的是 `text` 去掉台本标记（方括号的提示、尖括号的标签、括号里的舞台说明）以后念出来的字，规则在协议核心的 `lib/spoken-words.mjs`；清单里存的还是原样 |
-| `setups` | 可选 | 几套设定：把配音时「怎么说」的固定值写进包里（固定到音色中）。数组，每项是一套：`{ name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }`，最多 500 套。`name` 是名字，1–100 个字符，同一个包里不能重名（「语义规则」第 13 条）；`labels` 是固定的标签 `{ language?, emotion?, style?, energy? }`：`language` 是语言标签（写法同参考段的 `language`），`emotion`、`style` 是 1–64 个字符的标签（名字取 `vocab/cues.json`），`energy` 是 `low`、`medium`、`high` 之一，它们和参考段的音色基底标签（`tag`）不是同一批东西；`referenceTag` 是这套设定的默认参考，写参考集里某段参考的音色基底标签（1–64 个字符，必须对得上，「语义规则」第 17 条），只是默认、不绑死，配音时可以换成别的标签（怎么用在基础部分的配音）；`speed` 是语速的倍数，正数（1 是不变，0.85 放慢，1.15 加快），配音在合成以后按它变速（台本里写的放慢、加快是交给模型的提示，和它不是一回事）；`expressiveness` 是这套设定固定的起伏，配音时调用方没给、这一行又用了这套设定，就用它（盖过顶层的 `expressiveness`，见下一行）（刻度见 `vocab/capability-signatures.md`；取值的先后和怎么交给模型，规则在 `lib/dub.mjs` 的文件头「设定」）；`instructions` 是一段给写台本的人看的说明，写口音、方言具体的特征，1–4000 个字符（格式只管这么多；配音不把它发给模型，见基础部分的 `references/make-pack.md`「几套设定」）；`default: true` 的那一套是配音时不点名就用的，最多一套（第 14 条）。换设定的值有两条路：原地保存、删除当前版本的设定，版本号不变（基础部分的 `references/make-pack.md`「几套设定」），只动那一个目录；或者发包的新版本。已经发出去的包和别处的副本不跟着变，要让它们也变就发新版本；配音时用哪一套是配音的参数（点名选一套；不点名就用带 `default` 的那一套；也可以明确这一次一套都不用，带 `default` 的也不套），不写进清单。配音怎么用设定，规则只在 `lib/dub.mjs` 的文件头「设定」写。3.x 的基础部分都认这个字段，3.x 以前的不读 3.x 的包（第 14 节），所以带 `setups` 的包对 `requires.baseMin` 没有另外的要求（照上面 `requires` 一行写） |
-| `expressiveness` | 可选 | 这个声音的起伏（全局值）：0 到 100 的整数（刻度见 `vocab/capability-signatures.md`）。它是整个声音的值，不是设定：不在 `setups` 里，配音时不用设定，它照用。配音时排在设定的 `expressiveness` 后面：调用方给的、这一行用的设定的，都没有才用它，再没有就不传。不写，这个包没有全局值。换它就发包的新版本（包一经发布就不变，见第 6 节）；发新版本不给就沿用上一版的，做包时可以明说去掉它 |
-| `verification` | 可选 | 验证记录：`{ environment, model, date, fidelity: { ratio?, measuredBy? } }`：在哪个环境、用哪个模型、哪天（`YYYY-MM-DD`）测的、还原度比值（非负数）。`measuredBy` 是量这个比值时用的评测模型：`{ speakerVerification?, blindListening? }`，说话人验证和盲听各用的模型名，每个 1–200 个字符（和 `model` 一样的短文字）；不知道是哪个模型就不写那个键，两个都不知道就不写 `measuredBy`。最多 100 项 |
-| `designSource` | 可选 | 设计来源：设计出来的音色，记下描述、用的模型和设计时试听用的台词：`{ description?, model?, modelVersion?, date?, auditionLines? }`。`auditionLines` 是试听台词：字符串数组，每项是一段试听的原文，最多 10 项，每项 1–4000 个字符（按码点算，和 `description` 一样），每项不能只有空白或看不见的字符（「语义规则」第 12 条） |
+| `id` | required | The pack ID, see "Pack ID" |
+| `name` | required | Display name, 1–100 characters |
+| `changelog` | required | The change notes for this version, 1–4000 characters |
+| `madeWith` | required | `{ baseVersion }`: the version of the base part used when this pack was made (like the version number after "Made with"). It does not record which pack this pack came from |
+| `requires` | required | `{ protocolMajor, baseMin }`: the protocol major version required of the base part (an integer), and the minimum version of the base part (semver). `baseMin` is written as a version in the major version whose protocol major version at release time is `protocolMajor` (if `protocolMajor` is 3, write a 3.x version; a 3.0.0 pre-release also counts, for example 3.0.0-beta.25): completion picks only within the major version of `baseMin`, and only among those whose protocol major version matches (section 11, "Which version to fetch"); if the major version is written wrongly, a pack with only the role part cannot be completed |
+| `features` | required | The required capabilities of each feature: the key is the feature name and the value is `{ capabilities: [capability name...] }`, with capability names taken from the base part's capability vocabulary (`vocab/capabilities.json`). At most 64 features, and at most 64 capabilities per feature. When the environment lacks a capability, only the features that use it report an error |
+| `reference` | required | The reference set: `{ defaultSegment, languageDefaults?, segments }`. `segments` has at least 1 and at most 500 segments; `defaultSegment` is the `id` of one of them; `languageDefaults` is the default segment of each other language, written as described below under "Default segment" |
+| `holdout` | optional | Held-out recordings: used only to measure fidelity, never as references. How a segment is written is below; at most 500 segments |
+| `externals` | optional | External resources: not stored in the pack but placed at a URL and checked with SHA-256: `{ path, url, size, sha256 }`, at most 1000 entries. `url` must be `https://`, at most 2048 characters. An external resource is referenced by its path, on the same footing as a file inside the pack |
+| `scripts` | optional | Scripts: `{ entry, runtime, feature? }`, which register the entry point and the runtime and declare no permissions. `entry` must be a file inside the pack (not an external resource); `runtime` is the name of the runtime, written as in "Manifest of the base part"; at most 100 entries. `feature` says which feature it belongs to: only a script with it written runs automatically with that feature; one without it belongs to no feature and is not run automatically (the pack's dubbing guidance may teach an agent to use it manually; the convention is in the file header of `lib/pack-script.mjs`). This is not a problem, and the check still passes; the text output of the `check` command names such scripts |
+| `enhancers` | optional | Enhancers: files that are valid only for one model and give higher fidelity on that model: `{ id, path, model, modelVersion, capability, referenceVersion }`. `referenceVersion` is the version of the reference set (semver) that was used to make it. The pack does not depend on enhancers. At most 100 entries |
+| `direction` | optional | The structured part of the dubbing guidance: `{ description?, tags? }`: a one-sentence voice description (at most 500 characters) and voice tags (each 1–64 characters, at most 32, no duplicates) |
+| `sampleLines` | optional | Sample lines: they say what this voice usually says and how it says it; an array of strings, each one a line. At most 50, each 1–500 characters (counted in code points), and each must not consist only of whitespace or invisible characters ("Semantic rules" item 11); writing the same line twice is not an error. A line may carry stage cues, for example （耳语） (whisper) or *笑* (laughs), written and read the same way as the base part's stage cues (file header of `lib/line-hints.mjs`, vocabulary `vocab/cues.json`; the two examples are Chinese because they are examples of Chinese lines); the format only stores the string and does not parse it, so there is no separate tag field. The field is named `sampleLines`, not `samples`: in the data of some voice communities `samples` means the URL of an audition audio |
+| `cardLine` | optional | Audition line: the one line, with its recording, shown with the pack, for example on the preview card ("Share file"): `{ audio, text, seed?, expressiveness? }`. `text` is the line, written like one entry of `sampleLines`: 1–500 characters (counted in code points), must not consist only of whitespace or invisible characters ("Semantic rules" item 11), may carry stage cues, and the format only stores the string and does not parse it. `audio` is its recording, and must be a file in the file list (not an external resource: the card embeds it, "Semantic rules" item 4), carrying a size and a hash like any other file in the pack. The recording is dubbed with this pack's own voice (by the base part's make-pack program; how it is dubbed is in its `lib/make-pack-card-line.mjs`). `seed` is optional: the seed handed to the synthesis capability when this line was dubbed, an integer from 0 to 2^53−1, present only when the environment takes a seed (leave it out if it does not). The same seed with the same request was measured to give the same clip in one set of runs and different clips in another (`models/scene3.md`「Sampling: `seed`」). When the make-pack program re-dubs this line with the same request it uses a different seed (the previous version's plus 1), and must record which one the previous version used; the format only stores this number, and neither dubbing nor the preview card reads it. It is not a reference and not a held-out recording: dubbing, voice conversion, measuring fidelity and picking the default segment do not read it. `expressiveness` is optional: the expressiveness taken separately for dubbing this line (present only if it was stated explicitly when the pack was made), an integer from 0 to 100 (for the scale see `vocab/capability-signatures.md`); only this line uses this value and everything else stays as before; a new version that keeps this line is not reported as `expressiveness_changed` because of it. Whether the card shows it or the default segment is decided by the program that generates the card (the index.html of "Share file"). What the card shows is the words read aloud from `text` after the script markup is removed (cues in square brackets, tags in angle brackets, stage directions in parentheses); the rule is in the protocol core's `lib/spoken-words.mjs`; the manifest still stores it as written |
+| `setups` | optional | Several setups: write the fixed values of "how it is said" for dubbing into the pack (fixed into the voice). An array, each entry one setup: `{ name, labels?, referenceTag?, speed?, instructions?, expressiveness?, default? }`, at most 500 setups. `name` is the name, 1–100 characters, and must not repeat within one pack ("Semantic rules" item 13); `labels` are fixed labels `{ language?, emotion?, style?, energy? }`: `language` is a language tag (written as the `language` of a reference segment), `emotion` and `style` are labels of 1–64 characters (names taken from `vocab/cues.json`), and `energy` is one of `low`, `medium`, `high`; these are not the same set as the reference tag (`tag`) of a reference segment; `referenceTag` is the default reference of this setup, written as the reference tag of one reference segment in the reference set (1–64 characters, which must match, "Semantic rules" item 17), only a default and not binding, and dubbing may replace it with another tag (how it is used is in the base part's dubbing); `speed` is a multiplier of the speaking rate, a positive number (1 is unchanged, 0.85 slows down, 1.15 speeds up), and dubbing changes the speed by it after synthesis (the "slow down" and "speed up" written in a script are cues handed to the model, which is not the same thing); `expressiveness` is the expressiveness fixed by this setup: if the caller gives none when dubbing and this line uses this setup, it is used (it overrides the top-level `expressiveness`, see the next row) (for the scale see `vocab/capability-signatures.md`; the order in which values are taken and how they are handed to the model are specified in the "Setup" part of the file header of `lib/dub.mjs`); `instructions` is a note for the person writing the script, describing the concrete features of an accent or dialect, 1–4000 characters (the format governs only this much; dubbing does not send it to the model, see the base part's `references/make-pack.md`「Several setups (writing fixed values into the voice)」); the one with `default: true` is used when dubbing without naming a setup, at most one (item 14). There are two ways to change the values of a setup: save in place and delete the setups of the current version, with the version number unchanged (the base part's `references/make-pack.md`「Several setups (writing fixed values into the voice)」), touching only that one directory; or publish a new version of the pack. Packs already sent out and copies elsewhere do not change with it; to change them too, publish a new version. Which setup is used when dubbing is a parameter of dubbing (name one; without a name the one with `default` is used; the caller may also state that this time no setup is used at all, and not even the one with `default` is applied), and is not written into the manifest. How dubbing uses setups is specified only in the "Setup" part of the file header of `lib/dub.mjs`. Every 3.x base part recognises this field, and bases before 3.x do not read 3.x packs (section 14), so a pack with `setups` has no extra requirement on `requires.baseMin` (write it as in the `requires` row above) |
+| `expressiveness` | optional | The expressiveness of this voice (a global value): an integer from 0 to 100 (for the scale see `vocab/capability-signatures.md`). It is the value of the whole voice, not a setup: it is not in `setups`, and dubbing uses it even when it uses no setup. When dubbing it ranks after the setup's `expressiveness`: it is used only if neither the caller's nor the used setup's is given, and if there is still none, nothing is passed. If it is not written, the pack has no global value. Changing it means publishing a new version of the pack (a pack does not change once it is published, see section 6); a new version that does not give it keeps the previous version's, and making a pack may state explicitly that it is to be removed |
+| `verification` | optional | Verification records: `{ environment, model, date, fidelity: { ratio?, measuredBy? } }`: in which environment, with which model, on which day (`YYYY-MM-DD`) it was measured, and the fidelity ratio (a non-negative number). `measuredBy` is the evaluation model used to measure this ratio: `{ speakerVerification?, blindListening? }`, the model name used for speaker verification and for blind listening respectively, each 1–200 characters (short text like `model`); if you do not know which model it was, leave that key out, and if you know neither, leave out `measuredBy`. At most 100 entries |
+| `designSource` | optional | Design source: for a designed voice, records the description, the model used and the lines used to audition during design: `{ description?, model?, modelVersion?, date?, auditionLines? }`. `auditionLines` is the design audition text: an array of strings, each one the original text of one audition, at most 10 items, each 1–4000 characters (counted in code points, like `description`), and each must not consist only of whitespace or invisible characters ("Semantic rules" item 12) |
 
-**参考段和留出录音**的写法（`reference.segments` 和 `holdout` 的每一项；留出录音只有 `id`、`audio`、`text`、`language`、`synthetic`，不带 `tag` 和 `annotatedText`：它不当参考，用不着切换）：
+**Reference segments and held-out recordings** are written as follows (for each entry of `reference.segments` and `holdout`; a held-out recording has only `id`, `audio`, `text`, `language`, `synthetic`, and no `tag` or `annotatedText`: it is not used as a reference, so it needs no switching):
 
-| 字段 | 说明 |
+| Field | Description |
 |---|---|
-| `id` | 名字：小写字母、数字、连字符、下划线，以字母或数字开头，最长 64 个字符 |
-| `audio` | 音频文件的路径：包内文件，或者外部资源的路径 |
-| `text` | 逐字文本，1–2000 个字符。参考段的文本不能只有空白或看不见的字符（「语义规则」第 10 条）：每段参考音频都要有对应的文本 |
-| `annotatedText` | 可选，提示标注：`text` 在说法变化的地方加上方括号提示的整句，例如 `[normal]啊，瞧瞧这是谁？[laughs]呵呵，[happy]太可爱了吧。`。提示以外的字和 `text` 一样。1–4000 个字符，不能只有空白或看不见的字符（「语义规则」第 10 条）；没有提示标注就不写这个键。配音时它和参考一起交给模型（模型或平台不收参考的文字时，由适配器决定怎么办），没有就交 `text`。写的人：做包（素材给了的照给的，没给的让能听音频的模型标，写法在基础部分的 `lib/segment-annotation.mjs`）；只写在参考段上，留出录音不写 |
-| `language` | 必填，这段的语言：语言标签，2 到 3 个字母，后面可以接几段「连字符 + 2 到 8 个字母或数字」（schema 的 `$defs.languageTag`），最长 35 个字符，例如 `en`、`zh-CN`、`zh-Hans-CN`；不收下划线（`zh_CN` 报 `manifest_invalid`）。比语言时按规范化以后的写法比（NFKC、小写），`zh-CN` 和 `zh-cn` 是同一种语言（`protocol/lib/manifest.mjs` 的 `languageKey`；它还把下划线当连字符，那只对清单以外交进来的语言有用，例如配音时调用方给的台词语言） |
-| `tag` | 参考段必填，音色基底标签：这段参考的一个短名字，只用来在一个包的几段参考之间切换，例如「平常」「愤怒」「少年」「苍老」（不同情绪、不同年龄……都写成这一个标签）。自由文字，中文、英文都行，1–64 个字符（按码点算），不能只有空白或看不见的字符（「语义规则」第 10 条）。逐字比，大小写不同就是两个标签；同一种语言里两段参考不能同一个标签，不同语言可以（第 16 条）。合成的段（`synthetic`）一样带标签、一样能被设定引用。写的人：做包（素材给了的照给的；没给的，做包时能听音频的模型给这段标提示标注时顺带起一个名字，起不成的用段的 `id`；同一种语言里撞名的加序号；发新版本时作者可以改上一版参考的标签。写法在基础部分的 `lib/make-pack-tags.mjs`） |
-| `synthetic` | 可选，布尔值。`true` 表示这段是合成的（例如从这个人的一段干净参考重新生成的一段），不是这个人录的；不写或 `false` 就是真录音。写的人：做包（素材里标了的，发新版本时上一版的段沿用原来的标记）。读的人：挑留出录音（合成的不当留出录音，也不算进「够不够留出」的段数）、真人基线（不进基线）、报告的真录音段数（不数它）。它不影响当参考、当默认段：和真录音一样挑。设计出来的声音的段不标，它的来源记在 `designSource` 里 |
+| `id` | The name: lowercase letters, digits, hyphens, underscores, starting with a letter or digit, at most 64 characters |
+| `audio` | The path of the audio file: a file inside the pack, or the path of an external resource |
+| `text` | Verbatim transcript, 1–2000 characters. The text of a reference segment must not consist only of whitespace or invisible characters ("Semantic rules" item 10): every reference audio must have its matching text |
+| `annotatedText` | Optional, cue annotation: the whole sentence of `text` with cues in square brackets added where the way of speaking changes, for example `[normal]啊，瞧瞧这是谁？[laughs]呵呵，[happy]太可爱了吧。` (the spoken words are Chinese, an example of a Chinese line). The words other than the cues are the same as `text`. 1–4000 characters, must not consist only of whitespace or invisible characters ("Semantic rules" item 10); if there is no cue annotation, do not write this key. When dubbing it is handed to the model together with the reference (when the model or platform does not take the text of a reference, the adapter decides what to do), and if it is absent `text` is handed over. Who writes it: making a pack (what the material gave is used as given; where it gave none, a model that can listen to audio annotates it; how it is written is in the base part's `lib/segment-annotation.mjs`); written only on reference segments, not on held-out recordings |
+| `language` | Required, the language of this segment: a language tag, 2 to 3 letters, optionally followed by several groups of "hyphen + 2 to 8 letters or digits" (`$defs.languageTag` in the schema), at most 35 characters, for example `en`, `zh-CN`, `zh-Hans-CN`; underscores are not accepted (`zh_CN` reports `manifest_invalid`). Languages are compared in their normalised form (NFKC, lowercase), so `zh-CN` and `zh-cn` are the same language (`languageKey` in `protocol/lib/manifest.mjs`; it also treats an underscore as a hyphen, which is useful only for a language that comes in from outside the manifest, for example the language of a line given by the caller when dubbing) |
+| `tag` | Required for a reference segment, the reference tag: a short name for this reference, used only to switch among the several references of one pack, for example "平常" (normal), "愤怒" (angry), "少年" (young), "苍老" (aged) (different emotions, different ages... are all written as this one tag; the examples are Chinese tags, to show that a tag may be in any language). Free text, Chinese or English both fine, 1–64 characters (counted in code points), must not consist only of whitespace or invisible characters ("Semantic rules" item 10). Compared character by character, so a different case means two different tags; two references in the same language must not have the same tag, but different languages may (item 16). A synthetic segment (`synthetic`) carries a tag all the same and can be referenced by a setup all the same. Who writes it: making a pack (what the material gave is used as given; where it gave none, the model that can listen to audio, when it gives this segment a cue annotation, also comes up with a name along the way, and where that is not possible the segment's `id` is used; a name that clashes within the same language gets a number added; when publishing a new version the author may change the tags of the previous version's references. How it is written is in the base part's `lib/make-pack-tags.mjs`) |
+| `synthetic` | Optional, boolean. `true` means this segment is synthetic (for example regenerated from one clean reference of this person), not recorded by this person; if absent or `false` it is a real recording. Who writes it: making a pack (what the material marked; when publishing a new version, the previous version's segments keep their original marks). Who reads it: picking held-out recordings (a synthetic one is not used as a held-out recording and is not counted in the number of segments for "enough to hold out"), the human baseline (it does not enter the baseline), the number of real-recording segments in a report (it is not counted). It has no effect on serving as a reference or as the default segment: it is picked like a real recording. The segments of a designed voice are not marked; their source is recorded in `designSource` |
 
-**默认段**：一个角色可以说几种语言，每种语言各有一段默认段，配音时一句台词用它的语言的那一段（怎么按台词的语言挑，规则在基础部分的 `lib/reference-pick.mjs` 的文件头）。
+**Default segment**: A character can speak several languages, each language has its own default segment, and when dubbing, a line uses the segment of its own language (how one is picked by the line's language is specified in the file header of the base part's `lib/reference-pick.mjs`).
 
-- `defaultSegment` 是主语言的默认段：它的 `language` 就是这个包的主语言。台词的语言包里没有、或者看不出台词的语言时，用它。
-- `languageDefaults` 是别的语言各自的默认段：段的 `id` 的数组，最多 500 项，次序不算。每一项必须是参考集里的一段（「语义规则」第 6 条）；语言按规范化以后的写法比（同上面参考段的 `language` 一行），一种语言最多一段，也不能和 `defaultSegment` 同一种语言（第 15 条）。`zh-CN` 和 `zh-TW` 是两种语言，可以各有一段。
-- 参考集里有、可是 `defaultSegment` 和 `languageDefaults` 都没说到的语言，它的默认段是参考集里这种语言排在最前的那一段。所以只有一种语言的包、没写 `languageDefaults` 的包照旧能读：不写这个键就是「别的语言都用排在最前的那一段」，不用迁移。
-- 基础部分的做包程序给每种语言都写一段（主语言的写 `defaultSegment`，别的写 `languageDefaults`；只有一种语言就不写这个键），怎么挑在它的 `lib/pack-material.mjs` 的文件头。
+- `defaultSegment` is the default segment of the primary language: its `language` is this pack's primary language. It is used when the pack has no segment in the line's language, or when the line's language cannot be told.
+- `languageDefaults` is the default segment of each other language: an array of segment `id`s, at most 500 entries, order does not matter. Each entry must be a segment in the reference set ("Semantic rules" item 6); languages are compared in normalised form (same as the `language` row of reference segments above), each language has at most one segment, and it must not be the same language as `defaultSegment` (item 15). `zh-CN` and `zh-TW` are two languages and may each have one.
+- For a language that the reference set has but neither `defaultSegment` nor `languageDefaults` mentions, its default segment is the first segment of that language in the reference set. So a pack with only one language, and a pack that does not write `languageDefaults`, can still be read as before: leaving the key out means "every other language uses its first segment", with no migration needed.
+- The base part's make-pack program writes one segment for each language (the primary language's goes in `defaultSegment`, the others go in `languageDefaults`; with only one language the key is not written); how it picks is in the file header of its `lib/pack-material.mjs`.
 
-各个名字（`id`、功能名、能力名）的写法：功能名和各种 `id` 是「小写字母、数字、连字符、下划线」；能力名是小写字母、数字和连字符，以字母开头，最长 64 个字符。
+How the names (`id`, feature names, capability names) are written: feature names and the various `id`s are "lowercase letters, digits, hyphens, underscores"; capability names are lowercase letters, digits and hyphens, starting with a letter, at most 64 characters.
 
-### 4.5 语义规则
+### 4.5 Semantic rules
 
-schema 通过以后，下面这些规则也必须成立，否则清单不合格（检查时报 `manifest_invalid`，`details.reason` 是括号里的名字）：
+After the schema passes, the rules below must also hold, otherwise the manifest is invalid (the check reports `manifest_invalid`, and `details.reason` is the name in brackets):
 
-1. `files` 和 `externals` 各自按路径的 UTF-8 字节序排列（`files_unsorted`、`externals_unsorted`）。
-2. 每条路径都过「路径」一节的规则（`path_unsafe`）；文件列表和外部资源合起来没有冲突（`path_conflict`）。
-3. 不列清单自己和它的签名（`listed_self`）；不列交给子部分管的目录里的文件（`listed_delegated`）。
-4. 参考音频、留出录音、增强件的路径，必须是文件列表里的文件或外部资源；脚本入口、卡片试听那一句的音频（`cardLine.audio`）必须是文件列表里的文件（`reference_unresolved`）。
-5. 参考段、留出录音的 `id` 不重复（互相之间也不重复）；增强件的 `id` 不重复（`duplicate_id`）。
-6. `defaultSegment` 和 `languageDefaults` 的每一项，必须是参考集里的一段，留出录音不算（`default_segment_unknown`；`languageDefaults` 的那一项，`details.pointer` 是 `/reference/languageDefaults/<序号>`，序号从 0 起）。
-7. 一个音频文件不能既当参考又当留出录音（`holdout_is_reference`）。
-8. 脚本的 `feature`（如果写了）必须是 `features` 里有的功能（`feature_unknown`）。
-9. 基础部分的 `runtimes` 里，同一个运行时只登记一次（`duplicate_runtime`）。
-10. 参考段的 `text` 不能只有空白或看不见的字符（空格、换行、零宽空格、控制字符……，`text_blank`；空串由 schema 的 `minLength` 管）。写了 `annotatedText` 的，它也一样（同一个 reason，`details.pointer` 是 `/reference/segments/<序号>/annotatedText`）；音色基底标签 `tag` 也一样（`details.pointer` 是 `/reference/segments/<序号>/tag`）。再加上 schema 要求参考集至少 1 段、每段都有 `audio`，规则 4 要求 `audio` 有着落，就是校验里「内容」那一条：至少有一段参考音频和对应的文本。这一条只在清单这里判定、报告，互相校验不再查第二遍。
-11. 示例台词（`sampleLines`）的每一条，同样不能只有空白或看不见的字符：和第 10 条是同一套判断，reason 也是 `text_blank`，`details.pointer` 是 `/sampleLines/<序号>`（序号从 0 起）。卡片试听那一句的台词（`cardLine.text`）也一样，`details.pointer` 是 `/cardLine/text`。条数和每条的长度由 schema 管（空串由 `minLength` 管）。只有舞台提示的一条（例如「（耳语）」）有看得见的字，不算空：格式不去判断一条台词「有没有话」。
-12. 设计来源里的试听台词（`designSource.auditionLines`）的每一项，同样不能只有空白或看不见的字符：和第 10 条是同一套判断，reason 也是 `text_blank`，`details.pointer` 是 `/designSource/auditionLines/<序号>`（序号从 0 起）。项数和每项的长度由 schema 管（空串由 `minLength` 管）。
-13. 设定（`setups`）的 `name` 在同一个包里不重名（`duplicate_setup`，`details.pointer` 是 `/setups/<序号>/name`，序号是后出现的那一套，从 0 起）。
-14. 最多一套设定带 `default: true`（`duplicate_default_setup`，`details.pointer` 是后出现的那一套的 `/setups/<序号>/default`）。`speed` 是不是正数、`expressiveness`（设定的，清单顶层的，`cardLine` 里的）是不是 0 到 100 的整数、`labels` 的写法对不对，由 schema 管。
-15. 每种语言最多一段默认段（4.4「默认段」）：`languageDefaults` 里一项的语言，和 `defaultSegment` 的、或者和排在它前面的一项的一样（按规范化以后的写法比），就不合格（`duplicate_language_default`，`details.pointer` 是后出现的那一项的 `/reference/languageDefaults/<序号>`，`details.language` 是它的语言，`details.other` 是先说到这种语言的那一处的 pointer）。
-16. 同一种语言（按规范化以后的写法比）里，两段参考不能是同一个音色基底标签（逐字比，`Angry` 和 `angry` 是两个）：`duplicate_reference_tag`，`details.pointer` 是后出现的那一段的 `/reference/segments/<序号>/tag`，`details.other` 是先有这个标签的那一段的 pointer，`details.id`、`details.language`、`details.tag` 是后出现的那一段的。不同语言可以同一个标签。
-17. 设定的 `referenceTag`（如果写了）必须是参考集里某段参考的音色基底标签（逐字比；留出录音没有标签）：`reference_tag_unknown`，`details.pointer` 是这套设定的 `/setups/<序号>/referenceTag`，`details.name` 是设定的名字，`details.referenceTag` 是写的标签，`details.tags` 是参考集里按语言列的标签 `[{ language, tags: [标签…] }]`：语言按规范化以后的写法归在一起，写这种语言在参考集里第一次出现的写法；语言、标签都按参考集里的次序（同一个标签只列一次）。读包的程序报「对不上这个包的标签」时都照这个写法列（基础部分的配音、变声也是）。
+1. `files` and `externals` are each sorted by the UTF-8 byte order of the path (`files_unsorted`, `externals_unsorted`).
+2. Every path passes the rules of the "Paths" section (`path_unsafe`); the file list and the external resources together have no conflict (`path_conflict`).
+3. The manifest does not list itself or its signature (`listed_self`); it does not list files in a directory that is left to a sub-part (`listed_delegated`).
+4. The paths of reference audio, held-out recordings and enhancers must be a file in the file list or an external resource; the script entry and the audition line's audio (`cardLine.audio`) must be a file in the file list (`reference_unresolved`).
+5. The `id`s of reference segments and held-out recordings do not repeat (including between the two); the `id`s of enhancers do not repeat (`duplicate_id`).
+6. `defaultSegment` and every entry of `languageDefaults` must be a segment in the reference set; held-out recordings do not count (`default_segment_unknown`; for an entry of `languageDefaults`, `details.pointer` is `/reference/languageDefaults/<index>`, with the index starting at 0).
+7. An audio file cannot be both a reference and a held-out recording (`holdout_is_reference`).
+8. A script's `feature` (if written) must be a feature that exists in `features` (`feature_unknown`).
+9. In the base part's `runtimes`, the same runtime is registered only once (`duplicate_runtime`).
+10. The `text` of a reference segment must not consist only of whitespace or invisible characters (spaces, newlines, zero-width spaces, control characters..., `text_blank`; the empty string is handled by the schema's `minLength`). If `annotatedText` is written, the same holds for it (the same reason, with `details.pointer` being `/reference/segments/<index>/annotatedText`); the reference tag `tag` is the same (`details.pointer` is `/reference/segments/<index>/tag`). Add that the schema requires the reference set to have at least 1 segment and every segment to have `audio`, and rule 4 requires that `audio` resolve to something; together these are the "content" item in validation: at least one reference audio and its matching text. This item is decided and reported only here in the manifest, and mutual verification does not check it a second time.
+11. Each entry of the sample lines (`sampleLines`) likewise must not consist only of whitespace or invisible characters: the same judgement as rule 10, the reason is also `text_blank`, and `details.pointer` is `/sampleLines/<index>` (index starting at 0). The same holds for the audition line's text (`cardLine.text`), with `details.pointer` being `/cardLine/text`. The number of entries and the length of each are handled by the schema (the empty string is handled by `minLength`). An entry with only a stage cue (for example "（耳语）", a Chinese example meaning "(whisper)") has visible characters and is not counted as empty: the format does not judge whether a line "has any words".
+12. Each item of the audition text in the design source (`designSource.auditionLines`) likewise must not consist only of whitespace or invisible characters: the same judgement as rule 10, the reason is also `text_blank`, and `details.pointer` is `/designSource/auditionLines/<index>` (index starting at 0). The number of items and the length of each are handled by the schema (the empty string is handled by `minLength`).
+13. The `name` of a setup (`setups`) does not repeat within one pack (`duplicate_setup`, `details.pointer` is `/setups/<index>/name`, the index being that of the setup that appears later, starting at 0).
+14. At most one setup carries `default: true` (`duplicate_default_setup`, `details.pointer` is `/setups/<index>/default` of the setup that appears later). Whether `speed` is a positive number, whether `expressiveness` (of a setup, of the manifest's top level, in `cardLine`) is an integer from 0 to 100, and whether `labels` is written correctly are handled by the schema.
+15. Each language has at most one default segment (4.4, "Default segment"): if the language of an entry in `languageDefaults` is the same as that of `defaultSegment` or of an earlier entry (compared in normalised form), the manifest is invalid (`duplicate_language_default`, `details.pointer` is `/reference/languageDefaults/<index>` of the entry that appears later, `details.language` is its language, and `details.other` is the pointer of the place that mentioned this language first).
+16. Within the same language (compared in normalised form), two references cannot have the same reference tag (compared character by character, so `Angry` and `angry` are two): `duplicate_reference_tag`, `details.pointer` is `/reference/segments/<index>/tag` of the segment that appears later, `details.other` is the pointer of the segment that had this tag first, and `details.id`, `details.language`, `details.tag` are those of the segment that appears later. Different languages may have the same tag.
+17. A setup's `referenceTag` (if written) must be the reference tag of some reference segment in the reference set (compared character by character; a held-out recording has no tag): `reference_tag_unknown`, `details.pointer` is `/setups/<index>/referenceTag` of this setup, `details.name` is the setup's name, `details.referenceTag` is the tag written, and `details.tags` is the tags of the reference set listed by language, `[{ language, tags: [tag...] }]`: languages are grouped by their normalised form and shown as written where this language first appears in the reference set; both languages and tags follow the order in the reference set (the same tag is listed once). Whenever a program that reads packs reports "does not match this pack's tags", it lists them in this form (dubbing and voice conversion in the base part do the same).
 
-另有两种读不了的情况：不是合法的 UTF-8 JSON、带字节序标记、嵌套深得不正常（`manifest_not_json`）；协议主版本不是这一版认得的（`protocol_unsupported`，这时不去猜别的字段）。
+There are two more cases that cannot be read: not valid UTF-8 JSON, a byte order mark, or abnormally deep nesting (`manifest_not_json`); and a protocol major version that this version does not recognise (`protocol_unsupported`; in that case other fields are not guessed at).
 
-### 4.6 版本
+### 4.6 Version
 
-- 协议版本用「主.次」两段。同一个主版本内兼容：次版本只加不删，读到比自己新的次版本时，不认识的字段忽略。主版本不同就不读。
-- 基础部分、协议核心、角色部分各自用语义化版本号。`requires` 说角色部分要求基础部分的协议主版本和最低版本。
-- 基础部分比角色部分要求的低、协议主版本不兼容，是「互相校验」的内容，见「检查」一节末尾。
+- The protocol version has two parts, "major.minor". Within the same major version it is compatible: minor versions only add and never remove, and when a reader meets a minor version newer than its own, it ignores the fields it does not recognise. Different major versions are not read.
+- The base part, the protocol core and the role part each use a semantic version number. `requires` says which protocol major version and which minimum version of the base part the role part requires.
+- A base part lower than what the role part requires, or an incompatible protocol major version, falls under "mutual verification"; see the end of the "Check" section.
 
-### 4.7 签名
+### 4.7 Signature
 
-基础部分和协议核心的清单由官方用 Ed25519 签名，签名文件放在清单旁边，叫 `manifest.json.minisig`。签名文件不列进清单，也不算「多出来的文件」；角色部分的清单没有官方签名（作者身份交给社区账号）。格式、信任名单和命令见 `SIGNATURES.md`。
+The manifests of the base part and the protocol core are signed officially with Ed25519, and the signature file sits next to the manifest, named `manifest.json.minisig`. The signature file is not listed in the manifest and does not count as an "extra file"; the role part's manifest has no official signature (the author's identity is left to community accounts). For the format, the trust list and the commands see `SIGNATURES.md`.
 
 ## 5. SKILL.md
 
-每个部分（基础部分、角色部分）的根上都有 `SKILL.md`，必须符合 Agent Skills 规范（<https://agentskills.io/specification>，2026-10-14 取回核对）。协议核心不是一个 skill，没有 `SKILL.md`。
+The root of every part (base part, role part) has a `SKILL.md`, which must conform to the Agent Skills specification (<https://agentskills.io/specification>, retrieved and checked 2026-10-14). The protocol core is not a skill and has no `SKILL.md`.
 
-**frontmatter**：开头是 `---` 包起来的 YAML，只能有这 6 个字段，别的一律不收：
+**frontmatter**: it starts with YAML wrapped in `---`, may have only these 6 fields, and nothing else is accepted:
 
-| 字段 | 要求 |
+| Field | Requirement |
 |---|---|
-| `name` | 必填。1–64 个字符，只用小写字母、数字和连字符，不以连字符开头或结尾，不连用两个连字符。必须等于目录名：角色部分是包 ID，基础部分是 `voice-pack` |
-| `description` | 必填。1–1024 个字符 |
-| `license` | 可选 |
-| `compatibility` | 可选。1–500 个字符 |
-| `metadata` | 可选。字符串到字符串的映射 |
-| `allowed-tools` | 可选。空格分隔的字符串 |
+| `name` | Required. 1–64 characters, only lowercase letters, digits and hyphens, not starting or ending with a hyphen, no two consecutive hyphens. Must equal the directory name: the pack ID for the role part, `voice-pack` for the base part |
+| `description` | Required. 1–1024 characters |
+| `license` | Optional |
+| `compatibility` | Optional. 1–500 characters |
+| `metadata` | Optional. A mapping from string to string |
+| `allowed-tools` | Optional. A space-separated string |
 
-版本号、所需能力、对基础部分的要求都写进清单，不写进 frontmatter。
+The version number, the required capabilities and the requirements on the base part are all written in the manifest, not in the frontmatter.
 
-**能读的 YAML 写法**：我们不引入 YAML 库，只读一个够用的子集：顶层是「字段名: 值」；值可以是朴素标量、单引号或双引号标量（可跨行）、块标量（`|` 和 `>` 加 `-` 或 `+`）；`metadata` 这样的映射只认一层缩进；整行和行尾的 `#` 是注释。所有标量都读成字符串，不做类型推断；朴素标量如果 YAML 会把它读成数字、布尔、空值或日期（例如 `version: 1.0`），要求加引号，因为规范要的是字符串、不同的 YAML 实现读法不一样。流式的 `{…}`、`[…]`、块序列、锚点、别名、标签、嵌套映射明确拒绝。写给第三方的建议：frontmatter 里的值一律写成双引号字符串，最稳。逐条的拒绝原因写在 `protocol/lib/skill-md.mjs` 的文件头。
+**YAML syntax that can be read**: we do not bring in a YAML library, and read only a subset that is enough: at the top level "field name: value"; a value may be a plain scalar, a single- or double-quoted scalar (may span lines), or a block scalar (`|` and `>` with `-` or `+`); a mapping such as `metadata` accepts only one level of indentation; a `#` on a whole line or at the end of a line is a comment. All scalars are read as strings, with no type inference; a plain scalar that YAML would read as a number, boolean, null or date (for example `version: 1.0`) is required to be quoted, because the specification wants a string and different YAML implementations read it differently. Flow-style `{…}`, `[…]`, block sequences, anchors, aliases, tags and nested mappings are explicitly rejected. Advice to third parties: write every value in the frontmatter as a double-quoted string, which is the most robust. The reason for each rejection is written in the file header of `protocol/lib/skill-md.mjs`.
 
-**角色部分的 SKILL.md** 要写清楚：这是谁的声音，能拿来做什么，需要哪个版本的基础部分，没有时怎么补全，怎么从它做新包；正文就是配音指引。打包时生成的骨架（`buildRoleSkillMd`）有这几节：
+**SKILL.md of the role part** must make clear: whose voice this is, what it can be used for, which version of the base part it needs, how to complete it when there is none, and how to make a new pack from it; the body is the dubbing guidance. The skeleton generated at packing time (`buildRoleSkillMd`) has these sections:
 
-1. 开头一段：这是谁的包，要和基础部分一起用；
-2. 「这是谁的声音」：名字、包 ID、版本、参考集有几段、默认参考段（清单写了 `languageDefaults` 的，接着写别的语言各自的默认段）；清单里有示例台词时再加一行：有几句，在清单的 `sampleLines` 里；
-3. 「能拿来做什么」：每个功能要的所需能力的表，以及放进环境、配音、写台本的要点（写台本：情绪和风格写成方括号的提示，指到基础部分 `references/dub.md` 讲提示的那一步）；参考段带音色基底标签的，再加一条：按语言列出标签，说清不点名时用哪段（有设定写了 `referenceTag` 的，先用选中的那套写的，再用这句语言的默认段），以及怎么换参考（下面「骨架里不写基础部分命令行的命令和选项」一段说的破例）；包里有增强件、脚本、变声功能的，再加几条；
-4. 「需要哪个版本的基础部分」：协议主版本、最低版本、做包时用的版本；
-5. 「没有基础部分时怎么补全」：什么时候补全，运行哪条命令，每一步做什么，几种常见的错误；
-6. 「怎么做新包」：新包用新的包 ID；先用基础部分的命令生成净室输入，交给一个看不到这个包的新会话或子 agent 去写文字（读过这个包的当前 agent 不写），再把这个包当来源包交给做包命令，做包并查重；做包的 agent 只拿协议核心里的抽象规格，不读这个包的角色内容；
-7. 「配音指引」：作者写的正文，提示可以写语气、节奏、情绪、口头禅、到了不同的场景怎么说，只写想要的效果，不用某个模型的指令语法。可以分成五节，见下面「配音指引的五个小节」。
+1. An opening paragraph: whose pack this is, and that it is to be used together with the base part;
+2. "这是谁的声音" (Whose voice this is): the name, the pack ID, the version, how many segments the reference set has, the default reference segment (if the manifest has `languageDefaults`, followed by the default segment of each other language); when the manifest has sample lines, one more line: how many there are, and that they are in the manifest's `sampleLines`;
+3. "能拿来做什么" (What it can be used for): a table of the required capabilities of each feature, and the key points for putting it into an environment, dubbing, and writing scripts (writing scripts: write emotion and style as cues in square brackets, pointing to the step in the base part's `references/dub.md` that covers cues); when reference segments carry reference tags, one more item: list the tags by language, say clearly which segment is used when none is named (if a setup has written `referenceTag`, first the one written by the chosen setup, then the default segment of this line's language), and how to switch the reference (the exception described in the paragraph "The skeleton does not write base-part command-line commands and options" below); when the pack has enhancers, scripts or a voice conversion feature, a few more items;
+4. "需要哪个版本的基础部分" (Which version of the base part it needs): the protocol major version, the minimum version, the version used when the pack was made;
+5. "没有基础部分时怎么补全" (Completing the pack when the base part is missing): when to complete, which command to run, what each step does, and several common errors;
+6. "怎么做新包" (How to make a new pack): the new pack uses a new pack ID; first use the base part's command to generate the clean room input, and hand it to a new session or sub-agent that cannot see this pack to write the text (the current agent, which has read this pack, does not write it), then hand this pack to the make-pack command as the source pack, make the pack and run the duplicate check; the agent that makes the pack gets only the abstract specification in the protocol core and does not read this pack's role content;
+7. "配音指引" (dubbing guidance): the body written by the author; it may describe tone, rhythm, emotion, catchphrases, how to speak in different scenes, writing only the effect wanted and not the instruction syntax of any one model. It may be divided into five subsections, see "The five subsections of the dubbing guidance" below.
 
-第 5、6 节写的是做实了的步骤：补全用 `node protocol/cli.mjs complete .`（规则见本文的「补全」一节）；做新包的流程、谁能看什么、每个字段怎么写、查重比什么，正本是 `new-pack/README.md`（和它旁边的空白模板、任务说明）。骨架里没有留着待补的占位：只有「配音指引」一节在作者写之前是一段提示（英文的骨架什么都不放，见下面的「骨架的语言」）。frontmatter 的 `name` 等于包 ID，`description` 在中文的骨架里中英文各一段、在英文的骨架里只有英文一段，`compatibility` 写要求的基础部分版本和所需能力。
+Sections 5 and 6 describe steps that have been made to work: completion uses `node protocol/cli.mjs complete .` (the rules are in this file's "Completing a pack" section); the procedure for making a new pack, who can see what, how each field is written, and what the duplicate check compares are authoritatively in `new-pack/README.md` (and the blank template and task description next to it). The skeleton has no placeholders left to fill in: only the "配音指引" section, before the author writes it, is a hint paragraph (the English skeleton puts nothing there, see "Language of the skeleton" below). The frontmatter `name` equals the pack ID, `description` has one Chinese and one English paragraph in the Chinese skeleton and only one English paragraph in the English skeleton, and `compatibility` states the required base part version and the required capabilities.
 
-**骨架里不写基础部分命令行的命令和选项**（放进环境、配音、变声、做包、净室用的那几个）：命令行是基础部分的，它一改选项，写在协议核心里的用法就错了，协议核心还得跟着发版本。骨架（和分享文件的 `README.md`）只指到基础部分的 `SKILL.md`：命令怎么写、有哪些选项，只在那里写一份。协议核心自己的命令（`seal`、`pack`、`unpack`、`check`、`complete`、`keygen`、`sign`、`verify`，见 `README.md`「命令行」）不受这条限制，照写。协议核心的任何文件里都没有基础部分命令行才有的选项，只有一个破例：配音的 `--reference-tag`。骨架按语言列出这个包的音色基底标签，读骨架的 agent 要知道拿这些标签做什么（换参考就用它，台本里的提示不换参考），只指到基础部分的 `SKILL.md` 说不清这一点，它就会以为写个提示就换了参考；这个选项和音色基底标签一起出现在 3.0（第 14 节），基础部分改它要跟着改协议核心，所以它只写在骨架这一处（`protocol/lib/skill-md.mjs`）和这一段说明里。
+**The skeleton does not write base-part command-line commands and options** (the ones for putting into an environment, dubbing, voice conversion, making a pack, the clean room): the command line belongs to the base part, and once it changes an option, the usage written in the protocol core is wrong, and the protocol core would have to be released with a new version too. The skeleton (and the share file's `README.md`) only points to the base part's `SKILL.md`: how the commands are written and what options they have is written in one place only, there. The protocol core's own commands (`seal`, `pack`, `unpack`, `check`, `complete`, `keygen`, `sign`, `verify`, see `README.md`「Command line」) are not subject to this rule and are written out as they are. No file of the protocol core contains options that exist only in the base part's command line, with one exception: dubbing's `--reference-tag`. The skeleton lists this pack's reference tags by language, and the agent reading the skeleton must know what to do with these tags (use them to switch the reference; a cue in a script does not switch the reference); pointing only to the base part's `SKILL.md` cannot make this clear, and it would think that writing a cue switches the reference; this option appeared together with the reference tag in 3.0 (section 14), and if the base part changes it, the protocol core must change with it, so it is written only in this one place in the skeleton (`protocol/lib/skill-md.mjs`) and in this paragraph.
 
-**骨架的语言**：骨架有两种写法，中文（默认）和英文，由调用方按作者的语言选：`buildRoleSkillMd` 和 `packRolePart` 的 `textLanguage`（`'zh'` 或 `'en'`，别的值抛 `TypeError`），命令行 `seal` 的 `--text-language`；不给就是中文。app 里可以给作者做包时的界面语言（写进包里的默认文字都按作者的语言写）。两种写法的版面一样：同样的节、同样的步骤、同样的命令、文件名和错误码，只有标题和说明的语言不同；英文骨架的 frontmatter 也只有英文。节标题对照如下。读骨架的程序和人不要靠节标题的字找内容（英文的包里没有中文标题），要找的是下面说的那一行。
+**Language of the skeleton**: the skeleton has two ways of being written, Chinese (the default) and English, chosen by the caller according to the author's language: `textLanguage` of `buildRoleSkillMd` and `packRolePart` (`'zh'` or `'en'`; any other value throws `TypeError`), and `--text-language` of the `seal` command line; if not given it is Chinese. An app may pass the interface language the author used when making the pack (the default text written into the pack is all written in the author's language). The two versions have the same layout: the same sections, the same steps, the same commands, file names and error codes, and only the language of the headings and the explanations differs; the frontmatter of the English skeleton is also English only. The correspondence of section headings is as follows. Programs and people reading the skeleton must not look for content by the words of a section heading (an English pack has no Chinese headings); what to look for is the line described below.
 
 | 中文骨架 | 英文骨架 |
 |---|---|
@@ -247,276 +247,276 @@ schema 通过以后，下面这些规则也必须成立，否则清单不合格�
 | 需要哪个版本的基础部分 | Which version of the base part it needs |
 | 没有基础部分时怎么补全 | Completing the pack when the base part is missing |
 | 怎么做新包 | How to make a new pack |
-| 配音指引 | `## 配音指引`，不翻译，两种骨架一样 |
+| 配音指引 | `## 配音指引`, not translated, the same in both skeletons |
 
-**「## 配音指引」这一行是协议的标记，所有语言都原样写，不翻译**，和 JSON 的键名一样。读回作者写的指引靠它：`extractGuidance`（`protocol/lib/skill-md.mjs`）和基础部分里配音时读指引的那条规则，认的都是这一整行，取它后面到文件末尾的全部内容。已经发布的基础部分（1.0.0 起）只认这一行；英文的包要是换成别的标题，它们读英文的包就读不到指引，新包就得要求更高的基础部分最低版本，而发出去的版本收不回。写成不翻译的标记，任何语言的包、任何版本的基础部分读回来的指引都一样，不用改协议，也不用给英文的包定更高的最低版本。随之两条：
+**The line "## 配音指引" is a protocol marker; write it as is in every language, do not translate**, like a JSON key name. Reading back the guidance the author wrote relies on it: `extractGuidance` (`protocol/lib/skill-md.mjs`) and the rule in the base part that reads the guidance when dubbing both recognise this whole line, and take everything after it up to the end of the file. The base parts already released (from 1.0.0) recognise only this line; if an English pack used another heading, they would not find the guidance when reading an English pack, a new pack would have to require a higher minimum base part version, and versions already sent out cannot be recalled. Written as an untranslated marker, the guidance read back is the same for a pack in any language and a base part of any version, with no protocol change and no need to set a higher minimum version for English packs. Two points follow:
 
-- 英文骨架要讲「最后一节是什么」，写在这一行的上面（那一段点名这一行、说它不翻译、说下面是作者的指引）：写在下面会被当成指引读回去。这一段不能自己独占一行写成这一行的样子。
-- 作者没写指引时：中文骨架在这一行下面放一段提示（`GUIDANCE_HINT`，读指引的程序把它当没写，给 `null`）；英文骨架下面什么都不放（一段英文的提示，1.0.0 认不出，会被当成作者写的指引）。`GUIDANCE_HINT` 的字不能改，改了老版本就认不出它。
+- The English skeleton, when it needs to say "what the last section is", writes it above this line (that paragraph names this line, says it is not translated, and says that what follows is the author's guidance): written below it, it would be read back as guidance. That paragraph must not put itself on a line of its own that looks like this line.
+- When the author has not written guidance: the Chinese skeleton puts a hint paragraph below this line (`GUIDANCE_HINT`; the program that reads the guidance treats it as not written and gives `null`); the English skeleton puts nothing below it (an English hint paragraph would not be recognised by 1.0.0 and would be taken as guidance the author wrote). The words of `GUIDANCE_HINT` must not be changed, because older versions would no longer recognise it.
 
-中英文的包，用已经发布的基础部分 1.0.0 的读法、现在的读法、配音时读指引的那条路读回来的指引完全相同，没写指引的读回 `null`。
+For Chinese and English packs, the guidance read back by base part 1.0.0 (already released), by the current reading, and by the path that reads guidance when dubbing is exactly the same, and a pack with no guidance reads back `null`.
 
-**配音指引的五个小节**：指引（`## 配音指引` 下面的正文）可以分五节，对格式来说五节都可选（做包要求哪几节，见基础部分的 `references/make-pack.md`），小节名照「## 配音指引」的规矩，不翻译，所有语言原样写：
+**The five subsections of the dubbing guidance**: the guidance (the body under `## 配音指引`) may be divided into five subsections; as far as the format is concerned all five are optional (which ones making a pack requires is in the base part's `references/make-pack.md`), and the subsection names follow the rule of "## 配音指引": they are not translated and are written as they are in every language:
 
-- `### 这个人是谁`：身份、性格、在意什么、对不同的人、情绪上来时（5 项）；
-- `### 音色`：这个声音听起来怎样；
-- `### 演法`：怎么念，喉位、松紧、气声、沙哑、语速、停顿、笑和叹气（7 项）；
-- `### 台词`：说什么、怎么措辞，自称、句尾、口头禅、用词、方言（5 项）；
-- `### 换语言时怎么说`：别的语言里的名字、自称、口头禅（3 项）。
+- `### 这个人是谁` (who this person is): identity, personality, what they care about, toward different people, when emotions run high (5 items);
+- `### 音色` (voice): what this voice sounds like;
+- `### 演法` (how to perform): how to speak: throat position, tight or loose, breathy, hoarse, speaking rate, pauses, laughing and sighing (7 items);
+- `### 台词` (lines): what to say and how to word it: self-reference, sentence endings, catchphrases, word choice, dialect (5 items);
+- `### 换语言时怎么说` (what to say when switching language): the name, self-reference and catchphrases in other languages (3 items).
 
-每条特征可以跟出处（材料里的原句或叙述片段）；没有出处的、按人物类型推的，标成推断；「这个人是谁」「换语言时怎么说」没有依据的项写「缺」。没有这五个小节的旧指引照旧有效。读回来（`extractGuidance`）仍是整段，不拆节；检查（`check`）不因为缺小节报错。
+Each feature may be followed by its source (an original sentence or a narrated passage from the material); one without a source, inferred from the type of character, is marked as inference; an item of "这个人是谁" or "换语言时怎么说" that has no basis is written as `缺` (missing). Old guidance without these five subsections stays valid as before. Reading back (`extractGuidance`) still gives the whole passage and does not split it into subsections; the check (`check`) does not report an error for missing subsections.
 
-交给配音模型的，由 `protocol/lib/guidance-sections.mjs` 的 `guidanceForModel(指引)` 决定（还交指引的 app 自带的适配器里有一份逐行一致的镜像，在那个适配器的 `limits.mjs` 里：它在基础部分以外，不随基础部分发布，也不是协议核心的 `lib/limits.mjs`（解包上限）；那个 app 和适配器用的是那一份，同样的输入给同样的结果，由那边的对照测试钉住）。指引里有五个小节中的任何一个（「### 这个人是谁」「### 音色」「### 演法」「### 台词」「### 换语言时怎么说」），就是新式：只交「### 演法」一节的正文（到下一个 `##` 或 `###` 标题为止）；没有演法一节、或这一节是空的，指引一概不交。五个小节都没有，就是旧式：整段照旧交。演法以外的四节是写台本的人看的，不是给模型的「怎么念」。基础部分的配音（`lib/dub.mjs`）不交指引：演法由写台本的人写成台本里的提示（`references/dub.md`）；这条规则管的是还交指引的程序。
+What is handed to the dubbing model is decided by `guidanceForModel(guidance)` in `protocol/lib/guidance-sections.mjs` (an app that still hands over guidance has, in its own bundled adapter, a line-for-line identical mirror, in that adapter's `limits.mjs`: it is outside the base part, is not released with the base part, and is not the protocol core's `lib/limits.mjs` (unpacking limits); that app and adapter use that copy, the same input gives the same result, and a comparison test on their side pins it). If the guidance contains any one of the five subsections ("### 这个人是谁", "### 音色", "### 演法", "### 台词", "### 换语言时怎么说"), it is the new style: only the body of the "### 演法" subsection is handed over (up to the next `##` or `###` heading); if there is no 演法 subsection, or it is empty, no guidance at all is handed over. If none of the five subsections is present, it is the old style: the whole passage is handed over as before. The four subsections other than 演法 are for the person writing the script and are not "how to speak" for the model. The base part's dubbing (`lib/dub.mjs`) does not hand over guidance: the person writing the script writes the 演法 into the script as cues (`references/dub.md`); this rule governs programs that still hand over guidance.
 
-## 6. 包 ID
+## 6. Pack ID
 
-形如 `<英文短名>-<8 位随机>`，例如 `mira-k3x9q2vd`。
+The form is `<short English name>-<8 random characters>`, for example `mira-k3x9q2vd`.
 
-- 遵守 Agent Skills 对 `name` 的限制：只用小写字母、数字和连字符，最长 64 个字符，不以连字符开头或结尾，不连用两个连字符（所以英文短名最长 55 个字符）。
-- 英文短名由作者给；整理后什么都不剩就用 `vp`。整理的做法：Unicode 兼容分解（NFKD）、转小写、不是字母或数字的一段换成一个连字符、去掉首尾的连字符。
-- 8 位随机是小写字母和数字（36 个字符），由平台的 `crypto.getRandomValues` 生成。字节 252 以上的丢掉重取（252 是 36 的倍数里不超过 256 的最大一个），免得前几个字符出现得多一点。
-- 做包时生成，之后不再改。发新版本时沿用。同一个角色的改进沿用它；从包做出新包时换一个新的。
-- 唯一性不由格式保证：8 位随机有 36^8 ≈ 2.8×10^12 种，独立生成的两个包撞上的概率可以忽略；社区服务端另有账号和发布规则。
+- Follow Agent Skills' restrictions on `name`: only lowercase letters, digits and hyphens, at most 64 characters, not starting or ending with a hyphen, no two consecutive hyphens (so the short English name is at most 55 characters).
+- The short English name is given by the author; if nothing is left after cleaning up, use `vp`. The way of cleaning up: Unicode compatibility decomposition (NFKD), lowercase, replace each run of characters that are not letters or digits with a single hyphen, and strip hyphens from the start and end.
+- The 8 random characters are lowercase letters and digits (36 characters), generated by the platform's `crypto.getRandomValues`. Bytes of 252 and above are discarded and drawn again (252 is the largest multiple of 36 that does not exceed 256), so that the first few characters do not appear a little more often.
+- Generated when the pack is made, and not changed afterwards. Kept when a new version is published. An improvement to the same character keeps it; when a new pack is made from a pack, a new one is used.
+- Uniqueness is not guaranteed by the format: 8 random characters give 36^8 ≈ 2.8×10^12 possibilities, so the probability that two independently generated packs collide is negligible; the community server has accounts and publishing rules on top of that.
 
-## 7. 音频
+## 7. Audio
 
-参考集、留出录音和卡片试听那一句里的音频，按内容判断格式，不只看扩展名。
+For the audio in the reference set, the held-out recordings and the audition line, the format is judged by content, not only by extension.
 
-**允许的格式**
+**Allowed formats**
 
-| 格式 | 扩展名 | 内容要求 |
+| Format | Extension | Content requirement |
 |---|---|---|
-| wav | `.wav` | RIFF/WAVE，要有 `fmt ` 块和 `data` 块（PCM、浮点等，编码不限） |
-| mp3 | `.mp3` | MPEG 音频第一、二、三层，要有合法的帧头，并且下一帧接得上（可带 ID3v2 头和 ID3v1 尾） |
-| flac | `.flac` | 以 `fLaC` 开头并带 STREAMINFO |
-| ogg | `.ogg`、`.opus` | Ogg 容器，第一页过页校验，里面是 Opus 或 Vorbis |
-| m4a | `.m4a` | MP4 容器，有 `moov`，轨全是音频（AAC、ALAC 都行；带视频轨的不算） |
+| wav | `.wav` | RIFF/WAVE, with a `fmt ` chunk and a `data` chunk (PCM, floating point and others, any encoding) |
+| mp3 | `.mp3` | MPEG audio layers 1, 2 and 3, with a valid frame header and with the next frame connecting (may carry an ID3v2 header and an ID3v1 trailer) |
+| flac | `.flac` | Starts with `fLaC` and carries STREAMINFO |
+| ogg | `.ogg`, `.opus` | Ogg container, the first page passes page verification, and the content is Opus or Vorbis |
+| m4a | `.m4a` | MP4 container with `moov`, and every track is audio (AAC and ALAC are both fine; one with a video track does not count) |
 
-这几种是参考集和留出录音实际会用的格式。其余的（AIFF、AAC 裸流、WMA、AMR、WebM……）不收：多收一种格式，就多一种要在检查里写对的解析。这个取舍是判断，不是实测的结论；没有逐个浏览器测过播放。
+These are the formats that reference sets and held-out recordings actually use. The rest (AIFF, raw AAC streams, WMA, AMR, WebM...) are not accepted: each additional format accepted means one more parser that has to be written correctly in the check. This trade-off is a judgement, not a measured conclusion; playback has not been tested one by one in browsers.
 
-**判断的做法**：只看文件开头的几百字节（M4A 看顶层 box 的头），认容器的结构，不是只认前四个字节的魔数。随机数据、改了扩展名的可执行文件、文本碰巧凑出一个魔数，都过不了。它不解码，所以认出来的只是「长得是这种音频」，不保证能播放。认出来的写法对照真实的编码器输出验证过：用 ffmpeg 8.1 生成 wav、mp3（带和不带 Xing 与 ID3）、flac、ogg（Vorbis 和 Opus）、m4a（AAC、ALAC，带和不带 faststart），全部认得；ADTS AAC 裸流和带视频轨的 MP4 正确地不认。
+**How the judgement is made**: only the first few hundred bytes of the file are looked at (for M4A, the headers of the top-level boxes), and the structure of the container is recognised, not only the magic number in the first four bytes. Random data, an executable renamed with another extension, and text that happens to form a magic number cannot pass. It does not decode, so what is recognised is only "looks like this kind of audio", with no guarantee that it plays. The recognition rules were verified against real encoder output: with ffmpeg 8.1 we generated wav, mp3 (with and without Xing and ID3), flac, ogg (Vorbis and Opus), and m4a (AAC, ALAC, with and without faststart), and all were recognised; raw ADTS AAC streams and MP4 with a video track are correctly not recognised.
 
-**检查时报什么**：
+**What the check reports**:
 
-- 扩展名说是音频，内容不是（或者是另一种音频）；内容是音频，扩展名却不是音频：`audio_disguised`。
-- 扩展名是认得的音频格式，但不在上表里：`audio_format_not_allowed`。
-- 清单里标明是音频的文件（参考段、留出录音、卡片试听那一句的 `audio`），扩展名也必须是上表里的扩展名。
+- The extension says audio but the content is not (or is another kind of audio); the content is audio but the extension is not an audio one: `audio_disguised`.
+- The extension is a recognised audio format but is not in the table above: `audio_format_not_allowed`.
+- A file that the manifest marks as audio (the `audio` of a reference segment, a held-out recording, the audition line) must also have an extension from the table above.
 
-这条检查对一个部分管的每一个文件都做，不只是参考集里的。
+This check is done on every file a part governs, not only those in the reference set.
 
-## 8. 分享文件
+## 8. Share file
 
-### 8.1 文件名和布局
+### 8.1 File name and layout
 
-文件名是 `<名字>.voicepack.zip`，结果永远是一个合格的单个路径段（过「路径」一节的规则）。名字里文件系统不让用的字符（`/ \ : * ? " < > |`、控制字符等，和「路径」一节里的 `control_char` 同一份）换成连字符，连着的合成一个；去掉首尾的空白、点和连字符；名字部分最长 100 个 UTF-8 字节，不截断半个字符；第一个点之前是 Windows 的保留设备名的，在它后面加一个连字符（`con.voicepack.zip` 在 Windows 上就是设备）；什么都不剩就用包 ID，再不行用 `voicepack`。文件名只是给人和文件管理器看的，读取方不靠它认类型。
+The file name is `<name>.voicepack.zip`, and the result is always a valid single path segment (it passes the rules of the "Paths" section). Characters in the name that the file system does not allow (`/ \ : * ? " < > |`, control characters and so on, the same set as `control_char` in the "Paths" section) are replaced with hyphens, and consecutive ones become one; whitespace, dots and hyphens at the start and end are removed; the name part is at most 100 UTF-8 bytes, without cutting a character in half; if what comes before the first dot is a Windows reserved device name, a hyphen is added after it (`con.voicepack.zip` is a device on Windows); if nothing is left, use the pack ID, and failing that, `voicepack`. The file name is only for people and file managers to look at, and a reader does not use it to tell the type.
 
-内容是一个普通的 zip，根上依次是：
+The content is an ordinary zip, with these at the root, in this order:
 
-1. `mimetype`：类型标识，第一项，不压缩；
-2. 包目录：完整包和只有角色部分的，目录名是包 ID；只有基础部分的，目录名是基础部分的目录名（2.x 和 3.x 是 `voice-pack`，1.x 是 `cohub-voice-studio`）；
-3. `index.html`：预览卡片，可以没有；
-4. `README.md`：写给人和 agent 的说明。
+1. `mimetype`: the type identifier, the first entry, not compressed;
+2. The pack directory: for a full pack or a pack with only the role part, the directory name is the pack ID; for a pack with only the base part, the directory name is the base part's directory name (`voice-pack` for 2.x and 3.x, `cohub-voice-studio` for 1.x);
+3. `index.html`: the preview card, which may be absent;
+4. `README.md`: the explanation for people and agents.
 
-根上只能有这几样：一个包目录，加上 `mimetype`、`index.html`、`README.md` 三个文件，多出任何别的文件或目录都不收。`README.md` 必须有。包目录的名字必须等于包 ID（角色部分）或这个协议版本的基础部分目录名（基础部分，第 13 节的表）。协议核心不单独分享。
+The root may have only these: one pack directory, plus the three files `mimetype`, `index.html` and `README.md`; any other file or directory is not accepted. `README.md` is required. The name of the pack directory must equal the pack ID (role part) or the base part directory name of this protocol version (base part, the table in section 13). The protocol core is not shared separately.
 
-`README.md` 和 `index.html` 在打包时生成，不列进任何清单，也不算包目录里的文件。`README.md` 是中英文各一份的简介、预览卡片怎么打开、在 app 里怎么导入、在 agent 环境里怎么用；打包的人可以换成自己写的。`index.html` 是预览卡片，内容由生成它的程序定（官方的生成程序是 `lib/preview-card.mjs`，卡片上有什么、怎么保证自包含，只在它的文件头写一份）；读取方只当不透明的文件，不执行它，不用它做任何校验。
+`README.md` and `index.html` are generated at packing time, are not listed in any manifest, and do not count as files in the pack directory. `README.md` is an introduction with one Chinese and one English copy, how to open the preview card, how to import it in the app, and how to use it in an agent environment; the person packing may replace it with their own. `index.html` is the preview card, and its content is decided by the program that generates it (the official generating program is `lib/preview-card.mjs`; what is on the card and how it is kept self-contained are written in one place only, its file header); a reader treats it only as an opaque file, does not execute it, and does not use it for any validation.
 
-### 8.2 类型标识
+### 8.2 Media type
 
-第一项叫 `mimetype`，内容是这个文件的协议主版本对应的类型标识（US-ASCII，没有换行，没有首尾空白，没有字节序标记），不压缩，本地头里没有额外字段：
+The first entry is called `mimetype`, and its content is the type identifier for this file's protocol major version (US-ASCII, no newline, no leading or trailing whitespace, no byte order mark), not compressed, with no extra field in the local header:
 
-| 协议主版本 | 类型标识 | 字节数 |
+| Protocol major version | Type identifier | Bytes |
 |---|---|---|
-| 2、3 | `application/vnd.voice-pack+zip` | 30 |
+| 2, 3 | `application/vnd.voice-pack+zip` | 30 |
 | 1 | `application/vnd.cohub.voicepack+zip` | 35 |
 
-这样文件的开头是固定的（下表以 2.x、3.x 为例，1.x 只有最后一行和总长不同）：
+So the start of the file is fixed (the table below takes 2.x and 3.x as the example; for 1.x only the last row and the total length differ):
 
-| 偏移 | 内容 |
+| Offset | Content |
 |---|---|
-| 0 | `50 4B 03 04`（zip 的本地头标记） |
-| 8 | `00 00`（压缩方法 0：存储） |
-| 26 | `08 00`（文件名长度 8） |
-| 28 | `00 00`（额外字段长度 0） |
+| 0 | `50 4B 03 04` (the zip local header signature) |
+| 8 | `00 00` (compression method 0: stored) |
+| 26 | `08 00` (file name length 8) |
+| 28 | `00 00` (extra field length 0) |
 | 30 | `mimetype` |
-| 38 | `application/vnd.voice-pack+zip`（1.x：`application/vnd.cohub.voicepack+zip`） |
+| 38 | `application/vnd.voice-pack+zip` (1.x: `application/vnd.cohub.voicepack+zip`) |
 
-读开头 73 个字节就能认出这是音色包，用的是 1.x 的类型标识，还是 2.x、3.x 共用的那一个（2.x 和 3.x 从这里分不出来，要看清单的 `protocol`，第 14 节「认」），不用解压，也不用读 zip 的目录（`isShareFile`、`detectShareMime`）：2.x、3.x 的类型标识短，开头 68 个字节就够，读 73 个字节两种都认得。类型标识要和包的协议版本对得上（第 13、14 节）。
+Reading the first 73 bytes is enough to recognise that this is a voice pack, and whether it uses the 1.x type identifier or the one shared by 2.x and 3.x (2.x and 3.x cannot be told apart from this; look at `protocol` in the manifest, section 14, "Telling versions apart"), without decompressing and without reading the zip's directory (`isShareFile`, `detectShareMime`): the type identifier of 2.x and 3.x is short and the first 68 bytes are enough, and reading 73 bytes recognises both. The type identifier must match the pack's protocol version (sections 13 and 14).
 
-做法照 EPUB。依据（W3C EPUB 3.3 原文，2026-10-14 取回核对）：4.3.3 节要求 `mimetype` 是 zip 里的第一个文件，内容是 `application/epub+zip`（US-ASCII，没有首尾空白，不以 U+FEFF 开头），不得压缩或加密，zip 头里不得带额外字段；附录 I.2 写明魔数是偏移 0 处 `PK 0x03 0x04`、偏移 30 处 `mimetype`、偏移 38 处 `application/epub+zip`。我们的偏移和它一样。
+The approach follows EPUB. Basis (the original text of W3C EPUB 3.3, retrieved and checked 2026-10-14): section 4.3.3 requires `mimetype` to be the first file in the zip, with the content `application/epub+zip` (US-ASCII, no leading or trailing whitespace, not starting with U+FEFF), which must not be compressed or encrypted and must carry no extra field in the zip header; appendix I.2 states that the magic number is `PK 0x03 0x04` at offset 0, `mimetype` at offset 30, and `application/epub+zip` at offset 38. Our offsets are the same as its.
 
-类型名 `application/vnd.voice-pack+zip`、`application/vnd.cohub.voicepack+zip`：`+zip` 是结构化语法后缀，RFC 6839 第 3.6 节（原文核对）写明它可以用在任何「表示方式和 `application/zip` 一致」的媒体类型后面。这两个类型都没有向 IANA 登记，只当分享文件的类型标识用，不是对外的互联网媒体类型。
+"First entry" is counted by its position in the file, not by the order in the zip's central directory: the order in the central directory may differ from the actual order in the file, and the two ways of reading give different "first entries"; the first few dozen bytes recognise only the actual position in the file.
 
-「第一项」按它在文件里的位置算，不按 zip 中央目录里的次序：中央目录里的次序可以和文件里的实际次序不一样，两种读法会得出不同的「第一项」，开头几十个字节只认文件里的实际位置。
+The type names `application/vnd.voice-pack+zip` and `application/vnd.cohub.voicepack+zip`: `+zip` is a structured syntax suffix, and RFC 6839 section 3.6 (checked against the original text) states that it may be used after any media type whose "representation is consistent with `application/zip`". Neither of these two types is registered with IANA, and they serve only as the share file's type identifier, not as media types for the wider internet.
 
-### 8.3 zip 的写法
+### 8.3 How a zip is written
 
-我们的写入程序（`protocol/lib/zip-write.mjs`）写出的 zip：
+The zip written by our writer (`protocol/lib/zip-write.mjs`):
 
-- 全部是存储条目（不压缩）；
-- 条目按给定的次序写：`mimetype`，然后包目录里的文件按路径的 UTF-8 字节序，然后 `index.html`（有的话），最后 `README.md`；
-- 固定字段：时间戳 1980-01-01 00:00:00，创建者是 Unix、版本 2.0，权限 0644，文件名按 UTF-8 并设 UTF-8 标志位，不带额外字段和注释，不写数据描述符，不写目录条目，不用 zip64；
-- 同一份输入写出同样的字节：在 Node、Bun、浏览器里都一样（因为字节只由输入决定）。
+- All entries are stored (not compressed);
+- Entries are written in the given order: `mimetype`, then the files in the pack directory in UTF-8 byte order of the path, then `index.html` (if there is one), and finally `README.md`;
+- Fixed fields: timestamp 1980-01-01 00:00:00, creator Unix, version 2.0, permissions 0644, file names in UTF-8 with the UTF-8 flag set, no extra fields or comments, no data descriptors, no directory entries, no zip64;
+- The same input writes the same bytes: the same in Node, Bun and the browser (because the bytes are decided by the input alone).
 
-**为什么不压缩**（选存储而不是 deflate 的理由）：
+**Why not compress** (the reasons for choosing stored over deflate):
 
-1. 压缩出来的字节依赖运行时的 zlib，不同运行时不一样，没法让「内容相同，打出的 zip 字节也相同」在浏览器、Node、Bun 里都成立。直接测量（2026-10-14）：同一份 42,000 字节的输入，Node 24.14.0 的 `CompressionStream('deflate-raw')` 压出 628 字节，Bun 1.4.0 压出 680 字节，两者字节不同。存储条目不看运行时。清单里的哈希对原始字节算，所以压不压缩都不影响校验；影响的只是 zip 文件自己的字节，而发布时要对基础部分的 zip 签名、并且要和已经发布的文件比字节（`SIGNATURES.md`），要稳定。
-2. 包里的大头是音频：mp3、ogg/opus、flac、m4a 本来就是压缩过的，再压不省；wav 用 deflate 能省多少取决于内容，没有拿真实人声测过，估计在一两成（估计，不是实测）。
-3. 文本部分不压缩多出来的大小是有限的。直接测量（2026-10-14，合并了官方小工具和签名模块之后的基础部分）：基础部分 78 个文件共 602,796 字节，逐个用 `node:zlib` 的 deflate（级别 6）压缩后是 247,823 字节，不压缩多出 354,973 字节（58.9%）；一个有 3 段音频的完整包（126 个文件，共 955,679 字节，里面有两份协议核心和一份基础部分）逐个压缩后是 394,933 字节，不压缩多出 560,746 字节，约 0.56 MB。相对一个有几十段音频的包（几 MB），这是个小数。
-4. 写入不依赖平台的压缩 API，老一点的浏览器也能打包。
+1. The compressed bytes depend on the runtime's zlib and differ between runtimes, so there is no way to make "same content, same zip bytes" hold in the browser, Node and Bun. Direct measurement (2026-10-14): for the same 42,000-byte input, Node 24.14.0's `CompressionStream('deflate-raw')` produces 628 bytes and Bun 1.4.0 produces 680 bytes, and the two differ in bytes. A stored entry does not depend on the runtime. The hashes in the manifest are computed over the original bytes, so compression or not does not affect validation; what it affects is the bytes of the zip file itself, and at release time the base part's zip is signed and its bytes are compared with the files already released (`SIGNATURES.md`), so they must be stable.
+2. The bulk of a pack is audio: mp3, ogg/opus, flac and m4a are already compressed and compressing again saves nothing; how much deflate saves on wav depends on the content, it has not been tested with real human voices, and the estimate is ten to twenty percent (estimate, not measured).
+3. The extra size from not compressing the text part is limited. Direct measurement (2026-10-14, the base part after the official small tools and the signature module were merged): the base part's 78 files total 602,796 bytes, 247,823 bytes after compressing each with `node:zlib` deflate (level 6), so not compressing adds 354,973 bytes (58.9%); a full pack with 3 audio segments (126 files, 955,679 bytes in total, containing two copies of the protocol core and one base part) is 394,933 bytes after compressing each, and not compressing adds 560,746 bytes, about 0.56 MB. Relative to a pack with dozens of audio segments (several MB), that is a small number.
+4. Writing does not depend on the platform's compression API, so older browsers can pack too.
 
-代价是 zip 比压缩的大一些：下载一份基础部分多出约 350 KB。以后如果要压缩，需要自己实现一个确定的 deflate 才能保住字节一致，现在不值得。
+The cost is that the zip is somewhat larger than a compressed one: downloading a base part is about 350 KB more. If compression is wanted later, a deterministic deflate has to be implemented ourselves to keep the bytes identical, and it is not worth it now.
 
-### 8.4 zip 的读法
+### 8.4 How a zip is read
 
-读取方接受别的工具打的 zip，不要求是我们写出来的：条目可以是存储或 deflate（压缩方法 0 和 8），可以带数据描述符。拒绝并点名的：
+A reader accepts zips made by other tools and does not require them to be written by us: entries may be stored or deflate (compression methods 0 and 8), and may carry data descriptors. Rejected, and named:
 
-- zip64（条目 65535 个或更多，或者文件超过 4 GiB）、分卷、加密、别的压缩方法；
-- 结构上自相矛盾的 zip：本地头和中央目录里的名字、压缩方法、CRC、大小说的不一样；条目的数据区互相重叠（一份压缩数据被几百个条目共用是 zip 炸弹的写法）；第一个条目前面有多余的字节；结尾记录和中央目录的位置、条目数对不上；
-- 解压出来的大小超过头里声明的、CRC-32 对不上；
-- 名字不是合法的 UTF-8（不管 UTF-8 标志位设没设，能按 UTF-8 解码的就收）；名字过「路径」一节的检查；名字冲突。
+- zip64 (65535 or more entries, or a file over 4 GiB), multi-volume, encrypted, other compression methods;
+- Structurally self-contradictory zips: the local header and the central directory disagree on the name, compression method, CRC or size; the data areas of entries overlap (one piece of compressed data shared by several hundred entries is the way a zip bomb is written); there are extra bytes before the first entry; the end record disagrees with the position of the central directory or with the number of entries;
+- The extracted size exceeds what the header declares, or the CRC-32 does not match;
+- A name that is not valid UTF-8 (whether or not the UTF-8 flag is set, one that decodes as UTF-8 is accepted); a name that fails the check of the "Paths" section; a name conflict.
 
-声明的大小不能信：deflate 条目边解压边数，超过头里声明的大小就立刻停，不把它解完。逐条的拒绝原因写在 `protocol/lib/zip-structure.mjs` 和 `zip-read.mjs` 的文件头。目录条目（名字以 `/` 结尾）忽略，但名字照样检查。读取方不得把成员名当成路径直接拼。
+The declared size cannot be trusted: a deflate entry is counted as it is extracted, and stops at once when it exceeds the size declared in the header, without finishing the extraction. The reason for each rejection is written in the file headers of `protocol/lib/zip-structure.mjs` and `zip-read.mjs`. Directory entries (names ending in `/`) are ignored, but their names are still checked. A reader must not splice a member name into a path directly.
 
-**符号链接**：条目的外部属性（central directory 里的 external file attributes）的高 16 位是 Unix 的 `st_mode`，`st_mode & 0o170000 == 0o120000` 就是符号链接。这个惯例我们真的用 bsdtar 3.8.8 打了一个带符号链接的 zip 验证过：条目 `link.txt` 的高 16 位是 `0o120666`。不看「创建者」字节：别的系统写的 zip，高 16 位也可能是 Unix 模式，看到符号链接就拒绝。设备文件、管道之类也拒绝。读取目录来打包时，遇到符号链接（含 Windows 的目录联接）同样报错，不跟着走。
+**Symbolic links**: the high 16 bits of an entry's external attributes (the external file attributes in the central directory) are the Unix `st_mode`, and `st_mode & 0o170000 == 0o120000` is a symbolic link. We verified this convention for real by making a zip with a symbolic link using bsdtar 3.8.8: the high 16 bits of the entry `link.txt` are `0o120666`. The "creator" byte is not looked at: in a zip written by another system the high 16 bits may also be a Unix mode, and a symbolic link, when seen, is rejected. Device files, pipes and the like are also rejected. When reading a directory to pack it, a symbolic link (including a Windows directory junction) likewise reports an error and is not followed.
 
-## 9. 解包上限
+## 9. Unpacking limits
 
-| 项 | 上限 | 谁超了就拒绝 |
+| Item | Limit | Who exceeds it is rejected |
 |---|---|---|
-| 成员数 | 1024 | zip 里的成员数（读到结尾记录就判断，不往下读）；检查一个目录时是目录里的文件数 |
-| 单个成员 | 256 MiB（268,435,456 字节） | 按头里声明的大小判断；deflate 条目解压时再按实际字节数截停 |
-| 总大小 | 512 MiB（536,870,912 字节） | 全部成员的大小加起来；zip 文件本身比「总上限加上每个成员的头部余量」还大，也不读 |
-| JSON | 1 MiB（1,048,576 字节） | 要当 JSON 解析的成员，现在是清单；读之前就判断 |
+| Number of members | 1024 | The number of members in the zip (judged as soon as the end record is read, without reading further); when checking a directory, the number of files in the directory |
+| One member | 256 MiB (268,435,456 bytes) | Judged by the size declared in the header; a deflate entry is cut off again by the actual byte count during extraction |
+| Total size | 512 MiB (536,870,912 bytes) | The sizes of all members added together; a zip file that is itself larger than "the total limit plus the header allowance for each member" is not read either |
+| JSON | 1 MiB (1,048,576 bytes) | A member that is to be parsed as JSON, currently the manifest; judged before reading |
 
-超限的包不去算哈希：成员数、单个大小、总大小是检查的第一步，超了就停，报告里只有这一项。
+A pack over a limit is not hashed: the number of members, the size of one member and the total size are the first step of the check, and if one is exceeded it stops, and the report has only this item.
 
-**数值的来源和理由**
+**Where the numbers come from and why**
 
-- 起点是上游 VoiceStudio（debpalash/VoiceStudio）的安全解包：`backend/core/safe_archive.py` 里 `MAX_MEMBERS = 64`、`MAX_MEMBER_BYTES = 256 * 1024 * 1024`、`MAX_TOTAL_BYTES = 512 * 1024 * 1024`、`MAX_JSON_BYTES = 1024 * 1024`（2026-10-14 用 GitHub API 取回原文核对；上游是 AGPL-3.0，我们只参考数值，没有复制代码）。单个、总共、JSON 三项沿用上游。
-- 成员数从 64 放宽到 1024。上游的 64 是单个音色文件（`.omnivoice`、`.ovsvoice`）的量，完整包的文件要多得多。直接测量（2026-10-14，在合并了官方小工具和签名模块的基础部分上，用我们的命令行做出一个完整包）：基础部分 78 个文件（含它自己和协议核心的两份清单，协议核心占其中 42 个），角色部分自己的协议核心 42 个文件，加上角色部分的 `SKILL.md` 和清单，一个完整包的固定部分是 122 个文件；官方签名发布后再加 3 个（`.minisig`）。也就是说，上游的 64 连一个没有任何音频的完整包都装不下。再加上参考音频、留出录音和脚本，一个有 3 段音频、1 个脚本的包是 126 个文件。
-- 取 1024 的理由是估计，不是实测：固定部分约 125 个（122 个加 3 个签名），上限是它的 8 倍多，给角色部分留出近 900 个文件，远多于实际的包（一个重的包，参考集 200 段、留出录音 50 段，也不过 380 个左右）；基础部分后面还会加文件（流程层的功能），这个余量也够：加在 `protocol/` 以外的，在完整包里占一个成员，加在 `protocol/` 里的占两个（完整包里有两份协议核心）。成员数在读结尾记录时就判断，放宽上限不会拖慢对坏包的拒绝。
-- 清单 schema 允许参考段和留出录音各到 500 段，那是清单自己的解析安全上限；两份真填满，成员数会超过 1024，被拒绝，报告点名是成员太多。要支持这种规模，要同时放宽 schema 的上限和这里。
-- 参考实现把整份 zip 读进内存，解出来的成员再占一份，所以峰值约是 zip 大小的两倍；512 MiB 的总上限是上游的数值，没有为浏览器的内存另做评估。
+- The starting point is the safe unpacking of upstream VoiceStudio (debpalash/VoiceStudio): in `backend/core/safe_archive.py`, `MAX_MEMBERS = 64`, `MAX_MEMBER_BYTES = 256 * 1024 * 1024`, `MAX_TOTAL_BYTES = 512 * 1024 * 1024`, `MAX_JSON_BYTES = 1024 * 1024` (the original text retrieved and checked through the GitHub API on 2026-10-14; upstream is AGPL-3.0, and we only referred to the values and did not copy code). The three items for one member, the total and JSON follow upstream.
+- The number of members was relaxed from 64 to 1024. Upstream's 64 is the size of a single voice file (`.omnivoice`, `.ovsvoice`), and a full pack has many more files. Direct measurement (2026-10-14, on the base part after the official small tools and the signature module were merged, making a full pack with our command line): the base part's 78 files (including its own manifest and the protocol core's two manifests, of which the protocol core is 42), the role part's own protocol core of 42 files, plus the role part's `SKILL.md` and manifest, make the fixed part of a full pack 122 files; after an official signed release, 3 more (`.minisig`). That is, upstream's 64 cannot even hold a full pack without any audio. Add reference audio, held-out recordings and scripts, and a pack with 3 audio segments and 1 script is 126 files.
+- The reason for taking 1024 is an estimate, not a measurement: the fixed part is about 125 (122 plus 3 signatures), the limit is more than 8 times that, leaving nearly 900 files for the role part, far more than an actual pack (a heavy pack, with a reference set of 200 segments and 50 held-out recordings, is only about 380 files); the base part will also gain files later (functions of the procedure layer), and this margin is enough for that: one added outside `protocol/` takes one member in a full pack, and one added inside `protocol/` takes two (a full pack has two copies of the protocol core). The number of members is judged when the end record is read, so relaxing the limit does not slow down the rejection of bad packs.
+- The manifest schema allows reference segments and held-out recordings up to 500 each; that is the manifest's own parsing safety limit; if both are filled, the number of members exceeds 1024 and is rejected, and the report names too many members. To support that scale, the schema's limit and this one must be relaxed together.
+- The reference implementation reads the whole zip into memory and the extracted members take another copy, so the peak is about twice the zip size; the 512 MiB total limit is upstream's value, and no separate evaluation was made for browser memory.
 
-## 10. 检查
+## 10. Check
 
-检查一个部分（角色部分、基础部分、协议核心，或者一个完整包），读取方必须按下面的次序都做一遍，能查的都查，一次报全；只有「解包上限」一步超限时先停。检查的结果是问题的列表，每个问题带一个 `code`（点名是哪一种问题）、说明、出问题的是哪个部分，以及机器可读的细节；全部的 `code` 和细节的形状写在 `protocol/lib/check.mjs` 的文件头（互相校验的在 `protocol/lib/mutual.mjs` 的文件头，验签的在 `protocol/lib/official.mjs` 和 `protocol/lib/signature.mjs` 的文件头）。
+To check one part (role part, base part, protocol core, or a full pack), a reader must do all of the following in this order, check everything that can be checked, and report everything in one go; only when the "Unpacking limits" step is exceeded does it stop first. The result of a check is a list of problems, each carrying a `code` (naming which kind of problem it is), an explanation, which part has the problem, and machine-readable details; all the `code`s and the shapes of the details are written in the file header of `protocol/lib/check.mjs` (those of mutual verification in the file header of `protocol/lib/mutual.mjs`, those of signature verification in the file headers of `protocol/lib/official.mjs` and `protocol/lib/signature.mjs`).
 
-1. **解包上限**：成员数、单个大小、总大小。
-2. **路径**：每个成员的路径过「路径」一节的规则，没有冲突。
-3. **每个部分各查一遍**，从传进来的部分开始，往下查它带着的子部分（角色部分带 `protocol/` 和可选的 `voice-pack/`，基础部分带 `protocol/`），每个部分只看自己的目录。
-   1. 清单存在、读得懂、合格（「清单」一节），种类和位置对得上（`part_mismatch`）；缺了必须带的 `protocol/` 报 `part_missing`。
-   2. **文件对清单**：清单里列了、包里没有的（`file_missing`）；列了但大小或 SHA-256 对不上的（`file_modified`，先比大小再比哈希，`details.reason` 是 `size` 或 `sha256`）；包里有、清单没列的（`file_extra`，交给子部分管的目录和清单自己、它的签名不算）。
-   3. **SKILL.md**：基础部分和角色部分必须有，并且合规（「SKILL.md」一节，`skill_md_missing`、`skill_md_invalid`）。
-   4. **音频**：这个部分管的每个文件，扩展名和内容对得上（「音频」一节）。
-   5. **外部资源**（角色部分）：见下。
-   6. **签名**：记下这个部分有没有签名文件；调用方给了验签的钩子（`verifySignature`）就验，见下。
-4. **互相校验**（调用方没写 `mutual: false` 就做）：角色部分和它带着的基础部分对一对，见下。
+1. **Unpacking limit check**: the number of members, the size of one member, the total size.
+2. **Path check**: the path of every member passes the rules of the "Paths" section, with no conflict.
+3. **Check each part separately**, starting from the part that was passed in and going down through the sub-parts it carries (the role part carries `protocol/` and an optional `voice-pack/`, the base part carries `protocol/`), each part looking only at its own directory.
+   1. The manifest exists, can be read, and is valid ("Manifest" section), and its kind and location match (`part_mismatch`); a missing `protocol/` that must be carried is reported as `part_missing`.
+   2. **Files against the manifest**: listed in the manifest but not in the pack (`file_missing`); listed but with a size or SHA-256 that does not match (`file_modified`, size compared first and then hash, and `details.reason` is `size` or `sha256`); in the pack but not listed in the manifest (`file_extra`; directories left to sub-parts, the manifest itself and its signature do not count).
+   3. **SKILL.md check**: the base part and the role part must have one, and it must conform ("SKILL.md" section, `skill_md_missing`, `skill_md_invalid`).
+   4. **Audio check**: for every file this part governs, the extension and content match ("Audio" section).
+   5. **External resources** (role part): see below.
+   6. **Signature check**: record whether this part has a signature file; if the caller gave a signature verification hook (`verifySignature`), verify, see below.
+4. **Mutual verification check** (done unless the caller wrote `mutual: false`): pair the role part with the base part it carries, see below.
 
-**外部资源**：每个都通过注入的网络读取（`env.fetch`）取回来，核对大小和 SHA-256，逐个、按清单里的次序。
+**External resources**: each is fetched through the injected network reader (`env.fetch`), and its size and SHA-256 are checked, one by one, in the order in the manifest.
 
-- 取不到、对不上都报错：服务器答了但不是成功（`external_fetch_failed`，细节里有状态码）；取回来的大小或哈希和清单不一样（`external_hash_mismatch`）；读到的字节超过清单里写的大小就停，响应头声明的大小超了就不读。
-- 没有网络（环境没有提供 `fetch`）或者取的时候网络出错，说「外部资源无法核对」（`external_unverifiable`，`details.reason` 是 `offline` 或 `network`）。带外部资源的包在离线时校验不通过：不能悄悄放过。
-- 清单里的外部资源只能是 `https://`。URL 不指向内网这类网络策略，是注入的 `fetch` 的事，检查本身不管。
-- 做包的流程默认把资源放进包里，作者明确选择了，才用外部 URL。
+- Failing to fetch and a mismatch both report errors: the server answered but not with success (`external_fetch_failed`, with the status code in the details); the size or hash fetched differs from the manifest (`external_hash_mismatch`); reading stops when the bytes read exceed the size written in the manifest, and nothing is read if the size declared in the response header already exceeds it.
+- With no network (the environment provides no `fetch`) or a network error when fetching, say "external resources cannot be verified" (`external_unverifiable`, `details.reason` is `offline` or `network`). A pack with external resources does not pass validation while offline: it must not be let through quietly.
+- External resources in a manifest can only be `https://`. Network policy such as URLs not pointing into the internal network is the injected `fetch`'s business, and the check itself does not handle it.
+- The make-pack procedure by default puts resources into the pack, and uses an external URL only when the author explicitly chose it.
 
-**签名和互相校验**：检查本身不实现验签，也不判断「是不是官方版本」：判断交给调用方传进来的验签的钩子（`verifySignature`；`lib/official.mjs` 的 `createSignatureVerifier(信任名单)` 造一个）。处理从外面来的东西的入口（库里的 `checkPart`、`checkShareFile`、`inspectShareFile`）**要调用方明确选验签的策略**：给验签的钩子，或者明确写 `allowUnsigned: true`（只放过没有签名文件的部分，本地开发和测试用）；两样都不给就抛 `signature_policy_missing`，在读任何输入之前，免得哪一处忘了传，悄悄把非官方的基础部分或协议核心放进来。互相校验在这些入口上默认做，写 `mutual: false` 才不做。库内部检查自己刚做出来的东西（做包时对角色部分的自检、`seal` 对正在封的部分的检查）不验签、不做互相校验，走另一个入口 `selfCheckPart`，不要策略。命令行的 `check`、`pack`、`unpack` 两样都一直开，用法见 `README.md` 的「命令行」；各入口怎么选、选项的组合、各个调用方（嵌入库的 app、补全、接收分享文件的服务端）怎么传，见 `SIGNATURES.md` 的「接进检查」。
+**Signature and mutual verification**: the check itself does not implement signature verification and does not judge "whether this is an official version": the judgement is left to the signature verification hook passed in by the caller (`verifySignature`; `createSignatureVerifier(trust list)` in `lib/official.mjs` builds one). The entry points that handle things coming from outside (`checkPart`, `checkShareFile`, `inspectShareFile` in the library) **require the caller to explicitly choose a signature policy**: give a signature verification hook, or explicitly write `allowUnsigned: true` (lets through only a part with no signature file, for local development and tests); giving neither throws `signature_policy_missing`, before any input is read, so that if some place forgets to pass it, a non-official base part or protocol core is not quietly let in. Mutual verification is done by default at these entry points, and is skipped only when `mutual: false` is written. When the library internally checks something it has just made (the self-check of the role part when making a pack, `seal`'s check of the part being sealed), it does not verify signatures and does not do mutual verification, and goes through another entry point, `selfCheckPart`, which needs no policy. The command lines `check`, `pack` and `unpack` always have both on; for usage see `README.md`「Command line」; how each entry point is chosen, the combinations of options, and how each caller (an app that embeds the library, completion, a server that receives share files) passes them are in `SIGNATURES.md`「Wiring into the check」.
 
-- **验签**：基础部分和协议核心（完整包里有两份）的清单旁边必须有 `manifest.json.minisig`，是信任名单里某把公钥签的，签的就是这份清单的字节；不是官方签名的一律拒绝。角色部分不验（作者身份交给社区账号）。结果记在报告的 `signatures` 里，每个部分一项：`verified` 是 `true`（验过）、`false`（验了没过）、`null`（没验）；没验时 `skipped` 说明原因（`role`：角色部分不验；`unsigned`：没有签名文件，调用方选了放过）；验过的记着是哪把钥匙签的（`keyId`）。不通过的问题有 `signature_missing`、`signature_invalid`、`signature_untrusted_key` 等。信任名单怎么来、命令、全部的 `code` 见 `SIGNATURES.md`。
-- **互相校验**：角色部分和它带着的基础部分对一对。只有角色部分、没有基础部分的包做不了，报告的 `mutual` 是 `{ checked: false, reason }` 并说明为什么（`no_base`：没有基础部分；`no_role`：传进来的是基础部分或协议核心；`not_reached`：清单读不了、超了解包上限，检查没走到这一步；`not_requested`：调用方写了 `mutual: false`）。做了是 `{ checked: true }`。查三样，每样一个 `code`：
-  1. 协议主版本兼容：角色部分的 `requires.protocolMajor` 等于基础部分的协议主版本，次版本不管（`protocol_incompatible`）。
-  2. 基础部分够新：基础部分的版本不低于 `requires.baseMin`，按语义化版本的次序比，预发布版低于对应的正式版，构建信息不参与（`base_too_old`）。
-  3. 所需能力：每个功能要的所需能力，都在基础部分的能力词表 `vocab/capabilities.json` 里（`capability_unknown`，每项缺的能力报一次，要它的功能都列上）；词表读不懂报 `capability_vocabulary_invalid`。词表文件本身缺了或被改过的，是哈希那一步的 `file_missing`、`file_modified`，这里不重复报，也不拿没有清单担保的内容去核对。
+- **Signature verification**: next to the manifests of the base part and the protocol core (a full pack has two copies) there must be a `manifest.json.minisig`, signed by a public key in the trust list, and what is signed is the bytes of that manifest; anything not officially signed is rejected. The role part is not verified (the author's identity is left to community accounts). The result is recorded in the report's `signatures`, one entry per part: `verified` is `true` (verified), `false` (verified and failed), `null` (not verified); when not verified, `skipped` gives the reason (`role`: the role part is not verified; `unsigned`: there is no signature file and the caller chose to let it through); for one that was verified, which key signed it is recorded (`keyId`). Problems that fail include `signature_missing`, `signature_invalid`, `signature_untrusted_key` and others. How the trust list comes about, the commands and all the `code`s are in `SIGNATURES.md`.
+- **Mutual verification of the pack**: pair the role part with the base part it carries. A pack with only the role part and no base part cannot do it, and the report's `mutual` is `{ checked: false, reason }` with the reason given (`no_base`: there is no base part; `no_role`: what was passed in is a base part or a protocol core; `not_reached`: the manifest could not be read or the unpacking limit was exceeded, and the check did not get to this step; `not_requested`: the caller wrote `mutual: false`). When done it is `{ checked: true }`. Three things are checked, each with its own `code`:
+  1. Protocol major version compatible: the role part's `requires.protocolMajor` equals the base part's protocol major version, and the minor version does not matter (`protocol_incompatible`).
+  2. The base part is new enough: the base part's version is not lower than `requires.baseMin`, compared in semantic version order, where a pre-release is lower than the corresponding release and build metadata does not take part (`base_too_old`).
+  3. Required capabilities: the required capabilities of every feature are all in the base part's capability vocabulary `vocab/capabilities.json` (`capability_unknown`, each missing capability reported once, with all the features that need it listed); a vocabulary that cannot be read reports `capability_vocabulary_invalid`. If the vocabulary file itself is missing or modified, that is the `file_missing` or `file_modified` of the hash step, not repeated here, and content with no manifest backing it is not used for the comparison.
 
-  「内容」一条（至少有一段参考音频和对应的文本）是清单自己的规则，见「语义规则」第 10 条，不在这里。「完整性」一条（每个文件都和清单里的哈希一致）是上面第 3 步各部分各自做的。
+  The "content" item (at least one reference audio and its matching text) is the manifest's own rule, see "Semantic rules" item 10, and is not here. The "integrity" item (every file agrees with the hash in the manifest) is done by each part separately in step 3 above.
 
-**检查不做的事**：不验作者的身份（交给社区账号）；不检查脚本的内容（运行环境完全信任脚本，不隔离、不限制权限，安全靠社区的审核）；不解码音频，不保证它能播放；不判断一个包「好不好听」（还原度是另一件事）。
+**What the check does not do**: it does not verify the author's identity (left to community accounts); it does not check the content of scripts (the runtime environment fully trusts scripts, with no isolation and no permission limits, and safety rests on community review); it does not decode audio and does not guarantee it plays; it does not judge whether a pack "sounds good" (fidelity is another matter).
 
-## 11. 补全
+## 11. Completing a pack
 
-只有角色部分的包，进入一个没有可用基础部分的环境时，要先补全，变成完整包（术语「补全」）。补全的流程在基础部分里，不是格式；但「补全取哪个版本」是在解读清单里的 `requires`，第三方做补全，要取和这里一样的版本，所以规则和理由写在这里。程序在 `protocol/lib/complete.mjs`（流程）和 `protocol/lib/base-choice.mjs`（判断），命令是 `node protocol/cli.mjs complete <包目录>`（`README.md` 的「命令行」）。
+When a pack with only the role part enters an environment that has no usable base part, it must first be completed and become a full pack (the term "complete"). The procedure for completing is in the base part and is not format; but "which version completion fetches" interprets `requires` in the manifest, and a third party doing completion must fetch the same version as here, so the rule and its reasons are written here. The program is in `protocol/lib/complete.mjs` (procedure) and `protocol/lib/base-choice.mjs` (judgement), and the command is `node protocol/cli.mjs complete <pack directory>` (`README.md`「Command line」).
 
-**可用**：环境里已有的基础部分，三条都成立才算可用，有可用的就直接用它，不补全，不联网，一个字节都不写。
+**Availability**: a base part already in the environment is usable only if all three conditions hold; if there is a usable one, use it directly, do not complete, do not go online, and do not write a single byte.
 
-1. 官方版本：基础部分和它里面的协议核心，两份清单旁边的签名都是信任名单里的公钥签的；
-2. 协议兼容：协议主版本等于角色部分的 `requires.protocolMajor`；
-3. 版本够：版本不低于角色部分的 `requires.baseMin`，按语义化版本的次序比。
+1. Official version: the signatures next to the base part's manifest and the protocol core's manifest inside it (two manifests) were both signed by a public key in the trust list;
+2. Protocol compatible: the protocol major version equals the role part's `requires.protocolMajor`;
+3. Version sufficient: the version is not lower than the role part's `requires.baseMin`, compared in semantic version order.
 
-判断环境里已有的这一份，只验这两份清单的签名，不逐个文件重算哈希：每个部分只在进入环境的时候校验一次，进来以后不再复查。清单里写的版本和协议版本，验过签才拿来比。找的位置按这个次序：包自己的 `voice-pack/`（可用就是完整包，什么都不做；不可用就报错，不覆盖），和包放在同一个 skill 目录里的 `voice-pack/`，项目的 `.agents/skills/voice-pack/`，项目的 `.claude/skills/voice-pack/`；第一个可用的就用。
+To judge the one already in the environment, only the signatures of these two manifests are verified, and the hashes are not recomputed file by file: each part is checked only once, when it enters the environment, and is not rechecked after it has come in. The version and protocol version written in the manifest are compared only after the signature has been verified. The locations are searched in this order: the pack's own `voice-pack/` (if usable, it is a full pack and nothing is done; if not usable, report an error and do not overwrite), the `voice-pack/` in the same skill directory as the pack, the project's `.agents/skills/voice-pack/`, the project's `.claude/skills/voice-pack/`; the first usable one is used.
 
-**取哪个版本**：官方地址上的版本索引（`RELEASES.md`）里，同时满足下面四条的版本里，版本号最高的那个：
+**Which version to fetch**: in the version index at the official address (`RELEASES.md`), among the versions that satisfy all four conditions below, the one with the highest version number:
 
-- 不低于 `requires.baseMin`；
-- 和 `requires.baseMin` 在同一个主版本里，也就是语义化版本的 `^baseMin`；主版本是 0 的，范围收得更紧（`^0.2.3` 只到 `0.2.x`，`^0.0.3` 只有 `0.0.3` 自己）；
-- 索引里这一项的 `protocol` 的主版本，等于 `requires.protocolMajor`；
-- 不是预发布版；`baseMin` 自己是预发布版时，同一个「主.次.修订」的预发布版除外（`^1.2.3-beta.2` 允许 `1.2.3-beta.4`，不允许 `1.2.4-beta.2`）。
+- Not lower than `requires.baseMin`;
+- In the same major version as `requires.baseMin`, that is, the semantic version `^baseMin`; for a major version of 0 the range is tighter (`^0.2.3` goes only up to `0.2.x`, and `^0.0.3` is only `0.0.3` itself);
+- The major version of the `protocol` of this entry in the index equals `requires.protocolMajor`;
+- Not a pre-release; when `baseMin` itself is a pre-release, pre-releases of the same "major.minor.patch" are the exception (`^1.2.3-beta.2` allows `1.2.3-beta.4` and does not allow `1.2.4-beta.2`).
 
-范围的写法、0.x 和预发布的细节，照 node-semver 的「Caret Ranges」（<https://github.com/npm/node-semver#caret-ranges-123-025-004>，2026-10-15 取回核对）。
+For how ranges are written and the details of 0.x and pre-releases, follow node-semver's "Caret Ranges" (<https://github.com/npm/node-semver#caret-ranges-123-025-004>, retrieved and checked 2026-10-15).
 
-理由：
+Reasons:
 
-- **取最高的，不是正好等于 `baseMin`，也不是不管主版本的最新版**。`baseMin` 的意思是「做包时用的那一版起，往上兼容」。语义化版本规定：只有向后兼容的修复，只增修订号；加了向后兼容的功能，只增次版本号；有不兼容的改动，才增主版本号（https://semver.org/ 第 6、7、8 条，2026-10-15 取回核对）。所以同一个主版本里往上都兼容，新版本带着修复，没有理由故意下载旧的；主版本变了才可能不兼容，一个按 1.x 做的包不该拿到 2.0.0。
-- **协议主版本看索引里的 `protocol` 就知道，不用先下载再发现不兼容**。索引里写的和 zip 里基础部分的清单对不上，下载以后核对，不一致就报错（`RELEASES.md`「怎么取一个版本」）。
-- **预发布版不自动取**：语义化版本说预发布版表示这个版本不稳定，可能满足不了预期的兼容要求（同上第 9 条）；没发布完的版本，不该悄悄用上。
+- **Take the highest, not exactly equal to `baseMin`, and not the latest regardless of major version**. `baseMin` means "compatible upward from the version used when the pack was made". Semantic versioning specifies that a backward-compatible fix only increases the patch number, adding backward-compatible functionality only increases the minor number, and only an incompatible change increases the major number (https://semver.org/ items 6, 7 and 8, retrieved and checked 2026-10-15). So everything upward within the same major version is compatible, a new version carries fixes, and there is no reason to download an old one on purpose; only a change of major version may be incompatible, and a pack made for 1.x should not get 2.0.0.
+- **The protocol major version is known from `protocol` in the index, so there is no need to download first and then find it incompatible**. If what the index says does not match the base part's manifest in the zip, it is checked after download, and a mismatch reports an error (`RELEASES.md`「How to fetch a version」).
+- **Pre-release versions are not fetched automatically**: semantic versioning says a pre-release indicates the version is unstable and might not satisfy the intended compatibility requirements (same source, item 9); a version that has not finished being released should not be quietly used.
 
-**没有符合的版本**：报「要的版本不存在」（`base_version_unavailable`），写明要的是什么（`baseMin`、协议主版本、范围）、官方地址上有哪些版本、每个为什么没选上（低于最低版本、不在 `^baseMin` 的范围里、预发布版、协议主版本不兼容）；不换别的版本。官方地址上还没有发布过任何版本（版本索引是 404），报 `official_unpublished`。
+**No matching version**: report "the required version does not exist" (`base_version_unavailable`), stating what is required (`baseMin`, the protocol major version, the range), which versions exist at the official address, and why each was not chosen (lower than the minimum version, not in the range of `^baseMin`, pre-release, incompatible protocol major version); no other version is substituted. If no version has ever been released at the official address (the version index is 404), report `official_unpublished`.
 
-**步骤**：先用环境里可用的；没有才读版本索引（带 `cb` 参数读，先验签再信；发布刚生效的一阵，读到的索引和它的签名可能不配套，见 `RELEASES.md`「缓存」），按上面的规则挑一个版本，只取这一个版本的 zip 和它的签名，核对大小和 SHA-256、验签、检查里面的内容（读索引、取 zip、核对验签这几步和 app 导出完整包是同一份，在 `protocol/lib/release-fetch.mjs`）；放进包里的 `voice-pack/` 以后，对完整的包再做一遍检查和互相校验（「检查」一节），通过才算补全成功。一种例外：版本索引的签名是信任名单外的钥匙签的（官方换过钥匙，包里的名单只有旧公钥）时，不信索引、不挑版本，改取 `requires.baseMin` 本身，直接读它的 zip 和签名，别的核对照旧（规则和理由见 `RELEASES.md`「私钥丢了或泄露了」）。
+**Steps**: first use a usable one in the environment; only if there is none read the version index (read with the `cb` parameter, verify the signature first and only then trust it; for a while right after a release takes effect, the index read and its signature may not match, see `RELEASES.md`「Caching」), pick one version by the rules above, fetch only the zip of this one version and its signature, check the size and SHA-256, verify the signature, and check the contents (reading the index, fetching the zip, and the checking and signature verification steps are the same code as the app's export of a full pack, in `protocol/lib/release-fetch.mjs`); after putting it into the pack's `voice-pack/`, run the check and mutual verification again on the whole pack ("Check" section), and only if it passes is completion successful. One exception: when the version index's signature was made by a key outside the trust list (the official keys were changed, and the list in the pack has only the old public key), do not trust the index and do not pick a version, but fetch `requires.baseMin` itself, reading its zip and signature directly, with the other checks as usual (the rule and reasons are in `RELEASES.md`「A lost or leaked private key」).
 
-**不兜底**：任何一步不过都报错，点名是哪一步，不换别的版本，不跳过验签，不留下半个 `voice-pack/`（命令是先在包目录里的临时目录写好，最后一步才改名）。同一个环境里几个包要的基础部分版本不同，每个包补进自己的 `voice-pack/`，环境里共用的那一份从来不改。每一步的 `code`、细节的形状，写在 `protocol/lib/complete.mjs` 和 `protocol/lib/release-fetch.mjs` 的文件头。
+**No fallback**: if any step fails, report an error naming which step; do not substitute another version, do not skip signature verification, and do not leave half a `voice-pack/` behind (the command first writes everything in a temporary directory inside the pack directory, and renames only at the last step). When several packs in the same environment need different base part versions, each pack is completed into its own `voice-pack/`, and the shared copy in the environment is never changed. The `code` of each step and the shapes of the details are written in the file headers of `protocol/lib/complete.mjs` and `protocol/lib/release-fetch.mjs`.
 
-## 12. 这份格式没有管的事
+## 12. What this format does not cover
 
-- **命令行**：生成清单、打包、解包、检查的命令，用法在 `README.md` 的「命令行」一节，不在格式里。
-- **补全的流程**、**用包配音**、**做新包**：是基础部分里的流程，不是格式。补全取哪个版本的规则在「补全」一节；补全、用包配音、做新包的步骤都已经写进角色部分 `SKILL.md` 的「没有基础部分时怎么补全」「能拿来做什么」「怎么做新包」三节；做新包的规格（净室、字段怎么写、查重比什么）在 `new-pack/README.md`。
-- **官方版本和签名**：见 `SIGNATURES.md`。官方版本放在哪、叫什么、有哪些版本：见 `RELEASES.md`。
-- **能力词表、设计词表、舞台提示词表、台本标记**：是基础部分的词表（`vocab/` 的 `capabilities.json`、`design.json`、`cues.json`、`markup.json`）。清单里引用前三张的名字：`features` 的能力名、`direction.tags`、设定 `labels` 的情绪和风格。格式本身不规定词表的内容。
+- **Command line**: the commands that generate manifests, pack, unpack and check; their usage is in `README.md`「Command line」 section, not in the format.
+- **The procedure for completing a pack**, **dubbing with a pack**, **making a new pack**: these are procedures in the base part, not format. The rule for which version completion fetches is in the "Completing a pack" section; the steps for completion, dubbing with a pack and making a new pack are already written into the three sections of the role part's `SKILL.md`「没有基础部分时怎么补全」「能拿来做什么」「怎么做新包」 (in English: Completing the pack when the base part is missing, What it can be used for, How to make a new pack); the specification for making a new pack (clean room, how fields are written, what the duplicate check compares) is in `new-pack/README.md`.
+- **Official releases and signatures**: see `SIGNATURES.md`. Where official releases are put, what they are called and which versions exist: see `RELEASES.md`.
+- **Capability vocabulary, design vocabulary, stage cue vocabulary, script markup**: these are the base part's vocabularies (`capabilities.json`, `design.json`, `cues.json`, `markup.json` in `vocab/`). The manifest cites the names in the first three: the capability names in `features`, `direction.tags`, and the emotion and style in a setup's `labels`. The format itself does not specify the content of the vocabularies.
 
-## 13. 协议版本 2.0 改了什么，1.x 的包怎么读
+## 13. What protocol version 2.0 changed, and how to read 1.x packs
 
-2.0 只改名字，格式的其他部分（清单的字段、路径、哈希、签名、zip 的写法、检查的次序）一个字没动。1.0 的名字里带着产品名；协议是公共的，2.0 换成协议自己的名字。哪个协议主版本对哪一套名字，在 `protocol/lib/names.mjs` 的一张表里写一份，程序里别处都问它。
+2.0 changes only names, and the rest of the format (manifest fields, paths, hashes, signatures, how a zip is written, the order of the check) was not changed by a single word. The names of 1.0 carried the product name; the protocol is public, and 2.0 switched to the protocol's own names. Which protocol major version uses which set of names is written in one place, in a table in `protocol/lib/names.mjs`, and everywhere else in the programs asks it.
 
-| 名字 | 1.x | 2.0 |
+| Name | 1.x | 2.0 |
 |---|---|---|
-| 基础部分的目录名（第 1 节、8.1），也是基础部分 `SKILL.md` 的 `name`（第 5 节） | `cohub-voice-studio` | `voice-pack` |
-| 官方发布的 zip 的文件名（`RELEASES.md`） | `cohub-voice-studio-<版本>.voicepack.zip` | `voice-pack-<版本>.voicepack.zip` |
-| 分享文件的类型标识（8.2） | `application/vnd.cohub.voicepack+zip` | `application/vnd.voice-pack+zip` |
+| The base part's directory name (section 1, 8.1), also the `name` of the base part's `SKILL.md` (section 5) | `cohub-voice-studio` | `voice-pack` |
+| The file name of the officially released zip (`RELEASES.md`) | `cohub-voice-studio-<version>.voicepack.zip` | `voice-pack-<version>.voicepack.zip` |
+| The type identifier of the share file (8.2) | `application/vnd.cohub.voicepack+zip` | `application/vnd.voice-pack+zip` |
 
-清单里的 `protocol` 写 `"2.0"`；2.0 的角色部分的 `requires.protocolMajor` 写 2。
+The `protocol` in the manifest is written `"2.0"`; the `requires.protocolMajor` of a 2.0 role part is written 2.
 
-**写**：一个包用哪套名字，由它清单里的协议版本定，三个名字整套用，不混着用。2.x 的程序新做的包、新打的分享文件写 2.0；这一版写 3.0（第 14 节「写」）。已有清单的东西（打包命令打一个已封好的目录、官方发布）按清单自己的协议版本取名字，同样的内容打出同样的字节。
+**What a program writes**: which set of names a pack uses is decided by the protocol version in its manifest, and the three names are used as a set, never mixed. A 2.x program writes 2.0 for newly made packs and newly packed share files; this version writes 3.0 (section 14, "What a program writes"). Things that already have a manifest (the pack command packing an already sealed directory, official releases) take their names by the manifest's own protocol version, and the same content is packed into the same bytes.
 
-**读**：2.x 的程序认主版本 1 和 2，别的主版本不读（`protocol_unsupported`，细节里有 `supported`）；这一版认 1、2、3（文件开头；`protocol/lib/names.mjs` 的 `PROTOCOL_NAMES`）。1.x 的包按 1.x 的名字读：检查、验签、互相校验、补全、解包、安装的结果和 1.0 的程序一样。名字要和协议版本对得上，对不上就是检查不过，报 `protocol_name_mismatch`；`details.item` 说是哪一项，`details.expected` 是这个协议版本该用的，`details.actual` 是实际的：
+**What a program reads**: a 2.x program recognises major versions 1 and 2 and reads no other major version (`protocol_unsupported`, with `supported` in the details); this version recognises 1, 2 and 3 (at the start of the file; `PROTOCOL_NAMES` in `protocol/lib/names.mjs`). A 1.x pack is read with the 1.x names: the results of check, signature verification, mutual verification, completion, unpacking and installing are the same as with a 1.0 program. The names must match the protocol version; if they do not, the check fails and reports `protocol_name_mismatch`; `details.item` says which item it is, `details.expected` is what this protocol version should use, and `details.actual` is what is actually there:
 
-- `base_directory`：角色部分里放着别的协议版本的基础部分目录名（2.0 的包里叫 `cohub-voice-studio`，或 1.x 的包里叫 `voice-pack`），或者嵌着的基础部分自己的协议版本对应的目录名，和它所在的目录对不上；分享文件的包目录名同理；
-- `media_type`：分享文件的类型标识和包的协议版本对不上。
+- `base_directory`: the role part holds the base part directory name of another protocol version (in a 2.0 pack it is called `cohub-voice-studio`, or in a 1.x pack it is called `voice-pack`), or the directory name corresponding to the protocol version of the embedded base part itself does not match the directory it is in; the pack directory name of a share file likewise;
+- `media_type`: the type identifier of the share file does not match the pack's protocol version.
 
-这样不会因为两套名字都认得，就把一个半新半旧的包当成好包。
+This way, a half-new, half-old pack is not taken as a good pack just because both sets of names are recognised.
 
-**补全**：只有角色部分的 1.x 包（`requires.protocolMajor` 是 1）补全时取 1.x 的基础部分：文件名 `cohub-voice-studio-<版本>.voicepack.zip`，放进 `cohub-voice-studio/`；2.0 的包取 `voice-pack-<版本>.voicepack.zip`，放进 `voice-pack/`。同一份版本索引里 1.0.x 和 2.0.0 可以并存，每一项的文件名按这一项自己的 `protocol` 拼；索引验不过、退回直接取最低版本时（`RELEASES.md`「私钥丢了或泄露了」），文件名按包要的协议主版本拼。
+**Complete**: when a 1.x pack with only the role part (`requires.protocolMajor` is 1) is completed, it fetches a 1.x base part: file name `cohub-voice-studio-<version>.voicepack.zip`, put into `cohub-voice-studio/`; a 2.0 pack fetches `voice-pack-<version>.voicepack.zip`, put into `voice-pack/`. In the same version index, 1.0.x and 2.0.0 may coexist, and the file name of each entry is built by that entry's own `protocol`; when the index fails verification and it falls back to fetching the minimum version directly (`RELEASES.md`「A lost or leaked private key」), the file name is built by the protocol major version the pack requires.
 
-**1.0 的程序读 2.0 的包**：已经发出去的 1.0 程序不会变，它拒绝 2.0 的包，不去猜着读。用已经发布的 1.0.9（基础部分）程序检查 2.0 的包的实测（2026-10-20）：
+**A 1.0 program reading a 2.0 pack**: a 1.0 program that has already been sent out does not change, and it rejects a 2.0 pack and does not guess its way through reading it. The measured result (2026-10-20) of checking a 2.0 pack with the already released 1.0.9 (base part) program:
 
-- 分享文件：`share_not_voicepack`，说 `mimetype` 的内容应该是 `application/vnd.cohub.voicepack+zip`（只认 1.x 的类型标识）；
-- 包目录：`protocol_unsupported`，说清单按协议 2.0 写，只认主版本 1。
+- Share file: `share_not_voicepack`, saying that the content of `mimetype` should be `application/vnd.cohub.voicepack+zip` (it recognises only the 1.x type identifier);
+- Pack directory: `protocol_unsupported`, saying the manifest was written for protocol 2.0 and only major version 1 is recognised.
 
-要读 2.0 的包，先把基础部分更新到 2.0 以后的版本。
+To read a 2.0 pack, first update the base part to a version after 2.0.
 
-## 14. 协议版本 3.0：不兼容 2.x 的新主版本
+## 14. Protocol version 3.0: a new major version not compatible with 2.x
 
-3.0 是新的主版本：格式里的字段、词表、命令都可以改、可以删，不迁移旧包，也不为 2.x 的格式写兼容。格式的哪一部分改了，改在它自己的那一节里，这里不另列。第 13 节的三个名字没变：3.x 和 2.x 一样，基础部分的目录叫 `voice-pack`，官方发布的 zip 叫 `voice-pack-<版本>.voicepack.zip`，类型标识是 `application/vnd.voice-pack+zip`。
+3.0 is a new major version: the fields, vocabularies and commands in the format may be changed and may be removed, old packs are not migrated, and no compatibility is written for the 2.x format. Which part of the format changed is changed in that part's own section, and is not listed separately here. The three names of section 13 did not change: 3.x is the same as 2.x, the base part's directory is called `voice-pack`, the officially released zip is called `voice-pack-<version>.voicepack.zip`, and the type identifier is `application/vnd.voice-pack+zip`.
 
-**写**：这一版程序新做的包、新打的分享文件、新发布的版本写 3.0；角色部分的 `requires.protocolMajor` 写 3。
+**What a program writes**: the packs newly made, the share files newly packed, and the versions newly released by this version of the program write 3.0; the role part's `requires.protocolMajor` is written 3.
 
-**认**：名字一样，所以只看目录名和类型标识认不出是 2.x 还是 3.x，要看清单里的 `protocol`。
+**Telling versions apart**: the names are the same, so the directory name and type identifier alone cannot tell 2.x from 3.x; look at `protocol` in the manifest.
 
-**新包和 2.x 的基础部分**：协议主版本对不上，2.x 的基础部分对 3.x 的包不可用（第 11 节的「协议兼容」；检查里是互相校验的 `protocol_incompatible`）。补全只取协议主版本是 3 的版本。
+**New packs and the 2.x base part**: the protocol major versions do not match, and a 2.x base part is not usable for a 3.x pack (the "Protocol compatible" item in section 11; in the check, the mutual verification's `protocol_incompatible`). Completion fetches only versions whose protocol major version is 3.
 
-**2.x 的包**：照旧能用。完整包用它自带的基础部分；只有角色部分的，补全只在它要的主版本里挑（第 11 节），官方地址上有了 3.x 也照旧取 2.x。
+**2.x packs**: they work as before. A full pack uses the base part it brings; for one with only the role part, completion picks only within the major version it requires (section 11), and even when 3.x exists at the official address it still fetches 2.x.
 
-**版本索引**：写法没变，索引自己的 `protocol` 照旧写 `"2.0"`，3.x 和 2.x 的版本列在同一份索引里，每一项的 `protocol` 写这个版本自己的协议版本（为什么不写 3.0，见 `RELEASES.md`「版本索引」）。
+**Version index**: the way it is written has not changed; the index's own `protocol` is still written `"2.0"`, 3.x and 2.x versions are listed in the same index, and the `protocol` of each entry is written as that version's own protocol version (why it is not written 3.0 is in `RELEASES.md`「Official releases: official address, file layout, version index」).
 
-**参考段换了写法**：3.0 的参考段和留出录音把语言写在段自己的 `language` 上，参考段另有一个必填的音色基底标签 `tag`（4.4）；2.x 的 `tags`（语言和情绪、风格、能量三项）拿掉了。这一版的协议核心还读得了 1.x、2.x 的清单，查的时候：清单写的协议主版本小于 3 的角色部分，段按老写法查（`tags` 必填，`tags.language` 必填，情绪、风格、能量可选），3.0 才有的段上的 `tag`、`annotatedText` 当不认识的字段，不查（第 10 条里 `tag`、`annotatedText` 那两半和第 16、17 条）；段以外的字段一律按 3.0 的规矩查。新版的程序不为 2.x 的格式写兼容，所以这一版查 1.x、2.x 的清单，结论和 1.x、2.x 的程序不一定一样：3.0 才有的字段写错了，这一版报，老程序不理；3.0 拿掉的规则（例如场景标签的），这一版不查。第 13 节「读」说的「和 1.0 的程序一样」，是 2.x 的程序读 1.x 的包。基础部分的程序（做包、配音、变声）只读 3.x 的写法，不读老写法。
+**Reference segments are written differently**: in 3.0, reference segments and held-out recordings write the language on the segment's own `language`, and a reference segment has in addition a required reference tag `tag` (4.4); the `tags` of 2.x (language, plus emotion, style and energy) was removed. The protocol core of this version can still read the manifests of 1.x and 2.x, and when checking: for a role part whose manifest's protocol major version is less than 3, segments are checked in the old way (`tags` required, `tags.language` required, emotion, style and energy optional), and the `tag` and `annotatedText` on segments, which exist only from 3.0, are treated as unrecognised fields and are not checked (the `tag` and `annotatedText` halves of item 10, and items 16 and 17); fields other than segments are all checked by the 3.0 rules. The new program writes no compatibility for the 2.x format, so when this version checks the manifests of 1.x and 2.x, its conclusion is not necessarily the same as that of 1.x and 2.x programs: if a field that exists only from 3.0 is written wrongly, this version reports it and old programs ignore it; for rules that 3.0 removed (for example those on scene tags), this version does not check them. The "same as with a 1.0 program" that section 13 "What a program reads" speaks of is a 2.x program reading a 1.x pack. The base part's programs (making a pack, dubbing, voice conversion) read only the 3.x way of writing and not the old one.
 
-**2.x 的程序读 3.0 的包**：拒绝，不去猜着读。用已经发布的 2.7.0（基础部分）程序读这一版写的东西的实测（2026-11-05）：清单报 `protocol_unsupported`，说清单按协议 3.0 写，只认主版本 1.x、2.x；协议 3.0 的版本索引同样报 `protocol_unsupported`。要读 3.0 的包，先把基础部分换成 3.x。
+**A 2.x program reading a 3.0 pack**: rejected, and no guessing at reading. The measured result (2026-11-05) of reading what this version writes with the already released 2.7.0 (base part) program: the manifest reports `protocol_unsupported`, saying the manifest was written for protocol 3.0 and only major versions 1.x and 2.x are recognised; the protocol 3.0 version index likewise reports `protocol_unsupported`. To read a 3.0 pack, first change the base part to 3.x.

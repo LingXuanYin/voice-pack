@@ -52,7 +52,7 @@ export const PICK_PROMPT = [
   '{"choice": 1, "opening": "…", "why": "…"}',
 ].join('\n');
 
-const invalidAnswer = (reason, reply) => new VoicePackError('pick_answer_invalid', `挑默认段的回答不符合固定格式（${reason}），不猜，这次挑的不采用`, { details: { reason, reply: reportable(reply) } });
+const invalidAnswer = (reason, reply) => new VoicePackError('pick_answer_invalid', `The answer for picking the default segment does not follow the fixed format (${reason}); it is not guessed at, and this pick is not used`, { details: { reason, reply: reportable(reply) } });
 
 /**
  * 把模型的回答解析出来。整段回答必须是一个 JSON 对象（可以包在一个代码块里）：choice 是 1 到 count 的整数，opening、why 是字符串。
@@ -63,19 +63,19 @@ export function parsePickAnswer(reply, count) {
   try {
     data = JSON.parse(answerBody(reply));
   } catch {
-    throw invalidAnswer('不是 JSON', reply);
+    throw invalidAnswer('not JSON', reply);
   }
-  if (!isPlainObject(data)) throw invalidAnswer('不是 JSON 对象', reply);
-  if (!Number.isInteger(data.choice) || data.choice < 1 || data.choice > count) throw invalidAnswer(`choice 必须是 1 到 ${count} 的整数`, reply);
-  for (const key of ['opening', 'why']) if (typeof data[key] !== 'string') throw invalidAnswer(`${key} 必须是字符串`, reply);
+  if (!isPlainObject(data)) throw invalidAnswer('not a JSON object', reply);
+  if (!Number.isInteger(data.choice) || data.choice < 1 || data.choice > count) throw invalidAnswer(`choice must be an integer from 1 to ${count}`, reply);
+  for (const key of ['opening', 'why']) if (typeof data[key] !== 'string') throw invalidAnswer(`${key} must be a string`, reply);
   return { choice: data.choice, opening: data.opening, why: data.why };
 }
 
 function readCandidates(candidates) {
-  if (!Array.isArray(candidates) || candidates.length < 2) throw new TypeError('candidates 必须是两段以上的数组');
-  if (candidates.length > MAX_PICK_CANDIDATES) throw new TypeError(`candidates 最多 ${MAX_PICK_CANDIDATES} 段`);
+  if (!Array.isArray(candidates) || candidates.length < 2) throw new TypeError('candidates must be an array of at least two segments');
+  if (candidates.length > MAX_PICK_CANDIDATES) throw new TypeError(`candidates may have at most ${MAX_PICK_CANDIDATES} segments`);
   for (const [index, candidate] of candidates.entries()) {
-    if (!isPlainObject(candidate) || !isPlainObject(candidate.audio) || typeof candidate.text !== 'string') throw new TypeError(`candidates[${index}] 必须是 { audio, text }`);
+    if (!isPlainObject(candidate) || !isPlainObject(candidate.audio) || typeof candidate.text !== 'string') throw new TypeError(`candidates[${index}] must be { audio, text }`);
   }
 }
 
@@ -106,7 +106,7 @@ export async function pickByListening(env, candidates, { maxErrorRate = DEFAULT_
   }
   if ('error' in outcome) return { status: 'not_heard', error: summarizeError(outcome.error), attempts: calls };
   const reply = outcome.result;
-  if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', 'text_missing', '必须返回 { text: 字符串, model?: 字符串 }');
+  if (!isPlainObject(reply) || typeof reply.text !== 'string') throw badResult('audio-text-to-text', 'text_missing', 'must return { text: string, model?: string }');
   const asked = { attempts: calls, ...(typeof reply.model === 'string' ? { model: reply.model } : {}) };
   let answer;
   try {

@@ -2,7 +2,7 @@
 //
 // 命令行层的主体：把命令行参数变成对库的调用，把库的结果和错误变成输出和退出码。
 // Node 专有的东西（node:fs、process……）只允许出现在这一层：名为 cli.mjs 的文件和名为 cli/ 的目录里，
-// 库代码（protocol/lib、lib、tools、adapters 里的其他 .mjs）不碰它们。规则见 protocol/README.md「模块约定」。
+// 库代码（protocol/lib、lib、tools、adapters 里的其他 .mjs）不碰它们。规则见 protocol/README.md「Module conventions」。
 //
 // 命令
 //   一个命令就是 <命令目录>/<名字>.mjs。名字是小写字母、数字和连字符，不能叫 help（内置）。
@@ -18,7 +18,7 @@
 //   抛出别的错误算内部错误，也退出 1。
 //
 //   ctx 是这一层给命令的上下文：
-//     env        注入的运行环境 { capabilities, fetch, runtimes }（形状见 protocol/README.md「运行环境」）。
+//     env        注入的运行环境 { capabilities, fetch, runtimes }（形状见 protocol/README.md「Runtime environment」）。
 //                缺了的东西用 protocol/lib/env.mjs 的 requireCapability / requireRuntime / requireFetch 取，缺了就会报错并点名。
 //     stdout(s)  写标准输出（不自动加换行）；stderr(s) 写标准错误
 //     cwd        当前目录（绝对路径）
@@ -72,8 +72,8 @@ function discover(commandDirs) {
       const name = entry.name.slice(0, -'.mjs'.length);
       if (!NAME_RE.test(name)) continue;
       const file = path.join(base, entry.name);
-      if (name === BUILTIN) throw new UsageError(`命令名 ${BUILTIN} 是内置的，不能再定义（${file}）`);
-      if (found.has(name)) throw new UsageError(`命令 ${name} 重名：${found.get(name)} 和 ${file}`);
+      if (name === BUILTIN) throw new UsageError(`The command name ${BUILTIN} is built in and cannot be defined again (${file})`);
+      if (found.has(name)) throw new UsageError(`Duplicate command name ${name}: ${found.get(name)} and ${file}`);
       found.set(name, file);
     }
   }
@@ -85,63 +85,63 @@ async function loadCommand(name, file) {
   try {
     mod = await import(pathToFileURL(file).href);
   } catch (cause) {
-    throw new VoicePackError('command_load_failed', `命令 ${name} 加载失败：${cause?.message ?? cause}`, { details: { command: name, file }, cause });
+    throw new VoicePackError('command_load_failed', `Command ${name} failed to load: ${cause?.message ?? cause}`, { details: { command: name, file }, cause });
   }
   if (typeof mod.run !== 'function') {
-    throw new VoicePackError('command_load_failed', `命令 ${name} 没有导出 run 函数`, { details: { command: name, file } });
+    throw new VoicePackError('command_load_failed', `Command ${name} does not export a run function`, { details: { command: name, file } });
   }
   return mod;
 }
 
 async function helpOverview({ commands, programName, stdout }) {
-  const rows = [[BUILTIN, '列出命令；help <命令> 看某个命令的用法']];
+  const rows = [[BUILTIN, 'List the commands; help <command> shows the usage of one command']];
   for (const [name, file] of commands) {
     try {
       const mod = await loadCommand(name, file);
       rows.push([name, mod.summary ?? '']);
     } catch (error) {
-      rows.push([name, `（加载失败：${error.message}）`]);
+      rows.push([name, `(failed to load: ${error.message})`]);
     }
   }
   const width = Math.max(...rows.map(([name]) => name.length));
   stdout(
     [
-      `用法：${programName} [--json] <命令> [参数...]`,
+      `Usage: ${programName} [--json] <command> [arguments...]`,
       '',
-      '命令：',
+      'Commands:',
       ...rows.map(([name, summary]) => `  ${name.padEnd(width)}  ${summary}`),
       '',
-      '选项：',
-      '  --json      错误改用一行 JSON 报告；命令也可以据此把结果输出成 JSON',
-      '  -h, --help  同 help',
+      'Options:',
+      '  --json      Report errors as one line of JSON; commands may also use it to print their result as JSON',
+      '  -h, --help  Same as help',
       '',
     ].join(NL),
   );
 }
 
 function helpCommand({ name, mod, programName, stdout }) {
-  stdout([`用法：${programName} ${mod.usage ?? `${name} [参数...]`}`, mod.summary ?? '', ...(typeof mod.help === 'string' ? ['', mod.help] : []), ''].join(NL));
+  stdout([`Usage: ${programName} ${mod.usage ?? `${name} [arguments...]`}`, mod.summary ?? '', ...(typeof mod.help === 'string' ? ['', mod.help] : []), ''].join(NL));
 }
 
 function normalizeExit(code) {
   if (code === undefined) return EXIT_OK;
   if (Number.isInteger(code) && code >= 0 && code <= 255) return code;
-  throw new Error(`命令返回的退出码必须是 0–255 的整数，收到 ${JSON.stringify(code)}`);
+  throw new Error(`The exit code a command returns must be an integer from 0 to 255, got ${JSON.stringify(code)}`);
 }
 
 function report(error, { json, stderr }) {
   if (error instanceof UsageError) {
-    stderr(json ? JSON.stringify({ error: { code: 'usage', message: error.message, details: {} } }) + NL : `用法错误：${error.message}${NL}`);
+    stderr(json ? JSON.stringify({ error: { code: 'usage', message: error.message, details: {} } }) + NL : `Usage error: ${error.message}${NL}`);
     return EXIT_USAGE;
   }
   if (isVoicePackError(error)) {
     const details = error.details ?? {};
     if (json) stderr(JSON.stringify({ error: { code: error.code, message: error.message, details } }) + NL);
-    else stderr(`错误（${error.code}）：${error.message}${NL}` + (Object.keys(details).length ? `  详情：${JSON.stringify(details)}${NL}` : ''));
+    else stderr(`Error (${error.code}): ${error.message}${NL}` + (Object.keys(details).length ? `  Details: ${JSON.stringify(details)}${NL}` : ''));
     return EXIT_FAILURE;
   }
   const message = String(error?.message ?? error);
-  stderr(json ? JSON.stringify({ error: { code: 'internal_error', message, details: {} } }) + NL : `内部错误：${error?.stack ?? message}${NL}`);
+  stderr(json ? JSON.stringify({ error: { code: 'internal_error', message, details: {} } }) + NL : `Internal error: ${error?.stack ?? message}${NL}`);
   return EXIT_FAILURE;
 }
 
@@ -177,11 +177,11 @@ export async function main({
         await helpOverview({ commands, programName, stdout });
         return EXIT_OK;
       }
-      if (!commands.has(wanted)) throw new UsageError(`未知命令 ${wanted}；用 ${programName} help 列出可用的命令`);
+      if (!commands.has(wanted)) throw new UsageError(`Unknown command ${wanted}; use ${programName} help to list the available commands`);
       helpCommand({ name: wanted, mod: await loadCommand(wanted, commands.get(wanted)), programName, stdout });
       return EXIT_OK;
     }
-    if (!commands.has(first)) throw new UsageError(`未知命令 ${first}；用 ${programName} help 列出可用的命令`);
+    if (!commands.has(first)) throw new UsageError(`Unknown command ${first}; use ${programName} help to list the available commands`);
     const mod = await loadCommand(first, commands.get(first));
     if (args[0] === '--help' || args[0] === '-h') {
       helpCommand({ name: first, mod, programName, stdout });

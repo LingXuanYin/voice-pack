@@ -1,5 +1,5 @@
 {
-  "$comment": "设计出来的声音做包时，示例台词照这个角色写（`references/make-pack.md` 讲示例台词的那一段），这里每种语言一组（zh、en）只当口气和长度的样子：每句一种情绪，有问句、回答、插话；句子不原样抄进清单的 `sampleLines`，它们和哪个角色都无关。每一项是 { text, feel, kind } 对象，`sampleLines`（`--sample-lines`）要的是字符串数组 [\"…\", \"…\"]，给对象会报 make_pack_input_invalid。口气的规则写在 `references/make-pack.md` 讲示例台词的那一段（当面对人说的平常话，不照 `references/character-voice.md`「台本对谁说」），用法在 `references/make-pack.md`（SKILL.md 第 7 节指到那里）；每句不少于 10 个词或字（lib/pack-material.mjs 的 minHoldoutTokens）：这个长度是当初为克隆成素材、当留出录音定的，现在示例台词只写进清单，这个长度是保留下来的写法。app 和 agent 都从这一处取，改句子改这里。",
+  "$comment": "设计出来的声音做包时，示例台词照这个角色写（`references/make-pack.md` 讲示例台词的那一段），这里每种语言一组（zh、en）只当口气和长度的样子：每句一种情绪，有问句、回答、插话；句子不原样抄进清单的 `sampleLines`，它们和哪个角色都无关。每一项是 { text, feel, kind } 对象，`sampleLines`（`--sample-lines`）要的是字符串数组 [\"…\", \"…\"]，给对象会报 make_pack_input_invalid。口气的规则写在 `references/make-pack.md` 讲示例台词的那一段（当面对人说的平常话，不照 `references/character-voice.md`「Who the script is addressed to: words spoken face to face to the listener」），用法在 `references/make-pack.md`（SKILL.md 第 7 节指到那里）；每句不少于 10 个词或字（lib/pack-material.mjs 的 minHoldoutTokens）：这个长度是当初为克隆成素材、当留出录音定的，现在示例台词只写进清单，这个长度是保留下来的写法。app 和 agent 都从这一处取，改句子改这里。",
   "zh": [
     { "text": "你来啦，快进来坐，外面冷吧？我刚把水烧上。", "feel": "热情，高兴见到人", "kind": "greeting" },
     { "text": "你昨天说的那家店，到底在哪条路上呀？我找了半天都没找到。", "feel": "好奇，有点急", "kind": "question" },

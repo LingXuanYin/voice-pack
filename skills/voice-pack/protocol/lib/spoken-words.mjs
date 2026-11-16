@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 念出来的字：一句台词去掉台本标记以后剩下的字，只给人看（预览卡片上卡片试听那一句旁边写的就是它，preview-card.mjs）。
+// 念出来的字：一句台词去掉台本标记以后剩下的字，只给人看（预览卡片上试听句旁边写的就是它，preview-card.mjs）。
 // 清单里存的、交给配音的，还是原样（带标记）：这里只管显示，不改数据。
 //
 //   spokenWords(text)   一句台词 → 去掉标记的字（字符串）；什么字都不剩是空串
@@ -10,7 +10,7 @@
 //   方括号     [说戏]、[一下子的声音]、[pause 1s]、[voice:名字]：不论在哪，整个去掉。套着的也一样（[[笑] 得意]）：去掉一遍以后又露出提示、标签的，再去一遍。
 //   成对的标签  <whisper>…</whisper>、<emphasis>…</emphasis>、语言标签 <french>…</french>：去掉 <名字>、</名字>，留中间的字。
 //             只写了一头的，那一头照样去掉。`1 < 2`、`<b c>` 不是标签，原样。
-//   音素标签   <|phoneme_start|>音素<|phoneme_end|>：去掉两头，留里面的音素（卡片那一句照规矩不写音素，写了，卡片上至少不露标记）。
+//   音素标签   <|phoneme_start|>音素<|phoneme_end|>：去掉两头，留里面的音素（试听句照规矩不写音素，写了，卡片上至少不露标记）。
 //             几个音素标签紧挨着（中文一个标签一个音节），音素之间空一格：gong1 cheng2 shi1。里面是空的，整个去掉。
 //   单个的标签  <|名字|>、<|名字:数字|>：去掉。
 //   说话人标签  <|speaker:数字|>：去掉；那里算有空白（换了一轮），拉丁字母这类写空格的文字照样隔开。
@@ -184,7 +184,7 @@ function onePass(text, withDirections) {
  * @throws {TypeError} text 不是字符串
  */
 export function spokenWords(text) {
-  if (typeof text !== 'string') throw new TypeError(`spokenWords 的 text 必须是字符串，收到 ${typeof text}`);
+  if (typeof text !== 'string') throw new TypeError(`text of spokenWords must be a string, got ${typeof text}`);
   const unbolded = withoutBold(text);
   let pass = onePass(unbolded, true);
   const removed = unbolded !== text || pass.removed;

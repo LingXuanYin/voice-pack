@@ -6,11 +6,11 @@
 //   dryRunOf({ plan, items, fresh, previous, versionNumber, steps, notes })   dryRun 的返回 { plan, report }：不做包，只列每一段有没有用上、数量、plan（lib/make-pack-plan.mjs）
 //   resultOf({ made, evaluated, verification, items, fresh, chosen, roleOf, previous, version, changes, effective, byId, plan, steps, inputNotes, loudnessNotes, noHoldout, cardLine })
 //                                          makePack 的返回 { pack, report, evaluation }。inputNotes 是 input.notes（前几步留下的说明）接着发新版本留下的（lib/pack-version.mjs 的 versionNotes，例如 design_source_dropped），后面再接 loudnessNotes（调响度留下的）；
-//                                          还缺什么素材（hints）也在这里算：lib/material-hints.mjs 的 suggestMaterial，纯数据。cardLine 是卡片试听那一句的结果（lib/make-pack-card-line.mjs 的文件头），
+//                                          还缺什么素材（hints）也在这里算：lib/material-hints.mjs 的 suggestMaterial，纯数据。cardLine 是试听句的结果（lib/make-pack-card-line.mjs 的文件头），
 //                                          原样进 report.cardLine，写进包里的另带 audio（清单里的路径）
 //
-// 报告里每一段（reportSegment）：{ id, role, previous?, reason?, details?, hasText, textSource?, writtenFromScript?, scriptTextUnused?, language?, languageSource?, tag?, tagSource?, renamedFrom?, annotation?, quality?, loudness?, source?, convertedFrom?, trim? }，
-// （convertedFrom 是音频不是包能放的格式、做包取了音轨的段原来的 MIME 类型；trim 是素材写了起止秒、做包实际切的 { startSec, endSec }，条目上的 trimmed；两样都是 lib/make-pack-take-audio.mjs 写的）
+// 报告里每一段（reportSegment）：{ id, role, previous?, reason?, details?, hasText, textSource?, writtenFromScript?, scriptTextUnused?, language?, languageSource?, tag?, tagSource?, renamedFrom?, annotation?, quality?, loudness?, source?, convertedFrom?, trim?, cutAtSentenceEnd? }，
+// （convertedFrom 是音频不是包能放的格式、做包取了音轨的段原来的 MIME 类型；trim 是素材写了起止秒、做包实际切的 { startSec, endSec }，条目上的 trimmed；cutAtSentenceEnd 是超长的表演段在句末切开了，{ fromSec, keptSec }；都是 lib/make-pack-take-audio.mjs 写的）
 // 字段都取自条目（lib/make-pack-input.mjs 说条目是什么，各步的文件头说它们各写了哪些字段）；role 是 reference、holdout、unused、candidate（dryRun：还没挑）或
 // dropped（发新版本去掉的），dryRun 里上一版带来的段，role 就是它在上一版里的角色。annotation 是这一段标提示标注的结果（只有这一版新补的参考段有，写法见 lib/make-pack-annotation.mjs）。
 // 语言和音色基底标签（规则和来源的取值在 lib/make-pack-tags.mjs 的文件头）：参考段写 { language, languageSource, tag, tagSource, renamedFrom? }（加了序号的 renamedFrom 是原名），
@@ -18,7 +18,7 @@
 //
 // writtenFromScript 是素材给了台本原文、逐字稿里照台本写的几截 [{ heard, written }]，scriptTextUnused 是给了台本原文、一截都没照它写（lib/make-pack-transcribe.mjs 的 writeFromScripts）。
 //
-// 读条目的：id、previous、unused、text、textSource、writtenFromScript、scriptTextUnused、language、tag、annotation、quality、loudness、source、convertedFrom、trimmed；不写条目。
+// 读条目的：id、previous、unused、text、textSource、writtenFromScript、scriptTextUnused、language、tag、annotation、quality、loudness、source、convertedFrom、trimmed、cutAtSentenceEnd；不写条目。
 //
 // 抛出的错误：没有。
 //
@@ -52,6 +52,7 @@ function reportSegment(item, role) {
     ...(item.source === null ? {} : { source: item.source }),
     ...(item.convertedFrom === undefined ? {} : { convertedFrom: item.convertedFrom }),
     ...(item.trimmed === undefined ? {} : { trim: item.trimmed }),
+    ...(item.cutAtSentenceEnd === undefined ? {} : { cutAtSentenceEnd: item.cutAtSentenceEnd }),
   };
 }
 
@@ -96,7 +97,7 @@ export function resultOf({ made, evaluated, verification, items, fresh, chosen, 
     direction: (made.manifest.direction?.tags ?? []).length > 0,
     designSource: effective.designSource !== undefined,
     noHoldout,
-    // 卡片试听那一句：没配成（凭据被拒、账户停了的另一条）、沿用了但和现在的配法有出入、卡片上会截短、没给、换了模型，各有一条（规则在 lib/material-hints.mjs）
+    // 试听句：没配成（凭据被拒、账户停了的另一条）、沿用了但和现在的配法有出入、卡片上会截短、没给、换了模型，各有一条（规则在 lib/material-hints.mjs）
     cardLine: {
       status: cardLine.status,
       ...Object.fromEntries(['error', 'halted', 'reasons', 'onCard', 'model', 'modelChange'].filter((key) => cardLine[key] !== undefined).map((key) => [key, cardLine[key]])),

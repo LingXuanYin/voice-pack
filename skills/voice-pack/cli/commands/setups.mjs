@@ -34,18 +34,18 @@ import { readDirectory } from '../../protocol/cli/disk.mjs';
 import { saveSetup, deleteSetup } from '../../lib/pack-setups.mjs';
 import { isPlainObject, parseArgs, readText, usageProblem } from '../input.mjs';
 
-const SAVE_USAGE = 'setups save <包目录> --setup <一套设定.json> [--json]';
-const DELETE_USAGE = 'setups delete <包目录> --name <名字> [--json]';
+const SAVE_USAGE = 'setups save <pack directory> --setup <setup.json> [--json]';
+const DELETE_USAGE = 'setups delete <pack directory> --name <name> [--json]';
 
-export const summary = '原地保存、删除一个包当前版本的设定（不出新版本）：save 同名覆盖、没有就新增，delete 按名字删';
-export const usage = `${SAVE_USAGE}\n      或者：node cli.mjs ${DELETE_USAGE}`;
+export const summary = 'Save or delete a setup of the current version of a pack in place (no new version): save overwrites one with the same name or adds a new one, delete removes by name';
+export const usage = `${SAVE_USAGE}\n      or: node cli.mjs ${DELETE_USAGE}`;
 
 /** 命令认的选项：save 和 delete 两个子命令的合起来（--json 由 runner 取走）。约定见 cli/input.mjs 文件头。 */
 export const FLAGS = { setup: 'string', name: 'string' };
 
 const SUBCOMMANDS = {
-  save: { usage: SAVE_USAGE, summary: '保存一套设定：同名就覆盖，没有就新增；只改这一个目录里的 manifest.json（和变了的 SKILL.md），不出新版本' },
-  delete: { usage: DELETE_USAGE, summary: '按名字删一套设定；删到一套不剩，清单里就没有 setups；只改这一个目录，不出新版本' },
+  save: { usage: SAVE_USAGE, summary: 'Save a setup: one with the same name is overwritten, otherwise a new one is added; only manifest.json (and SKILL.md if it changed) in this one directory is changed, and no new version is made' },
+  delete: { usage: DELETE_USAGE, summary: 'Delete a setup by name; when none is left, the manifest has no setups; only this one directory is changed, and no new version is made' },
 };
 
 const TEMP_PREFIX = '.tmp-setups-';
@@ -102,8 +102,8 @@ export function replaceFiles(dir, changed, original, { rename = fs.renameSync } 
         // 清不掉也不盖过真正的错误；它留在目录里，下一次读包会当成多出来的文件报出来
       }
     }
-    const reason = cause?.code ?? '未知原因';
-    throw new VoicePackError('file_unwritable', `写不了 ${working}（${reason}）：${rollbackFailed.length === 0 ? '已经把目录恢复成原来的样子' : `没能全部恢复，这些文件没能换回原来的：${rollbackFailed.join('、')}`}`, { details: { file: working, ...(rollbackFailed.length > 0 ? { rollbackFailed } : {}) }, cause });
+    const reason = cause?.code ?? 'unknown reason';
+    throw new VoicePackError('file_unwritable', `Cannot write ${working} (${reason}): ${rollbackFailed.length === 0 ? 'the directory was restored to how it was' : `it could not be fully restored; these files could not be put back: ${rollbackFailed.join(', ')}`}`, { details: { file: working, ...(rollbackFailed.length > 0 ? { rollbackFailed } : {}) }, cause });
   }
 }
 
@@ -115,16 +115,16 @@ function readSetupFile(ctx, argument) {
   try {
     text = readText(ctx, argument);
   } catch (cause) {
-    if (isVoicePackError(cause, 'input_not_text')) throw new VoicePackError('setup_file_invalid', `--setup 的文件不是 UTF-8 的文字：${argument}`, { details: { file: argument }, cause });
+    if (isVoicePackError(cause, 'input_not_text')) throw new VoicePackError('setup_file_invalid', `The --setup file is not UTF-8 text: ${argument}`, { details: { file: argument }, cause });
     throw cause;
   }
   let value;
   try {
     value = JSON.parse(text);
   } catch (cause) {
-    throw new VoicePackError('setup_file_invalid', `--setup 的文件不是合法的 JSON：${argument}`, { details: { file: argument }, cause });
+    throw new VoicePackError('setup_file_invalid', `The --setup file is not valid JSON: ${argument}`, { details: { file: argument }, cause });
   }
-  if (!isPlainObject(value)) throw new VoicePackError('setup_file_invalid', `--setup 的文件内容要是一个 JSON 对象（一套设定）：${argument}`, { details: { file: argument } });
+  if (!isPlainObject(value)) throw new VoicePackError('setup_file_invalid', `The content of the --setup file must be a JSON object (one setup): ${argument}`, { details: { file: argument } });
   return value;
 }
 
@@ -142,9 +142,9 @@ function readPack(ctx, argument) {
 // ---------------------------------------------------------------- 输出
 
 const SENTENCE = {
-  added: (name, count) => `已新增设定 ${JSON.stringify(name)}，现在有 ${count} 套设定`,
-  replaced: (name, count) => `已保存设定 ${JSON.stringify(name)}（覆盖同名的），现在有 ${count} 套设定`,
-  deleted: (name, count) => `已删除设定 ${JSON.stringify(name)}，${count === 0 ? '现在一套设定都没有' : `还有 ${count} 套设定`}`,
+  added: (name, count) => `Added setup ${JSON.stringify(name)}; the pack now has ${count} ${count === 1 ? 'setup' : 'setups'}`,
+  replaced: (name, count) => `Saved setup ${JSON.stringify(name)} (overwrote the one with the same name); the pack now has ${count} ${count === 1 ? 'setup' : 'setups'}`,
+  deleted: (name, count) => `Deleted setup ${JSON.stringify(name)}; ${count === 0 ? 'the pack now has no setups' : `${count} ${count === 1 ? 'setup' : 'setups'} left`}`,
 };
 
 function respond(ctx, { dir, files, changed, report }) {
@@ -154,8 +154,8 @@ function respond(ctx, { dir, files, changed, report }) {
   }
   const manifest = readManifest(files.get(MANIFEST_FILE)).manifest;
   const written = [...changed.keys()];
-  ctx.stdout(`${SENTENCE[report.status](report.name, report.setups.length)}（包 ${manifest.id}，版本 ${manifest.version} 不变）\n`);
-  ctx.stdout(written.length === 0 ? '没有改动任何文件（新的和原来的一模一样）\n' : `改了 ${written.map((name) => path.join(dir, name)).join('、')}\n`);
+  ctx.stdout(`${SENTENCE[report.status](report.name, report.setups.length)} (pack ${manifest.id}, version ${manifest.version} unchanged)\n`);
+  ctx.stdout(written.length === 0 ? 'No file was changed (the new content is identical to the old)\n' : `Changed ${written.map((name) => path.join(dir, name)).join(', ')}\n`);
   return 0;
 }
 
@@ -163,12 +163,12 @@ function respond(ctx, { dir, files, changed, report }) {
 
 async function runSave(args, ctx) {
   const parsed = parseArgs(args, FLAGS);
-  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, SAVE_USAGE, parsed.problem ?? '要给一个包目录（只给一个）');
-  if (parsed.options.setup === undefined) return usageProblem(ctx, SAVE_USAGE, '要给 --setup <一套设定.json>');
-  if (parsed.options.name !== undefined) return usageProblem(ctx, SAVE_USAGE, 'save 不收 --name：名字写在设定文件里');
+  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, SAVE_USAGE, parsed.problem ?? 'Give one pack directory (only one)');
+  if (parsed.options.setup === undefined) return usageProblem(ctx, SAVE_USAGE, 'Give --setup <setup.json>');
+  if (parsed.options.name !== undefined) return usageProblem(ctx, SAVE_USAGE, 'save does not take --name: the name is written in the setup file');
   const setup = readSetupFile(ctx, parsed.options.setup);
   if (setup.name === '--json') {
-    const message = '设定不能叫 --json：命令行把它当输出格式的选项，这个名字存进去以后 setups delete 删不掉';
+    const message = 'A setup cannot be named --json: the command line treats it as the output-format option, so once stored under this name, setups delete could not delete it';
     throw new VoicePackError('pack_setup_invalid', message, { details: { name: setup.name, problems: [{ code: 'setup_name_reserved', message, details: { name: setup.name } }] } });
   }
   const { dir, files } = readPack(ctx, parsed.positional[0]);
@@ -179,9 +179,9 @@ async function runSave(args, ctx) {
 
 async function runDelete(args, ctx) {
   const parsed = parseArgs(args, FLAGS);
-  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, DELETE_USAGE, parsed.problem ?? '要给一个包目录（只给一个）');
-  if (parsed.options.name === undefined) return usageProblem(ctx, DELETE_USAGE, '要给 --name <名字>');
-  if (parsed.options.setup !== undefined) return usageProblem(ctx, DELETE_USAGE, 'delete 不收 --setup');
+  if (parsed.problem || parsed.positional.length !== 1) return usageProblem(ctx, DELETE_USAGE, parsed.problem ?? 'Give one pack directory (only one)');
+  if (parsed.options.name === undefined) return usageProblem(ctx, DELETE_USAGE, 'Give --name <name>');
+  if (parsed.options.setup !== undefined) return usageProblem(ctx, DELETE_USAGE, 'delete does not take --setup');
   const { dir, files } = readPack(ctx, parsed.positional[0]);
   const { changed, report } = await deleteSetup(files, parsed.options.name);
   replaceFiles(dir, changed, files);
@@ -191,10 +191,10 @@ async function runDelete(args, ctx) {
 export async function run(args, ctx) {
   const [subcommand, ...rest] = args;
   if (Object.hasOwn(SUBCOMMANDS, subcommand ?? '') && (rest[0] === '--help' || rest[0] === '-h')) {
-    ctx.stdout(`用法：node cli.mjs ${SUBCOMMANDS[subcommand].usage}\n${SUBCOMMANDS[subcommand].summary}\n`);
+    ctx.stdout(`Usage: node cli.mjs ${SUBCOMMANDS[subcommand].usage}\n${SUBCOMMANDS[subcommand].summary}\n`);
     return 0;
   }
   if (subcommand === 'save') return runSave(rest, ctx);
   if (subcommand === 'delete') return runDelete(rest, ctx);
-  return usageProblem(ctx, usage, subcommand === undefined ? '要给子命令：save（保存一套设定）或 delete（删一套设定）' : `不认识的子命令 ${subcommand}（有：save、delete）`);
+  return usageProblem(ctx, usage, subcommand === undefined ? 'Give a subcommand: save (save a setup) or delete (delete a setup)' : `Unknown subcommand ${subcommand} (there are: save, delete)`);
 }

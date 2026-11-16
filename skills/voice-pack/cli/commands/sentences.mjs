@@ -6,8 +6,8 @@
 import { splitSentences } from '../../tools/sentences.mjs';
 import { parseArgs, readText, usageProblem } from '../input.mjs';
 
-export const summary = '分句：把文字切成句子，一行一句（不处理台本标记）';
-export const usage = 'sentences <文字文件|-> [--json]';
+export const summary = 'Split sentences: cut text into sentences, one per line (script markup is not processed)';
+export const usage = 'sentences <text-file|-> [--json]';
 
 /** 命令认的选项：没有（--json 由 runner 取走）。约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {};

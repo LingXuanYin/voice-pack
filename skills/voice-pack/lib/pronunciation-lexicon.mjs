@@ -88,8 +88,8 @@ const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';
 
 /** 读音词表读不了。details.reason 是哪种情况，details.line 是行号（第一行是 1）。 */
 function invalid(reason, message, line, extra = {}) {
-  const where = line === undefined ? '' : `第 ${line} 行`;
-  return new VoicePackError('lexicon_invalid', `读音词表${where}：${message}`, { details: { reason, ...(line === undefined ? {} : { line }), ...extra } });
+  const where = line === undefined ? '' : `, line ${line}`;
+  return new VoicePackError('lexicon_invalid', `Pronunciation lexicon${where}: ${message}`, { details: { reason, ...(line === undefined ? {} : { line }), ...extra } });
 }
 
 // ---------------------------------------------------------------- 读 XML
@@ -111,24 +111,24 @@ const lineAt = (text, index) => {
 function decodeInput(input) {
   let text;
   if (typeof input === 'string') {
-    if (input.length > MAX_BYTES || new TextEncoder().encode(input).length > MAX_BYTES) throw invalid('too_large', `超过 ${MAX_BYTES} 字节，读音词表不会这么大`);
+    if (input.length > MAX_BYTES || new TextEncoder().encode(input).length > MAX_BYTES) throw invalid('too_large', `exceeds ${MAX_BYTES} bytes; a pronunciation lexicon is never that large`);
     text = input;
   } else if (input instanceof Uint8Array) {
-    if (input.length > MAX_BYTES) throw invalid('too_large', `超过 ${MAX_BYTES} 字节，读音词表不会这么大`);
+    if (input.length > MAX_BYTES) throw invalid('too_large', `exceeds ${MAX_BYTES} bytes; a pronunciation lexicon is never that large`);
     try {
       text = new TextDecoder('utf-8', { fatal: true }).decode(input);
     } catch (cause) {
-      throw new VoicePackError('lexicon_invalid', '读音词表：字节不是合法的 UTF-8', { details: { reason: 'not_utf8' }, cause });
+      throw new VoicePackError('lexicon_invalid', 'Pronunciation lexicon: the bytes are not valid UTF-8', { details: { reason: 'not_utf8' }, cause });
     }
   } else {
-    throw new TypeError('读音词表必须是字符串或 UTF-8 字节（Uint8Array）');
+    throw new TypeError('The pronunciation lexicon must be a string or UTF-8 bytes (Uint8Array)');
   }
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   text = text.replace(/\r\n?/g, '\n');
   const control = FORBIDDEN_CONTROL.exec(text);
   const noncharacter = Math.max(text.indexOf(String.fromCharCode(0xfffe)), text.indexOf(String.fromCharCode(0xffff)));
-  if (control !== null) throw invalid('invalid_character', `有 XML 不允许的控制字符（U+${control[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}）`, lineAt(text, control.index));
-  if (noncharacter !== -1) throw invalid('invalid_character', '有 XML 不允许的字符（U+FFFE 或 U+FFFF）', lineAt(text, noncharacter));
+  if (control !== null) throw invalid('invalid_character', `contains a control character that XML does not allow (U+${control[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')})`, lineAt(text, control.index));
+  if (noncharacter !== -1) throw invalid('invalid_character', 'contains a character that XML does not allow (U+FFFE or U+FFFF)', lineAt(text, noncharacter));
   return text;
 }
 
@@ -140,17 +140,17 @@ function decodeReferences(raw, line) {
   for (let amp = raw.indexOf('&'); amp !== -1; amp = raw.indexOf('&', last)) {
     const semicolon = raw.indexOf(';', amp);
     const reference = semicolon === -1 || semicolon - amp > 12 ? null : raw.slice(amp + 1, semicolon);
-    if (reference === null) throw invalid('entity', '有单独的 &：要写成 &amp;', line);
+    if (reference === null) throw invalid('entity', 'a bare &: write it as &amp;', line);
     let char;
     if (Object.prototype.hasOwnProperty.call(PREDEFINED, reference)) {
       char = PREDEFINED[reference];
     } else if (/^#x[0-9a-fA-F]+$/.test(reference) || /^#[0-9]+$/.test(reference)) {
       const code = reference[1] === 'x' ? Number.parseInt(reference.slice(2), 16) : Number.parseInt(reference.slice(1), 10);
       const legal = code === 9 || code === 10 || code === 13 || (code >= 0x20 && code <= 0xd7ff) || (code >= 0xe000 && code <= 0xfffd) || (code >= 0x10000 && code <= 0x10ffff);
-      if (!legal) throw invalid('entity', `字符引用 &${reference}; 指向 XML 不允许的字符`, line, { entity: reference });
+      if (!legal) throw invalid('entity', `the character reference &${reference}; points to a character that XML does not allow`, line, { entity: reference });
       char = String.fromCodePoint(code);
     } else {
-      throw invalid('entity', `不认识的实体 &${reference};（只认 amp、lt、gt、quot、apos 和数字字符引用）`, line, { entity: reference });
+      throw invalid('entity', `unknown entity &${reference}; (only amp, lt, gt, quot, apos and numeric character references are accepted)`, line, { entity: reference });
     }
     out += raw.slice(last, amp) + char;
     last = semicolon + 1;
@@ -160,7 +160,7 @@ function decodeReferences(raw, line) {
 
 function splitQName(qname, line) {
   const parts = qname.split(':');
-  if (parts.length > 2 || parts.some((part) => part === '' || !NCNAME.test(part))) throw invalid('syntax', `名字 ${qname} 写得不对`, line);
+  if (parts.length > 2 || parts.some((part) => part === '' || !NCNAME.test(part))) throw invalid('syntax', `the name ${qname} is malformed`, line);
   return parts.length === 2 ? { prefix: parts[0], local: parts[1] } : { prefix: '', local: parts[0] };
 }
 
@@ -184,7 +184,7 @@ function parseXml(source) {
 
   if (source.startsWith('<?xml') && (length === 5 || /[ \t\n?]/.test(source[5]))) {
     const end = source.indexOf('?>');
-    if (end === -1) throw invalid('unclosed', 'XML 声明没有以 ?> 结束', 1);
+    if (end === -1) throw invalid('unclosed', 'the XML declaration does not end with ?>', 1);
     const declaration = source.slice(5, end);
     const pairs = new Map();
     const rest = declaration.replace(/[ \t\n]+([a-z]+)[ \t\n]*=[ \t\n]*(?:"([^"]*)"|'([^']*)')/g, (_all, name, doubleQuoted, singleQuoted) => {
@@ -192,9 +192,9 @@ function parseXml(source) {
       return '';
     });
     if (NOT_XML_WHITESPACE.test(rest) || pairs.get('version') !== '1.0' || ![...pairs.keys()].every((name) => ['version', 'encoding', 'standalone'].includes(name))) {
-      throw invalid('xml_declaration', 'XML 声明写得不对（只认 version="1.0"，可以再带 encoding 和 standalone）', 1);
+      throw invalid('xml_declaration', 'the XML declaration is malformed (only version="1.0" is accepted, optionally with encoding and standalone)', 1);
     }
-    if (pairs.has('encoding') && !/^utf-8$/i.test(pairs.get('encoding'))) throw invalid('encoding_unsupported', `XML 声明说编码是 ${pairs.get('encoding')}，只认 UTF-8`, 1, { encoding: pairs.get('encoding') });
+    if (pairs.has('encoding') && !/^utf-8$/i.test(pairs.get('encoding'))) throw invalid('encoding_unsupported', `the XML declaration says the encoding is ${pairs.get('encoding')}, but only UTF-8 is accepted`, 1, { encoding: pairs.get('encoding') });
     moveTo(end + 2);
   }
 
@@ -205,7 +205,7 @@ function parseXml(source) {
       const end = next === -1 ? length : next;
       const chunk = source.slice(at, end);
       if (stack.length === 0) {
-        if (NOT_XML_WHITESPACE.test(chunk)) throw invalid(root === null ? 'syntax' : 'content_after_root', root === null ? '根元素之前有不是标签的文字' : '根元素结束以后还有文字', line);
+        if (NOT_XML_WHITESPACE.test(chunk)) throw invalid(root === null ? 'syntax' : 'content_after_root', root === null ? 'there is text that is not a tag before the root element' : 'there is text after the root element ends', line);
       } else {
         top().children.push({ text: decodeReferences(chunk, line), line });
       }
@@ -214,31 +214,31 @@ function parseXml(source) {
     }
     if (source.startsWith('<!--', at)) {
       const end = source.indexOf('-->', at + 4);
-      if (end === -1) throw invalid('unclosed', '注释没有以 --> 结束', line);
+      if (end === -1) throw invalid('unclosed', 'the comment does not end with -->', line);
       moveTo(end + 3);
       continue;
     }
     if (source.startsWith('<![CDATA[', at)) {
-      if (stack.length === 0) throw invalid(root === null ? 'syntax' : 'content_after_root', 'CDATA 只能在元素里面', line);
+      if (stack.length === 0) throw invalid(root === null ? 'syntax' : 'content_after_root', 'CDATA is only allowed inside an element', line);
       const end = source.indexOf(']]>', at + 9);
-      if (end === -1) throw invalid('unclosed', 'CDATA 没有以 ]]> 结束', line);
+      if (end === -1) throw invalid('unclosed', 'CDATA does not end with ]]>', line);
       top().children.push({ text: source.slice(at + 9, end), line });
       moveTo(end + 3);
       continue;
     }
     if (source.startsWith('<!', at)) {
-      if (source.startsWith('<!DOCTYPE', at)) throw invalid('doctype', '不收 DOCTYPE（可以借实体做手脚，PLS 也用不着）', line);
-      throw invalid('syntax', '不认识的 <! 结构', line);
+      if (source.startsWith('<!DOCTYPE', at)) throw invalid('doctype', 'DOCTYPE is not accepted (it can be used to tamper through entities, and PLS has no use for it)', line);
+      throw invalid('syntax', 'unknown <! construct', line);
     }
-    if (source.startsWith('<?', at)) throw invalid('processing_instruction', '不收 XML 声明以外的处理指令（XML 声明只能在最开头）', line);
+    if (source.startsWith('<?', at)) throw invalid('processing_instruction', 'processing instructions other than the XML declaration are not accepted (the XML declaration is only allowed at the very start)', line);
 
     if (source.startsWith('</', at)) {
       const close = source.indexOf('>', at);
-      if (close === -1) throw invalid('unclosed', '结束标签没有以 > 结束', line);
+      if (close === -1) throw invalid('unclosed', 'the end tag does not end with >', line);
       const qname = source.slice(at + 2, close).replace(/[ \t\n]+$/, '');
-      if (!XML_NAME.test(qname)) throw invalid('syntax', `结束标签 </${qname}> 写得不对`, line);
-      if (stack.length === 0) throw invalid(root === null ? 'syntax' : 'content_after_root', `多出来的结束标签 </${qname}>`, line);
-      if (top().qname !== qname) throw invalid('mismatched_tag', `结束标签 </${qname}> 对不上开始标签 <${top().qname}>（第 ${top().line} 行）`, line, { expected: top().qname, found: qname });
+      if (!XML_NAME.test(qname)) throw invalid('syntax', `the end tag </${qname}> is malformed`, line);
+      if (stack.length === 0) throw invalid(root === null ? 'syntax' : 'content_after_root', `extra end tag </${qname}>`, line);
+      if (top().qname !== qname) throw invalid('mismatched_tag', `the end tag </${qname}> does not match the start tag <${top().qname}> (line ${top().line})`, line, { expected: top().qname, found: qname });
       stack.pop();
       if (stack.length === 0) rootClosed = true;
       moveTo(close + 1);
@@ -249,7 +249,7 @@ function parseXml(source) {
     const startLine = line;
     NAME_TOKEN.lastIndex = at + 1;
     const nameMatch = NAME_TOKEN.exec(source);
-    if (nameMatch === null || !XML_NAME.test(nameMatch[0])) throw invalid('syntax', '标签名缺失或写得不对', startLine);
+    if (nameMatch === null || !XML_NAME.test(nameMatch[0])) throw invalid('syntax', 'the tag name is missing or malformed', startLine);
     const qname = nameMatch[0];
     let p = NAME_TOKEN.lastIndex;
     const rawAttrs = [];
@@ -258,32 +258,32 @@ function parseXml(source) {
       const before = p;
       while (p < length && isXmlWhitespace(source.charCodeAt(p))) p += 1;
       const spaced = p > before;
-      if (p >= length) throw invalid('unclosed', `标签 <${qname}> 没有以 > 结束`, startLine);
+      if (p >= length) throw invalid('unclosed', `the tag <${qname}> does not end with >`, startLine);
       if (source[p] === '>') {
         p += 1;
         break;
       }
       if (source[p] === '/') {
-        if (source[p + 1] !== '>') throw invalid('syntax', `标签 <${qname}> 里有单独的 /`, startLine);
+        if (source[p + 1] !== '>') throw invalid('syntax', `the tag <${qname}> has a bare /`, startLine);
         selfClosing = true;
         p += 2;
         break;
       }
-      if (!spaced) throw invalid('syntax', `标签 <${qname}> 的属性之间要有空白`, startLine);
+      if (!spaced) throw invalid('syntax', `the attributes of the tag <${qname}> must be separated by whitespace`, startLine);
       NAME_TOKEN.lastIndex = p;
       const attrMatch = NAME_TOKEN.exec(source);
-      if (attrMatch === null || !XML_NAME.test(attrMatch[0])) throw invalid('syntax', `标签 <${qname}> 的属性名写得不对`, startLine);
+      if (attrMatch === null || !XML_NAME.test(attrMatch[0])) throw invalid('syntax', `the tag <${qname}> has a malformed attribute name`, startLine);
       p = NAME_TOKEN.lastIndex;
       while (p < length && isXmlWhitespace(source.charCodeAt(p))) p += 1;
-      if (source[p] !== '=') throw invalid('syntax', `属性 ${attrMatch[0]} 后面要有 =`, startLine);
+      if (source[p] !== '=') throw invalid('syntax', `the attribute ${attrMatch[0]} must be followed by =`, startLine);
       p += 1;
       while (p < length && isXmlWhitespace(source.charCodeAt(p))) p += 1;
       const quote = source[p];
-      if (quote !== '"' && quote !== "'") throw invalid('syntax', `属性 ${attrMatch[0]} 的值要用引号括起来`, startLine);
+      if (quote !== '"' && quote !== "'") throw invalid('syntax', `the value of the attribute ${attrMatch[0]} must be enclosed in quotes`, startLine);
       const closeQuote = source.indexOf(quote, p + 1);
-      if (closeQuote === -1) throw invalid('unclosed', `属性 ${attrMatch[0]} 的值没有结束的引号`, startLine);
+      if (closeQuote === -1) throw invalid('unclosed', `the value of the attribute ${attrMatch[0]} has no closing quote`, startLine);
       const rawValue = source.slice(p + 1, closeQuote);
-      if (rawValue.includes('<')) throw invalid('syntax', `属性 ${attrMatch[0]} 的值里不能有 <`, startLine);
+      if (rawValue.includes('<')) throw invalid('syntax', `the value of the attribute ${attrMatch[0]} must not contain <`, startLine);
       rawAttrs.push({ qname: attrMatch[0], value: decodeReferences(rawValue.replace(/[\t\n]/g, ' '), startLine) });
       p = closeQuote + 1;
     }
@@ -299,7 +299,7 @@ function parseXml(source) {
         scope.set('', a.value);
       } else if (a.qname.startsWith('xmlns:')) {
         const prefix = a.qname.slice(6);
-        if (!NCNAME.test(prefix) || prefix === 'xmlns' || (prefix === 'xml' && a.value !== XML_NS) || a.value === '') throw invalid('syntax', `命名空间声明 ${a.qname} 写得不对`, startLine);
+        if (!NCNAME.test(prefix) || prefix === 'xmlns' || (prefix === 'xml' && a.value !== XML_NS) || a.value === '') throw invalid('syntax', `the namespace declaration ${a.qname} is malformed`, startLine);
         scope.set(prefix, a.value);
       } else {
         attrs.push(a);
@@ -309,22 +309,22 @@ function parseXml(source) {
       const { prefix, local } = splitQName(name, startLine);
       if (prefix === '') return { ns: isAttribute ? null : scope.get('') || null, local };
       const ns = scope.get(prefix);
-      if (ns === undefined) throw invalid('undefined_prefix', `前缀 ${prefix} 没有声明过命名空间`, startLine, { prefix });
+      if (ns === undefined) throw invalid('undefined_prefix', `the prefix ${prefix} has no declared namespace`, startLine, { prefix });
       return { ns, local };
     };
     const element = { ...resolve(qname, false), qname, attrs: [], children: [], line: startLine, scope };
     for (const a of attrs) {
       const resolved = resolve(a.qname, true);
       const key = `${resolved.ns ?? ''}\n${resolved.local}`;
-      if (seen.has(key)) throw invalid('syntax', `属性 ${a.qname} 在标签 <${qname}> 里写了两次`, startLine);
+      if (seen.has(key)) throw invalid('syntax', `the attribute ${a.qname} is written twice in the tag <${qname}>`, startLine);
       seen.add(key);
       element.attrs.push({ ...resolved, qname: a.qname, value: a.value });
     }
 
     if (stack.length === 0) {
-      if (rootClosed) throw invalid('content_after_root', '根元素结束以后还有元素', startLine);
-      if (element.local !== 'lexicon') throw invalid('root_not_lexicon', `根元素是 <${qname}>，读音词表的根元素是 <lexicon>`, startLine);
-      if (element.ns !== PLS_NS) throw invalid('wrong_namespace', `<lexicon> 的命名空间要是 ${PLS_NS}`, startLine, { namespace: element.ns });
+      if (rootClosed) throw invalid('content_after_root', 'there is another element after the root element ends', startLine);
+      if (element.local !== 'lexicon') throw invalid('root_not_lexicon', `the root element is <${qname}>, but the root element of a pronunciation lexicon is <lexicon>`, startLine);
+      if (element.ns !== PLS_NS) throw invalid('wrong_namespace', `the namespace of <lexicon> must be ${PLS_NS}`, startLine, { namespace: element.ns });
       root = element;
     } else {
       top().children.push(element);
@@ -333,12 +333,12 @@ function parseXml(source) {
       if (stack.length === 0) rootClosed = true;
     } else {
       stack.push(element);
-      if (stack.length > MAX_DEPTH) throw invalid('too_deep', `标签嵌套超过 ${MAX_DEPTH} 层`, startLine);
+      if (stack.length > MAX_DEPTH) throw invalid('too_deep', `tags are nested deeper than ${MAX_DEPTH} levels`, startLine);
     }
     moveTo(p);
   }
-  if (stack.length > 0) throw invalid('unclosed', `标签 <${top().qname}> 没有结束`, top().line, { element: top().qname });
-  if (root === null) throw invalid('empty', '没有内容，找不到根元素 <lexicon>');
+  if (stack.length > 0) throw invalid('unclosed', `the tag <${top().qname}> is not closed`, top().line, { element: top().qname });
+  if (root === null) throw invalid('empty', 'no content; the root element <lexicon> is missing');
   return root;
 }
 
@@ -360,31 +360,31 @@ function checkAttributes(element) {
   const allowed = ALLOWED_ATTRIBUTES[element.local];
   for (const a of element.attrs) {
     if (!allowed.some(([ns, local]) => ns === a.ns && local === a.local)) {
-      throw invalid('unknown_attribute', `<${element.local}> 不认识属性 ${a.qname}`, element.line, { element: element.local, attribute: a.qname });
+      throw invalid('unknown_attribute', `<${element.local}> does not recognize the attribute ${a.qname}`, element.line, { element: element.local, attribute: a.qname });
     }
   }
 }
 const attributeOf = (element, ns, local) => element.attrs.find((a) => a.ns === ns && a.local === local)?.value;
 function requiredAttribute(element, ns, local, label) {
   const value = attributeOf(element, ns, local);
-  if (value === undefined) throw invalid('attribute_missing', `<${element.local}> 缺必填的属性 ${label}`, element.line, { element: element.local, attribute: label });
+  if (value === undefined) throw invalid('attribute_missing', `<${element.local}> lacks the required attribute ${label}`, element.line, { element: element.local, attribute: label });
   return value;
 }
 function preferOf(element) {
   const value = attributeOf(element, null, 'prefer');
   if (value === undefined) return false;
-  if (value !== 'true' && value !== 'false') throw invalid('attribute_invalid', `prefer 只能是 true 或 false，收到 ${JSON.stringify(value)}`, element.line, { element: element.local, attribute: 'prefer' });
+  if (value !== 'true' && value !== 'false') throw invalid('attribute_invalid', `prefer must be true or false, got ${JSON.stringify(value)}`, element.line, { element: element.local, attribute: 'prefer' });
   return value === 'true';
 }
 /** 只含文字的元素的内容：两头的空白去掉，里面连续的空白折成一个空格；不能有子元素，不能是空的。 */
 function textOf(element) {
   let value = '';
   for (const child of element.children) {
-    if (child.text === undefined) throw invalid('element_in_text', `<${element.local}> 里面只能是文字，不能再有标签（<${child.qname}>）`, child.line, { element: element.local, child: child.qname });
+    if (child.text === undefined) throw invalid('element_in_text', `<${element.local}> may contain only text, not tags (<${child.qname}>)`, child.line, { element: element.local, child: child.qname });
     value += child.text;
   }
   const collapsed = value.replace(/[ \t\n]+/g, ' ').replace(/^ | $/g, '');
-  if (collapsed === '') throw invalid('empty_text', `<${element.local}> 的内容不能是空的`, element.line, { element: element.local });
+  if (collapsed === '') throw invalid('empty_text', `the content of <${element.local}> must not be empty`, element.line, { element: element.local });
   return collapsed;
 }
 
@@ -400,39 +400,39 @@ export function parseLexicon(input) {
   const root = parseXml(decodeInput(input));
   checkAttributes(root);
   const version = requiredAttribute(root, null, 'version', 'version');
-  if (version !== '1.0') throw invalid('version_unsupported', `<lexicon> 的 version 是 ${JSON.stringify(version)}，只认 "1.0"`, root.line, { version });
+  if (version !== '1.0') throw invalid('version_unsupported', `the version of <lexicon> is ${JSON.stringify(version)}, but only "1.0" is accepted`, root.line, { version });
   const alphabet = requiredAttribute(root, null, 'alphabet', 'alphabet');
-  if (alphabet === '') throw invalid('attribute_invalid', 'alphabet 不能是空的', root.line, { element: 'lexicon', attribute: 'alphabet' });
+  if (alphabet === '') throw invalid('attribute_invalid', 'alphabet must not be empty', root.line, { element: 'lexicon', attribute: 'alphabet' });
   const language = requiredAttribute(root, XML_NS, 'lang', 'xml:lang');
-  if (!LANGUAGE_TAG.test(language)) throw invalid('attribute_invalid', `xml:lang 要是语言标签（形如 en-US），收到 ${JSON.stringify(language)}`, root.line, { element: 'lexicon', attribute: 'xml:lang' });
+  if (!LANGUAGE_TAG.test(language)) throw invalid('attribute_invalid', `xml:lang must be a language tag (such as en-US), got ${JSON.stringify(language)}`, root.line, { element: 'lexicon', attribute: 'xml:lang' });
 
   const lexemes = [];
   const ids = new Set();
   let stage = 0; // 0：meta 可以出现；1：metadata 已出现；2：lexeme 已开始。规范：meta*、metadata?、lexeme*
   for (const child of root.children) {
     if (child.text !== undefined) {
-      if (NOT_XML_WHITESPACE.test(child.text)) throw invalid('text_in_lexicon', '<lexicon> 里面不能直接放文字', child.line);
+      if (NOT_XML_WHITESPACE.test(child.text)) throw invalid('text_in_lexicon', 'text is not allowed directly inside <lexicon>', child.line);
       continue;
     }
-    if (child.ns !== PLS_NS) throw invalid('unknown_element', `<lexicon> 里不认识 <${child.qname}>`, child.line, { element: child.qname });
+    if (child.ns !== PLS_NS) throw invalid('unknown_element', `unknown element <${child.qname}> in <lexicon>`, child.line, { element: child.qname });
     if (child.local === 'meta') {
-      if (stage !== 0) throw invalid('element_order', '<meta> 要放在 <metadata> 和 <lexeme> 的前面', child.line);
+      if (stage !== 0) throw invalid('element_order', '<meta> must come before <metadata> and <lexeme>', child.line);
       checkAttributes(child);
       const name = attributeOf(child, null, 'name');
       const httpEquiv = attributeOf(child, null, 'http-equiv');
-      if (name === undefined && httpEquiv === undefined) throw invalid('attribute_missing', '<meta> 要有 name 或 http-equiv', child.line, { element: 'meta', attribute: 'name' });
-      if (name !== undefined && httpEquiv !== undefined) throw invalid('attribute_invalid', '<meta> 的 name 和 http-equiv 不能同时写', child.line, { element: 'meta', attribute: 'http-equiv' });
+      if (name === undefined && httpEquiv === undefined) throw invalid('attribute_missing', '<meta> must have name or http-equiv', child.line, { element: 'meta', attribute: 'name' });
+      if (name !== undefined && httpEquiv !== undefined) throw invalid('attribute_invalid', 'name and http-equiv of <meta> must not both be written', child.line, { element: 'meta', attribute: 'http-equiv' });
       requiredAttribute(child, null, 'content', 'content');
-      if (child.children.some((c) => c.text === undefined || NOT_XML_WHITESPACE.test(c.text))) throw invalid('meta_not_empty', '<meta> 是空元素，里面不能有内容', child.line);
+      if (child.children.some((c) => c.text === undefined || NOT_XML_WHITESPACE.test(c.text))) throw invalid('meta_not_empty', '<meta> is an empty element and must have no content', child.line);
     } else if (child.local === 'metadata') {
-      if (stage !== 0) throw invalid('element_order', '<metadata> 只能有一个，并且要放在 <lexeme> 的前面', child.line);
+      if (stage !== 0) throw invalid('element_order', 'only one <metadata> is allowed, and it must come before <lexeme>', child.line);
       checkAttributes(child);
       stage = 1; // 里面是任意的元数据，读音不看它；格式已经在 parseXml 里核对过
     } else if (child.local === 'lexeme') {
       stage = 2;
       lexemes.push(readLexeme(child, ids));
     } else {
-      throw invalid('unknown_element', `<lexicon> 里不认识 <${child.local}>`, child.line, { element: child.local });
+      throw invalid('unknown_element', `unknown element <${child.local}> in <lexicon>`, child.line, { element: child.local });
     }
   }
   return { version: '1.0', alphabet, language, lexemes };
@@ -442,17 +442,17 @@ function readLexeme(element, ids) {
   checkAttributes(element);
   const id = attributeOf(element, XML_NS, 'id') ?? null;
   if (id !== null) {
-    if (!NCNAME.test(id)) throw invalid('attribute_invalid', `xml:id 要是合法的 XML 名字，收到 ${JSON.stringify(id)}`, element.line, { element: 'lexeme', attribute: 'xml:id' });
-    if (ids.has(id)) throw invalid('duplicate_id', `xml:id ${id} 重复了`, element.line, { id });
+    if (!NCNAME.test(id)) throw invalid('attribute_invalid', `xml:id must be a valid XML name, got ${JSON.stringify(id)}`, element.line, { element: 'lexeme', attribute: 'xml:id' });
+    if (ids.has(id)) throw invalid('duplicate_id', `xml:id ${id} is duplicated`, element.line, { id });
     ids.add(id);
   }
   const lexeme = { id, role: attributeOf(element, null, 'role') ?? null, graphemes: [], pronunciations: [], examples: [] };
   for (const child of element.children) {
     if (child.text !== undefined) {
-      if (NOT_XML_WHITESPACE.test(child.text)) throw invalid('text_in_lexeme', '<lexeme> 里面不能直接放文字', child.line);
+      if (NOT_XML_WHITESPACE.test(child.text)) throw invalid('text_in_lexeme', 'text is not allowed directly inside <lexeme>', child.line);
       continue;
     }
-    if (child.ns !== PLS_NS) throw invalid('unknown_element', `<lexeme> 里不认识 <${child.qname}>`, child.line, { element: child.qname });
+    if (child.ns !== PLS_NS) throw invalid('unknown_element', `unknown element <${child.qname}> in <lexeme>`, child.line, { element: child.qname });
     switch (child.local) {
       case 'grapheme':
         checkAttributes(child);
@@ -471,11 +471,11 @@ function readLexeme(element, ids) {
         lexeme.examples.push(textOf(child));
         break;
       default:
-        throw invalid('unknown_element', `<lexeme> 里不认识 <${child.local}>`, child.line, { element: child.local });
+        throw invalid('unknown_element', `unknown element <${child.local}> in <lexeme>`, child.line, { element: child.local });
     }
   }
-  if (lexeme.graphemes.length === 0) throw invalid('lexeme_without_grapheme', '<lexeme> 至少要有一个 <grapheme>', element.line);
-  if (lexeme.pronunciations.length === 0) throw invalid('lexeme_without_pronunciation', '<lexeme> 至少要有一个 <phoneme> 或 <alias>', element.line);
+  if (lexeme.graphemes.length === 0) throw invalid('lexeme_without_grapheme', '<lexeme> must have at least one <grapheme>', element.line);
+  if (lexeme.pronunciations.length === 0) throw invalid('lexeme_without_pronunciation', '<lexeme> must have at least one <phoneme> or <alias>', element.line);
   return lexeme;
 }
 
@@ -593,7 +593,7 @@ export function romajiProblem(term, ph) {
 
 // ---------------------------------------------------------------- 音素标签（phoneme-markers）
 //
-// 环境声明了 phoneme-markers：合成认文字里的 <|phoneme_start|>音素<|phoneme_end|>，标签代替原来的词，原来的字不写（写法是配音模型的厂商文档定的，models/scene3.md「音素标签」）。
+// 环境声明了 phoneme-markers：合成认文字里的 <|phoneme_start|>音素<|phoneme_end|>，标签代替原来的词，原来的字不写（写法是配音模型的厂商文档定的，models/scene3.md「Phoneme tags」）。
 // 拼音一个音节一个标签，几个标签挨着写（yin2 hang2 写成 <|phoneme_start|>yin2<|phoneme_end|><|phoneme_start|>hang2<|phoneme_end|>）；Arpabet 一个词一个标签，音素照写；
 // 罗马字一个词条一个标签。包里的写法就是厂商的写法（拼音小写、ü 写 v、轻声写 5；Arpabet 大写、带重音数字；罗马字带音调数字），不转换。
 // 换成标签是一次替换，和别名一样在 applyLexicon 的同一次扫描里做：长的词条优先，换出来的字不再查词表（别名换出来的字不会再被标上音素）。
@@ -617,8 +617,8 @@ function phonemeMarkersOf(alphabet, ph) {
  * @returns {{ text: string, replacements: { term: string, ph: string, count: number }[] }} replacements 按第一次换到的先后排
  */
 export function applyPhonemes(spoken, phonemes, { ssml }) {
-  if (typeof spoken !== 'string') throw new TypeError('台词必须是字符串');
-  if (!Array.isArray(phonemes)) throw new TypeError('音素必须是数组');
+  if (typeof spoken !== 'string') throw new TypeError('The line must be a string');
+  if (!Array.isArray(phonemes)) throw new TypeError('phonemes must be an array');
   const pick = new Map();
   for (const item of phonemes) if (!pick.has(item.term)) pick.set(item.term, item);
   if (pick.size === 0) return { text: spoken, replacements: [] };
@@ -685,10 +685,10 @@ export function singleCharacterTerms(lexicon) {
  * @returns {{ code: 'lexicon_single_character', message: string, details: { terms: string[] } }}
  */
 export function singleCharacterNote(terms) {
-  const listed = terms.map((term) => `「${term}」`).join('');
+  const listed = terms.map((term) => `"${term}"`).join(', ');
   return {
     code: 'lexicon_single_character',
-    message: `读音词表里有 ${terms.length} 个词条只写了一个字：${listed}。词条按字面在台词里找，含这个字的每个词都会照它念，不只是要改的那个名字或词。只想改一个名字或一个词，把词条写成整个词（例如写「曾小雨」，不写「曾」）`,
+    message: `The pronunciation lexicon has ${terms.length} single-character ${terms.length === 1 ? 'entry' : 'entries'}: ${listed}. An entry is looked up literally in the line, so every word containing this character is read the way the entry says, not only the name or word you meant to change. To change only one name or one word, write the entry as the whole word (for example write "曾小雨", not "曾")`,
     details: { terms: [...terms] },
   };
 }
@@ -723,12 +723,12 @@ function termPattern(term) {
  * @returns {{ text: string, replacements: { term: string, say: string, count: number }[] }} replacements 按第一次换到的先后排，每个词条一项
  */
 export function applyLexicon(text, rules) {
-  if (typeof text !== 'string') throw new TypeError('台词必须是字符串');
-  if (!Array.isArray(rules)) throw new TypeError('规则必须是数组');
+  if (typeof text !== 'string') throw new TypeError('The line must be a string');
+  if (!Array.isArray(rules)) throw new TypeError('rules must be an array');
   const sayOf = new Map();
   for (const rule of rules) {
-    if (rule === null || typeof rule !== 'object' || typeof rule.term !== 'string' || rule.term === '') throw new TypeError('规则的 term 必须是非空字符串');
-    if (typeof rule.say !== 'string') throw new TypeError(`规则 ${JSON.stringify(rule.term)} 的 say 必须是字符串`);
+    if (rule === null || typeof rule !== 'object' || typeof rule.term !== 'string' || rule.term === '') throw new TypeError('The term of a rule must be a non-empty string');
+    if (typeof rule.say !== 'string') throw new TypeError(`The say of the rule ${JSON.stringify(rule.term)} must be a string`);
     if (!sayOf.has(rule.term)) sayOf.set(rule.term, rule.say);
   }
   if (sayOf.size === 0) return { text, replacements: [] };

@@ -25,14 +25,14 @@ import { MANIFEST_FILE, PROTOCOL_DIRECTORY, isManagedPath, parseManifest } from 
 import { CURRENT_NAMES, KNOWN_BASE_DIRECTORIES } from './names.mjs';
 
 const DEFAULT_SHORT_NAME = 'vp';
-// 默认的功能：配音（dub）。它必须有的只有 voice-cloning；一场戏一个请求另要的 text-to-dialogue、比音色的 speaker-verification 是有就用，不算所需（references/dub.md「各个功能要什么能力」）
+// 默认的功能：配音（dub）。它必须有的只有 voice-cloning；一场戏一个请求另要的 text-to-dialogue、比音色的 speaker-verification 是有就用，不算所需（references/dub.md「Which capability each function needs」）
 const DEFAULT_FEATURES = Object.freeze({ dub: Object.freeze({ capabilities: Object.freeze(['voice-cloning']) }) });
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const SUFFIX_LENGTH = 8;
 const MAX_ID_LENGTH = 64;
 
 function defaultRandom(length) {
-  if (typeof globalThis.crypto?.getRandomValues !== 'function') throw new VoicePackError('crypto_unavailable', '这个环境没有 crypto.getRandomValues，生成不了包 ID');
+  if (typeof globalThis.crypto?.getRandomValues !== 'function') throw new VoicePackError('crypto_unavailable', 'This environment has no crypto.getRandomValues, so a pack ID cannot be generated');
   return globalThis.crypto.getRandomValues(new Uint8Array(length));
 }
 
@@ -58,7 +58,7 @@ export function createPackId(shortName, random = defaultRandom) {
       if (byte < 252 && suffix.length < SUFFIX_LENGTH) suffix += ID_ALPHABET[byte % ID_ALPHABET.length];
     }
   }
-  if (suffix.length < SUFFIX_LENGTH) throw new VoicePackError('random_invalid', '随机数的来源一直给不出可用的字节，生成不了包 ID');
+  if (suffix.length < SUFFIX_LENGTH) throw new VoicePackError('random_invalid', 'The random source keeps returning unusable bytes, so a pack ID cannot be generated');
   return `${normalizeShortName(shortName)}-${suffix}`;
 }
 
@@ -94,7 +94,7 @@ function stubFetch(externals) {
  * @param {string[]} [input.sampleLines] 示例台词，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
  * @param {object[]} [input.setups] 几套设定，原样写进清单的 setups（规则见 protocol/FORMAT.md 4.4 节和 4.5 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
  * @param {number} [input.expressiveness] 这个声音的起伏（全局值，0 到 100 的整数），原样写进清单的 expressiveness（规则见 protocol/FORMAT.md 4.4 节）
- * @param {{ audio: string, text: string, seed?: number, expressiveness?: number }} [input.cardLine] 卡片试听那一句：audio 是 files 里的路径（音频要放进包里），text 是它的台词，seed 是配它用的 seed（可选，环境收 seed 才有），原样写进清单的 cardLine（规则见 protocol/FORMAT.md 4.4 节；不写，清单里就没有这个字段）
+ * @param {{ audio: string, text: string, seed?: number, expressiveness?: number }} [input.cardLine] 试听句：audio 是 files 里的路径（音频要放进包里），text 是它的台词，seed 是配它用的 seed（可选，环境收 seed 才有），原样写进清单的 cardLine（规则见 protocol/FORMAT.md 4.4 节；不写，清单里就没有这个字段）
  * @param {Map<string, Uint8Array>} input.protocolCore 协议核心的文件（含它的 manifest.json 和签名），放进 protocol/
  * @param {Map<string, Uint8Array>} [input.base] 基础部分的文件（含它的 manifest.json、签名和嵌着的 protocol/），放进 voice-pack/（这一版库写的协议版本里基础部分的目录名，names.mjs）；不给就是只有角色部分
  * @param {object} [input.limits] 解包上限
@@ -104,25 +104,25 @@ function stubFetch(externals) {
  * @throws {TypeError} 缺 name、baseVersion、reference.segments，文件集不对，textLanguage 不是 'zh' 或 'en'：调用方用错了
  */
 export async function packRolePart(input) {
-  if (input === null || typeof input !== 'object') throw new TypeError('input 必须是对象');
+  if (input === null || typeof input !== 'object') throw new TypeError('input must be an object');
   const { name, baseVersion, reference, files, protocolCore } = input;
-  if (typeof name !== 'string' || name === '') throw new TypeError('要给 name（显示名）');
-  if (typeof baseVersion !== 'string') throw new TypeError('要给 baseVersion（做包时用的基础部分版本）');
-  if (reference === null || typeof reference !== 'object' || !Array.isArray(reference.segments) || reference.segments.length === 0) throw new TypeError('要给 reference.segments（参考集，至少一段）');
+  if (typeof name !== 'string' || name === '') throw new TypeError('name (the display name) is required');
+  if (typeof baseVersion !== 'string') throw new TypeError('baseVersion (the base part version used to make the pack) is required');
+  if (reference === null || typeof reference !== 'object' || !Array.isArray(reference.segments) || reference.segments.length === 0) throw new TypeError('reference.segments (the reference set, at least one segment) is required');
   assertFileSet(files);
   assertFileSet(protocolCore);
   if (input.base !== undefined) assertFileSet(input.base);
   const textLanguage = resolveTextLanguage(input.textLanguage); // 带了现成的 SKILL.md 也先查：用错了不悄悄放过
-  if (!protocolCore.has(MANIFEST_FILE)) throw new VoicePackError('pack_invalid', `协议核心没有 ${MANIFEST_FILE}：用官方发布的基础部分里的协议核心，或者先用 seal 命令生成`, { details: { reason: 'protocol_core_unsealed' } });
+  if (!protocolCore.has(MANIFEST_FILE)) throw new VoicePackError('pack_invalid', `The protocol core has no ${MANIFEST_FILE}: use the protocol core from an officially published base part, or generate it first with the seal command`, { details: { reason: 'protocol_core_unsealed' } });
 
   const reserved = [...files.keys()].filter((path) => !isManagedPath(path, 'role'));
-  if (reserved.length > 0) throw new VoicePackError('pack_invalid', `这些路径不能放在角色部分的文件里（清单、签名、protocol/、${KNOWN_BASE_DIRECTORIES.map((name) => `${name}/`).join('、')}（认得的基础部分目录名，各协议版本的）由打包程序放）：${reserved.join('、')}`, { details: { reason: 'reserved_path', paths: reserved } });
+  if (reserved.length > 0) throw new VoicePackError('pack_invalid', `These paths cannot be placed among the files of a role part (the manifest, the signature, protocol/ and ${KNOWN_BASE_DIRECTORIES.map((name) => `${name}/`).join(', ')} (the recognised base part directory names, one per protocol version) are put there by the packing program): ${reserved.join(', ')}`, { details: { reason: 'reserved_path', paths: reserved } });
 
   const id = input.id ?? createPackId(input.shortName, input.random);
   const externals = input.externals ?? [];
   const externalEntries = [];
   for (const e of externals) {
-    if (typeof e?.path !== 'string' || typeof e?.url !== 'string' || !(e?.data instanceof Uint8Array)) throw new TypeError('每个外部资源要有 path、url 和 data（Uint8Array）');
+    if (typeof e?.path !== 'string' || typeof e?.url !== 'string' || !(e?.data instanceof Uint8Array)) throw new TypeError('every external resource needs path, url and data (Uint8Array)');
     externalEntries.push({ path: e.path, url: e.url, size: e.data.length, sha256: await sha256Hex(e.data) });
   }
   externalEntries.sort((a, b) => compareUtf8(a.path, b.path));
@@ -148,7 +148,7 @@ export async function packRolePart(input) {
     ...(input.expressiveness === undefined ? {} : { expressiveness: input.expressiveness }),
     // 几套设定：同示例台词，不写、写空数组，清单里就没有这个字段；别的值原样交给清单检查去拒绝
     ...(input.setups === undefined || (Array.isArray(input.setups) && input.setups.length === 0) ? {} : { setups: input.setups }),
-    // 卡片试听那一句 { audio, text }：audio 是 files 里的路径。不写就没有这个字段；写得不合格，交给清单检查去拒绝
+    // 试听句 { audio, text }：audio 是 files 里的路径。不写就没有这个字段；写得不合格，交给清单检查去拒绝
     ...(input.cardLine === undefined ? {} : { cardLine: input.cardLine }),
     ...(input.enhancers?.length ? { enhancers: input.enhancers } : {}),
     ...(input.scripts?.length ? { scripts: input.scripts } : {}),
@@ -169,7 +169,7 @@ export async function packRolePart(input) {
   const report = await selfCheckPart(sealed, { part: 'role', limits: input.limits, env: { capabilities: {}, ...(externals.length ? { fetch: stubFetch(externals) } : {}) } });
   if (!report.ok) {
     const first = report.problems[0];
-    throw new VoicePackError('pack_invalid', `做出来的包过不了检查：${first.message}${report.problems.length > 1 ? `（共 ${report.problems.length} 处问题）` : ''}`, { details: { problems: report.problems } });
+    throw new VoicePackError('pack_invalid', `The pack that was made fails the check: ${first.message}${report.problems.length > 1 ? ` (${report.problems.length} problems in total)` : ''}`, { details: { problems: report.problems } });
   }
   return { id, manifest: parseManifest(sealed.get(MANIFEST_FILE), { limits: input.limits }), files: sealed };
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 卡片试听那一句（流程层）：交来一句台词（agent 照这个角色的设定和角色卡写的，写法在 references/character-voice.md「卡片试听」），包做好以后用这个包自己的声音配出来，
+// 试听句（流程层）：交来一句台词（agent 照这个角色的设定和材料写的，写法在 references/character-voice.md「Audition line」），包做好以后用这个包自己的声音配出来，
 // 写进清单的 cardLine（protocol/FORMAT.md 4.4），预览卡片放它（protocol/lib/preview-card.mjs）。它不当参考，也不是留出录音。
 // 配法就是配音：交给 lib/dub.mjs 的 dubScript，不点名设定、不点名参考，所以参考、设定怎么补、舞台提示怎么读，都照配音的规矩（规则只在 lib/dub.mjs 写，这里不抄）。
 // 一个请求：配音会把它配成不止一个请求的台词（长停顿、章节、太长……，在哪里切开是 lib/dub.mjs 第 5c 步的事），花钱之前就报。
@@ -15,14 +15,14 @@
 //                                                      不给 allowCrossLanguage: true 就不配，一次能力都不调：outcome 是 failed，error 是配音报的 dub_cross_language（details 里有参考段和两边的语言），
 //                                                      提示是 card_line_cross_language（lib/material-hints.mjs），不是 card_line_failed。给了就照跨语言克隆配，这一句开头要写名字对（lib/dub.mjs 第 7c 步，languageMarks: false 的不要求）。
 //                                                      花钱之前（assertCardLineSpeakable）不查语言：参考是哪几段、什么语言，要做完包才定
-//                                                      seed：环境收 seed（seed-in-request）时，配音每个请求给同一个固定的 seed（lib/dub.mjs 第 7 步），同一个 seed 加同样的请求配出来逐样本一样，
-//                                                      交同样的文字重配就救不回念错的那一句。所以这一次的请求和上一版那一句的一模一样（比法同下面沿用时的比一比：参考、请求的文字（含读音词表、
+//                                                      seed：环境收 seed（seed-in-request）时，配音每个请求给同一个固定的 seed（lib/dub.mjs 第 7 步），同一个 seed 加同样的请求，测过出同一条，也测过出不一样的（models/scene3.md「Sampling: `seed`」），
+//                                                      出同一条的话，交同样的文字重配就救不回念错的那一句。所以这一次的请求和上一版那一句的一模一样（比法同下面沿用时的比一比：参考、请求的文字（含读音词表、
 //                                                      开头补的提示、读音词表的音素）、语速、起伏，都对得上），就换一个 seed：上一版那一句的 seed 加 1（清单的 cardLine.seed；上一版没记，是 lib/dub.mjs 的 DUB_SEED 加 1），
 //                                                      交给配音的是 only: [0] 加 previousSeed（规则在 lib/dub.mjs 第 7 步「seed」）。不是自动重试：只在调用方交了这一句（明说要重配）时换。
 //                                                      请求不一样（换了文字、换了参考……）照旧用固定的那个。用的 seed 写进清单的 cardLine.seed（protocol/FORMAT.md 4.4）和报告
 //   carriedCardLine(env, previous, made, { previousFiles, externals, limits })   发新版本、这次没给这一句：上一版的那一句沿用过来。返回 { outcome, audio }（同 voiceCardLine），
 //                                                      上一版没有这一句是 null。audio 带着上一版清单里记的 seed（有的话），沿用的版本照旧记着，下一次用同样的请求重配接着加。
-//                                                      规则：卡片那一句做好以后不重配，除非调用方明说要重配（交这一句，voiceCardLine）。上一版有，就原样沿用：
+//                                                      规则：试听句做好以后不重配，除非调用方明说要重配（交这一句，voiceCardLine）。上一版有，就原样沿用：
 //                                                      台词和音频带过来，一次能力都不调，不看这一次配它会不会和上一版一样（不再要求请求一样才沿用）。
 //                                                      切到另一套设定、改了读音词表、换了参考，都照旧放这一句。
 //                                                      报告照样比一比：用配音的规划（planDub，不花钱）分别在上一版和这一版上配这一句，和现在的配法对不上的地方写进 reasons
@@ -42,7 +42,7 @@
 //
 // 报告里的 cardLine（outcome；lib/make-pack-report.mjs 原样放进 report.cardLine，写法只在这里）：
 //   { status: 'voiced', text, pick: { segmentId, tag, by }, attempts, model?, modelChange?, openingCue?, seed?, seedChange? }   配成了。pick 是配音挑的参考段、它的标签和为什么是它（lib/reference-pick.mjs 的 by），
-//                                                      attempts 是合成调了几次，model 是能力报的模型，modelChange 是适配器这一次换了模型（{ from, reason }，约定在 adapters/README.md「换了模型」，
+//                                                      attempts 是合成调了几次，model 是能力报的模型，modelChange 是适配器这一次换了模型（{ from, reason }，约定在 adapters/README.md「When the model changes」，
 //                                                      没换就没有：写进包里的这一句是换上的模型配的，提示 card_line_model_changed），openingCue 是请求开头补的提示（lib/dub.mjs 第 7a 步，没补就没有）；
 //                                                      seed 是交给合成能力的 seed（环境收 seed 才有），seedChange 是用同样的请求重配、换了 seed：{ from: 上一版的 }（见上 voiceCardLine「seed」，没换就没有）
 //   { status: 'failed', text, error, attempts?, halted? }   没配成：清单里没有 cardLine，包照做。error 是错误的摘要 { code, message, details }（lib/capability-calls.mjs 的 summarizeError）；
@@ -62,7 +62,7 @@
 //                            或者比合成能力的下限短，或者配音的规划报的错（只有舞台提示没有话、[voice:] 指了别的声音……，原来的错误在 cause）
 //   voiceCardLine 不抛 VoicePackError：钱已经花在包上了，抛出去包就扔了，要从头再花一遍；这一句没配成只记在报告里（failed），包照做。调用方中止（AbortError）和不是 VoicePackError 的错（程序的错）原样往上抛。
 //   凭据被拒（401）、账户停了（details.halted）也不抛，这是做包里唯一不往上抛它们的地方（挑默认段照旧抛，lib/make-pack-pick.mjs）：这一步是包做好以后最后一次调能力，
-//   之后不再调，「停下来让使用者处理」（adapters/README.md「出错的约定」第 3 条）照旧成立。它们不当成普通的「这一句没配成」：outcome 标 halted，提示 card_line_halted
+//   之后不再调，「停下来让使用者处理」（adapters/README.md「Error conventions」第 3 条）照旧成立。它们不当成普通的「这一句没配成」：outcome 标 halted，提示 card_line_halted
 //   写明要使用者先处理、不要重试，处理好以后再发新版本补上
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
@@ -91,7 +91,7 @@ const onCardOf = (bytes) => {
 };
 
 /** 配音把这一句配成了几个请求：说给人看（为什么不止一个，怎么改）。 */
-const splitProblem = (count) => `配音会把这一句配成 ${count} 个请求（在哪里切开，见 lib/dub.mjs 第 5c 步），卡片试听要一个请求配完：去掉长停顿、章节标记和 [voice:]，或者写短一点`;
+const splitProblem = (count) => `Dubbing would split this line into ${count} requests (where it splits: see step 5c in lib/dub.mjs), but the audition line must be dubbed in one request: remove long pauses, chapter markers and [voice:], or write it shorter`;
 
 /**
  * 花钱之前：用试装的包规划配这一句（不调能力），不是正好一个能合成的请求就报 make_pack_input_invalid（field 是 cardLine）。
@@ -106,12 +106,12 @@ export async function assertCardLineSpeakable(env, stub, text, limits) {
     plan = await planDub(env, pack, [{ text }], { ...dubLimits(limits), allowCrossLanguage: true, languageMarks: false }); // 占位的参考，不看语言（文件头 voiceCardLine「跨语言」）
   } catch (cause) {
     if (!isVoicePackError(cause)) throw cause;
-    throw Object.assign(invalid('cardLine', `配音规划不了这一句（${cause.code}）：${cause.message}`), { cause });
+    throw Object.assign(invalid('cardLine', `Dubbing cannot plan this line (${cause.code}): ${cause.message}`), { cause });
   }
-  if (plan.units.length === 0) throw invalid('cardLine', '这一句里没有要念的字（只有标记和舞台提示）');
+  if (plan.units.length === 0) throw invalid('cardLine', 'This line has nothing to speak (only markers and stage directions)');
   if (plan.units.length > 1) throw invalid('cardLine', splitProblem(plan.units.length));
   const [unit] = plan.units;
-  if (unit.status === 'failed') throw invalid('cardLine', `配音不会合成这一句（${unit.error?.code}）：${unit.error?.message}`);
+  if (unit.status === 'failed') throw invalid('cardLine', `Dubbing will not synthesize this line (${unit.error?.code}): ${unit.error?.message}`);
 }
 
 /**
@@ -122,7 +122,7 @@ export async function assertCardLineSpeakable(env, stub, text, limits) {
  */
 export async function voiceCardLine(env, made, text, { externals = [], wait, limits, previous = null, previousFiles, allowCrossLanguage = false, languageMarks = true, expressiveness, language } = {}) {
   const failed = (error, attempts, halted = false) => ({ outcome: { status: 'failed', text, error, ...(attempts === undefined ? {} : { attempts }), ...(halted ? { halted: true } : {}) }, audio: null });
-  if (!hasCapability(env, 'voice-cloning')) return failed({ code: 'capability_missing', message: '环境没有 voice-cloning，配不了卡片试听那一句', details: { capability: 'voice-cloning' } });
+  if (!hasCapability(env, 'voice-cloning')) return failed({ code: 'capability_missing', message: 'The environment has no voice-cloning, so the audition line cannot be dubbed', details: { capability: 'voice-cloning' } });
   const tries = [];
   let dubbed;
   try {
@@ -147,7 +147,7 @@ export async function voiceCardLine(env, made, text, { externals = [], wait, lim
   const [unit] = dubbed.units;
   if (unit.status !== 'ok') return failed(unit.error, tries[0]);
   const sniffed = sniffAudio(unit.audio.bytes);
-  if (sniffed === null) return failed({ code: 'card_line_audio_unrecognized', message: '合成能力返回的不是认得出的音频（wav、mp3、flac、ogg、m4a），没有写进包', details: { mimeType: unit.audio.mimeType } }, tries[0]);
+  if (sniffed === null) return failed({ code: 'card_line_audio_unrecognized', message: 'The synthesis capability returned something that is not recognizable audio (wav, mp3, flac, ogg, m4a), so it was not written into the pack', details: { mimeType: unit.audio.mimeType } }, tries[0]);
   return {
     outcome: {
       status: 'voiced',
@@ -210,7 +210,7 @@ async function repeatedSeed(env, { previous, previousFiles }, { made, pack, text
 }
 
 /**
- * 发新版本、这次没给卡片试听那一句：上一版的那一句原样沿用，比一比和现在的配法对不对得上（规则见文件头）。
+ * 发新版本、这次没给试听句：上一版的那一句原样沿用，比一比和现在的配法对不对得上（规则见文件头）。
  * previous 是 lib/pack-version.mjs 的 readPreviousVersion 读出来的上一版（第一个版本是 null），previousFiles 是上一版的文件（makePack 的 input.previous）；
  * made 是这一版做好的包（packRolePart 的结果，还没写验证记录和这一句），externals 是这一版的外部资源 [{ path, url, data }]。
  * @returns {Promise<{ outcome: object, audio: { text: string, bytes: Uint8Array, format: string, seed?: number } } | null>}

@@ -3,9 +3,9 @@
 // 预览卡片里内嵌的试听：从参考集里挑一段，截短到放得下，不重新编码。
 //
 //   trimAudio(bytes, limits)                       一段音频字节 → { bytes, mimeType, seconds, trimmed }，放不下就是 null
-//   choosePreviewAudio(manifest, files, limits)    用哪一段：卡片试听那一句，没有就默认参考段，放不下换下一段 → { cardLine: true, … } 或 { segmentId, … }（bytes、mimeType、seconds、trimmed），或 null
+//   choosePreviewAudio(manifest, files, limits)    用哪一段：试听句，没有就默认参考段，放不下换下一段 → { cardLine: true, … } 或 { segmentId, … }（bytes、mimeType、seconds、trimmed），或 null
 //
-// 试听用哪一段：清单里有卡片试听那一句（cardLine，FORMAT.md 4.4：做包时用这个包自己的声音配的一句台词）就放它的音频。没有，放参考集里主语言的默认段
+// 试听用哪一段：清单里有试听句（cardLine，FORMAT.md 4.4：做包时用这个包自己的声音配的一句台词）就放它的音频。没有，放参考集里主语言的默认段
 // （reference.defaultSegment；别的语言的默认段 languageDefaults 不当试听）：这时试听是参考集里的一段录音，不合成（默认段是重生成的、标了 synthetic 的，放的就是它）。
 // 示例台词（sampleLines）只是文字，格式里没有它的音频，不当试听。
 // 那一句的音频放不下（不能截的格式整个超过字节上限，或者认不出），照没有它处理；默认段的字节不在包里（外部资源）、放不下又切不了的，换清单里的下一段；
@@ -35,7 +35,7 @@
 //   能不动就不动：原件本来就放得下（时长和字节都在上限内、结构规矩），原样放，字节和原件一样，连标签也不动。
 //
 // 抛出的错误：音频的问题不抛。放不下、认不出是音频，都给 null，由调用方决定怎么说（卡片上写「没有内嵌试听」）。
-// 调用方用错了才抛 TypeError（规矩见 protocol/README.md「错误」）：bytes 不是 Uint8Array，上限不是正数。上限只来自调用方的选项，包里的数据碰不到它。
+// 调用方用错了才抛 TypeError（规矩见 protocol/README.md「Errors」）：bytes 不是 Uint8Array，上限不是正数。上限只来自调用方的选项，包里的数据碰不到它。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { sniffAudio, mpegFrame, id3v2Length } from './audio.mjs';
@@ -55,7 +55,7 @@ const putU32le = (out, at, value) => { out[at] = value & 0xff; out[at + 1] = (va
 function resolveLimits(limits = {}) {
   const maxSeconds = limits.maxSeconds ?? PREVIEW_MAX_SECONDS;
   const maxBytes = limits.maxBytes ?? PREVIEW_MAX_BYTES;
-  if (!(maxSeconds > 0) || !(maxBytes > 0)) throw new TypeError(`maxSeconds 和 maxBytes 必须是正数，收到 maxSeconds=${maxSeconds}、maxBytes=${maxBytes}`);
+  if (!(maxSeconds > 0) || !(maxBytes > 0)) throw new TypeError(`maxSeconds and maxBytes must be positive numbers, got maxSeconds=${maxSeconds}, maxBytes=${maxBytes}`);
   return { maxSeconds, maxBytes };
 }
 
@@ -195,7 +195,7 @@ function trimMp3(bytes, { maxSeconds, maxBytes }) {
  *   null：不是允许的音频，或者怎么也放不进上限（截出来不到 1 秒，或者不能截的格式整个超过字节上限）
  */
 export function trimAudio(bytes, limits) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   const resolved = resolveLimits(limits);
   const sniffed = sniffAudio(bytes);
   if (sniffed === null) return null;
@@ -206,7 +206,7 @@ export function trimAudio(bytes, limits) {
 }
 
 /**
- * 给角色部分的预览卡片挑一段试听：清单里有卡片试听那一句（cardLine）就是它；没有、或者它放不下，用默认参考段，再放不下换清单里的下一段。
+ * 给角色部分的预览卡片挑一段试听：清单里有试听句（cardLine）就是它；没有、或者它放不下，用默认参考段，再放不下换清单里的下一段。
  * @param {{ reference: { defaultSegment: string, segments: { id: string, audio: string }[] }, cardLine?: { audio: string, text: string } }} manifest 角色部分的清单
  * @param {Map<string, Uint8Array>} files 角色部分的文件（路径相对角色部分的目录）；外部资源的字节不在里面，那一段自然跳过
  * @param {{ maxSeconds?: number, maxBytes?: number }} [limits]

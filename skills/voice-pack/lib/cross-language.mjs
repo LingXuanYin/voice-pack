@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 跨语言怎么说（流程层，纯计算）：配音停下来报 dub_cross_language（lib/dub.mjs 第 3a 步），做包说卡片试听那一句没配（lib/material-hints.mjs 的 card_line_cross_language），
+// 跨语言怎么说（流程层，纯计算）：配音停下来报 dub_cross_language（lib/dub.mjs 第 3a 步），做包说试听句没配（lib/material-hints.mjs 的 card_line_cross_language），
 // 都要说「参考段是哪种语言、台词是哪种语言」，使用者自己要补参考的，还要说补的参考从哪来。写法只在这里。
 //
 //   languageOfText(language, text) -> { language, given? }
@@ -21,9 +21,9 @@
 //     使用者自己要给包补一段这种语言的参考时，参考从哪来：有这个角色说这种语言的录音就用录音；没有的（设计出来的声音也一样），默认用这个包跨语言配一段这种语言的话当参考
 //     （dub 带 --no-setup：要的是声音本身，不套包里的设定；配一条就用它，不让使用者挑，素材标 synthetic），配之前说一句可能带一点参考那种语言的口音；也可以用使用者在库里挑的另一个声音；平台能指定模型的，选项里另列一项
 //     「先用 <模型名> 念一遍再克隆：想压一压口音可以试」（基础部分自己不换模型）。from 是参考段的语言，写进「可能带一点 ja 的口音」；不知道是哪一种（几段不一样）给 undefined。
-//     配音停下来的 dub_cross_language（lib/dub.mjs 第 3a 步）和卡片那一句的 card_line_cross_language（lib/material-hints.mjs）用同一句，末尾指到做法：references/character-voice.md「补一段这种语言的参考」。
+//     配音停下来的 dub_cross_language（lib/dub.mjs 第 3a 步）和试听句的 card_line_cross_language（lib/material-hints.mjs）用同一句，末尾指到做法：references/character-voice.md「Add a reference segment in this language」。
 //   namePairOf(text) -> { cue, reference, line } | null
-//     一行开头的名字对（[参考语言里的名字|台词语言里的名字]，跨语言的行这样写，models/scene3.md「跨语言和口音」）：cue 是整个方括号，reference、line 是两个名字。开头不是名字对给 null。
+//     一行开头的名字对（[参考语言里的名字|台词语言里的名字]，跨语言的行这样写，models/scene3.md「Cross-language and accent」）：cue 是整个方括号，reference、line 是两个名字。开头不是名字对给 null。
 //   lineNameOnly(text) -> string
 //     发给模型的文字：每一行开头的名字对只留参考语言里的名字（[Harry Potter|哈利·波特] 换成 [Harry Potter]）。不开头的方括号不动。
 //   lineLanguage({ to }, text) -> string
@@ -39,7 +39,7 @@
 import { detectLanguages, primaryLanguage, scriptFitsLanguage } from './line-hints.mjs';
 
 /** 认不出是哪一种语言时说是什么文字写的（lib/line-hints.mjs 的 detectLanguages 给的文字系统）。 */
-export const SCRIPT_NAMES = Object.freeze({ Latin: '拉丁字母', Han: '汉字', Cyrillic: '西里尔字母', Arabic: '阿拉伯字母', Devanagari: '天城文', Hebrew: '希伯来字母', Hangul: '谚文', Japanese: '日文', Thai: '泰文', Greek: '希腊字母' });
+export const SCRIPT_NAMES = Object.freeze({ Latin: 'Latin script', Han: 'Chinese characters', Cyrillic: 'Cyrillic script', Arabic: 'Arabic script', Devanagari: 'Devanagari script', Hebrew: 'Hebrew script', Hangul: 'Hangul', Japanese: 'Japanese script', Thai: 'Thai script', Greek: 'Greek script' });
 
 /** 拿哪种语言去和参考段比（文件头）：给了的语言文字看得出对不上，换成按文字认的，given 是给的那一层。 */
 export function languageOfText(language, text) {
@@ -85,4 +85,4 @@ export const withLineLanguage = (text, language) => `${text.trimEnd()} [language
 export const withReferenceMarks = (text, { referenceName, referenceLanguage }) => `${referenceName === null ? '' : `[${referenceName}]`}${text.trimEnd()} [language: ${referenceLanguage}]`;
 
 /** 补一段这种语言的参考，参考从哪来（文件头）。 */
-export const referenceSources = (from) => `参考从哪来：有这个角色说这种语言的录音就用录音；没有的（设计出来的声音也一样），默认用这个包跨语言配一段这种语言的话当参考（dub --language <这种语言> --allow-cross-language --no-setup，不套包里的设定；配一条就用它，素材里标 "synthetic": true），配之前跟使用者说一句，可能带一点${from === undefined ? '参考那种语言' : ` ${from} `}的口音；也可以用使用者在库里挑的一个说这种语言的声音（那是另一个声音，先跟他说清楚）。平台能指定模型的，选项里另列一项「先用 <模型名> 念一遍再克隆：想压一压口音可以试」（模型名和怎么调，看平台的适配器）。做法见 references/character-voice.md「补一段这种语言的参考」`;
+export const referenceSources = (from) => `Where the reference comes from: if there is a recording of this character speaking this language, use the recording; if there is none (also for a designed voice), by default use this pack to dub a passage in this language across languages as the reference (dub --language <this language> --allow-cross-language --no-setup, which does not apply the setup in the pack; dub one passage and use it, and mark "synthetic": true in the materials), and tell the user once before dubbing that it may carry a slight accent${from === undefined ? ' of the reference language' : ` of ${from}`}; or use a voice that speaks this language and that the user picked from the library (that is a different voice, so tell the user clearly first). When the platform can name the model, list one more option: "speak it with <model name> first, then clone: worth trying if you want to reduce the accent" (for the model name and how to set it, see the platform's adapter). How to do it: references/character-voice.md「Add a reference segment in this language」`;

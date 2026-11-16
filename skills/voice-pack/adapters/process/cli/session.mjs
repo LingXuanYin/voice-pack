@@ -24,7 +24,7 @@
 //     别的系统只结束程序本身（不另开进程组：那样终端上的 Ctrl-C 到不了程序）。程序自己起的子进程（多进程的推理、数据加载）归程序管，README 里写了。
 //   - 程序的标准错误不转给命令（会弄脏 --json 的输出），写到的全文都留着，放进错误的 details.stderr（打过码：令牌形状的串和签名地址去掉，别的字不动）。
 //
-// 抛出的错误（VoicePackError；details 里放什么在抛出处写明，什么时候出现见 ../README.md「出错」）：
+// 抛出的错误（VoicePackError；details 里放什么在抛出处写明，什么时候出现见 ../README.md「Errors」）：
 //   process_spawn_failed          起不来。details: { command, reason }
 //   process_start_timeout         超过 startTimeoutMs 还没说 ready，已结束。details: { seconds, stderr, output }
 //   process_exited                程序退出了，而 ready 或回应还没有来。details: { stage: 'start' | 'request', exitCode, signal, capability?, stderr, output }
@@ -95,7 +95,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   // 程序的话（标准错误的全文，标准输出里的日志行）都过打码再交出去：令牌形状的串和签名地址去掉，别的字不动。
   // 出一次错只打码一遍：context() 在造这个错的时候调一次，报错的文字（stderrNote）和 details 都用这一份
   const context = () => ({ stderr: reportable(stderr.trim()), output: noise.map((line) => reportable(line)) });
-  const stderrNote = ({ stderr: said }) => (said === '' ? '' : `。它写在标准错误里的话：${said}`);
+  const stderrNote = ({ stderr: said }) => (said === '' ? '' : `. What it wrote to standard error: ${said}`);
 
   /** 程序不行了：先拒掉在等的 ready 和在途的请求，再结束它。why 是为什么（也是以后的调用看到的原因），itemError 给在途的请求各自的错（默认同 why）。 */
   function die(why, itemError = () => why, { kill = true } = {}) {
@@ -117,15 +117,15 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
   }
 
   const exitedError = (stage, capability, exit) => {
-    const how = exit.signal ? `被信号 ${exit.signal} 结束` : `退出码 ${exit.code}`;
-    const where = stage === 'start' ? '在说 ready 之前' : capability === undefined ? '' : `在回应 ${capability} 之前`;
+    const how = exit.signal ? `ended by signal ${exit.signal}` : `exit code ${exit.code}`;
+    const where = stage === 'start' ? ' before it said ready' : capability === undefined ? '' : ` before it responded to ${capability}`;
     const said = context();
-    return new VoicePackError('process_exited', `程序${where}就退出了（${how}）${stderrNote(said)}`, {
+    return new VoicePackError('process_exited', `The program exited${where} (${how})${stderrNote(said)}`, {
       details: { stage, exitCode: exit.code ?? null, signal: exit.signal ?? null, ...(capability === undefined ? {} : { capability }), ...said },
     });
   };
-  const closedError = () => new VoicePackError('process_not_running', '会话已经关了（命令结束时收尾）', { details: { reason: 'closed' } });
-  const protocolError = (why, message, more = {}) => new VoicePackError('process_protocol_error', `程序违反了进程协议：${reportable(message)}`, { details: { reason: why, ...more, ...context() } });
+  const closedError = () => new VoicePackError('process_not_running', 'The session is already closed (it is closed when the command ends)', { details: { reason: 'closed' } });
+  const protocolError = (why, message, more = {}) => new VoicePackError('process_protocol_error', `The program broke the process protocol: ${reportable(message)}`, { details: { reason: why, ...more, ...context() } });
 
   function onLine(line) {
     const parsed = parseProgramLine(line);
@@ -140,7 +140,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       if (startSettle === null) return; // 第二次 ready 忽略
       const missing = expect.filter((name) => !parsed.capabilities.includes(name));
       if (missing.length > 0) {
-        die(new VoicePackError('process_capability_unsupported', `适配器声明了要用 ${missing.join('、')}，程序在 ready 里没有说它有（它说有：${parsed.capabilities.join('、') || '一项也没有'}）：改适配器的声明，或者让程序实现它`, { details: { missing, announced: parsed.capabilities } }));
+        die(new VoicePackError('process_capability_unsupported', `The adapter declares it needs ${missing.join(', ')}, but the program did not say in ready that it has them (it says it has: ${parsed.capabilities.join(', ') || 'none'}): change the adapter's declaration, or have the program implement them`, { details: { missing, announced: parsed.capabilities } }));
         return;
       }
       clearTimeout(startTimer);
@@ -156,20 +156,20 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
     }
     const item = pending.get(parsed.id);
     if (item === undefined) {
-      die(protocolError('unknown_id', `回应的 id ${JSON.stringify(parsed.id)} 不是在途的请求（重复回应，或者回应了没发过的 id）`, { id: parsed.id }));
+      die(protocolError('unknown_id', `The response id ${JSON.stringify(parsed.id)} is not a request in flight (a duplicate response, or a response to an id that was never sent)`, { id: parsed.id }));
       return;
     }
     pending.delete(parsed.id);
     clearTimeout(item.timer);
     if (parsed.kind === 'invalid') {
-      item.reject(new VoicePackError('process_response_invalid', `程序对 ${item.capability} 的回应写得不对：${parsed.problem}`, { details: { capability: item.capability, problem: parsed.problem } }));
+      item.reject(new VoicePackError('process_response_invalid', `The program's response to ${item.capability} is malformed: ${parsed.problem}`, { details: { capability: item.capability, problem: parsed.problem } }));
     } else if (!parsed.ok) {
       item.reject(programError(parsed.error, item.capability));
     } else {
       try {
         item.resolve(decodeClips(parsed.result));
       } catch (cause) {
-        item.reject(new VoicePackError('process_response_invalid', `程序对 ${item.capability} 的回应里，音频的 Base64 写得不对`, { details: { capability: item.capability, problem: 'invalid_base64' }, cause }));
+        item.reject(new VoicePackError('process_response_invalid', `In the program's response to ${item.capability}, the Base64 of the audio is malformed`, { details: { capability: item.capability, problem: 'invalid_base64' }, cause }));
       }
     }
   }
@@ -195,7 +195,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       try {
         child = spawn(command, args, { cwd, env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
       } catch (cause) {
-        die(new VoicePackError('process_spawn_failed', reportable(`起不来程序 ${command}：${cause?.message ?? cause}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
+        die(new VoicePackError('process_spawn_failed', reportable(`Cannot start the program ${command}: ${cause?.message ?? cause}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
         return;
       }
       const wasStarting = () => startSettle !== null;
@@ -214,9 +214,9 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
         exited = true;
         // ENOENT 有两种：程序找不到，或者给它的当前目录不存在（spawn 报的是同一个码）
         const why = cause?.code === 'ENOENT'
-          ? (fs.existsSync(cwd) ? '找不到它（检查 PATH，或者把完整路径写进命令）' : `程序的当前目录 ${cwd} 不存在（cwd 选项）`)
+          ? (fs.existsSync(cwd) ? 'the program cannot be found (check PATH, or write the full path into the command)' : `the working directory of the program, ${cwd}, does not exist (the cwd option)`)
           : (cause?.message ?? cause);
-        die(new VoicePackError('process_spawn_failed', reportable(`起不来程序 ${command}：${why}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
+        die(new VoicePackError('process_spawn_failed', reportable(`Cannot start the program ${command}: ${why}`), { details: { command, reason: cause?.code ?? 'unknown' }, cause: scrubbedCause(cause) }), undefined, { kill: false });
       });
       child.on('exit', (code, signal) => setTimeout(() => settleExit(code, signal), 200).unref()); // 标准输出里可能还有没读完的回应；close 先到就不用等
       child.on('close', (code, signal) => settleExit(code, signal));
@@ -233,7 +233,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       child.unref();
       startTimer = setTimeout(() => {
         const said = context();
-        die(new VoicePackError('process_start_timeout', `程序 ${seconds(startTimeoutMs)} 秒内没有说 ready，已结束它${stderrNote(said)}`, { details: { seconds: seconds(startTimeoutMs), ...said } }));
+        die(new VoicePackError('process_start_timeout', `The program did not say ready within ${seconds(startTimeoutMs)} s, and has been ended${stderrNote(said)}`, { details: { seconds: seconds(startTimeoutMs), ...said } }));
       }, startTimeoutMs);
     });
   }
@@ -248,7 +248,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         const said = context();
-        die(new VoicePackError('process_timeout', `程序 ${seconds(timeoutMs)} 秒内没有回应 ${capability}，已结束它${stderrNote(said)}`, { details: { capability, seconds: seconds(timeoutMs), ...said } }));
+        die(new VoicePackError('process_timeout', `The program did not respond to ${capability} within ${seconds(timeoutMs)} s, and has been ended${stderrNote(said)}`, { details: { capability, seconds: seconds(timeoutMs), ...said } }));
       }, timeoutMs);
       pending.set(id, { capability, resolve, reject, timer });
       child.stdin.write(`${line}\n`);
@@ -263,7 +263,7 @@ export function createSession({ argv, cwd, env, timeoutMs, startTimeoutMs, expec
       if (state === 'idle' || state === 'starting') await start(); // 第一次调用才起；起不来的错就报给这一次调用
       if (state !== 'ready') {
         const why = reason?.details?.reason === 'closed' ? 'closed' : (reason?.code ?? state); // 当初出的那个错的 code；会话被关了是 closed
-        throw new VoicePackError('process_not_running', `程序已经不在了，${capability} 没有发出去：${reason?.message ?? '它没有起来'}`, { details: { capability, reason: why } });
+        throw new VoicePackError('process_not_running', `The program is no longer there, so ${capability} was not sent: ${reason?.message ?? 'it did not start'}`, { details: { capability, reason: why } });
       }
       return request(capability, line, id);
     };

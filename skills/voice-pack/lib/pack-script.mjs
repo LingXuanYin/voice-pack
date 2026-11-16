@@ -9,7 +9,7 @@
 // 哪个脚本属于哪个功能：清单里脚本登记的 feature。一个功能只跑登记在自己名下的脚本；没登记功能的脚本不属于任何功能，
 // 不会被自动运行（包的配音指引可以告诉 agent 手动怎么用它）。功能名就是清单 features 里的名字：配音是 dub，变声是 convert。
 //
-// 运行时：脚本的 runtime 字段是运行环境 env.runtimes 里的名字（node、python……，写法同 protocol/FORMAT.md「运行时」）。
+// 运行时：脚本的 runtime 字段是运行环境 env.runtimes 里的名字（node、python……，写法同 protocol/FORMAT.md「Runtime」）。
 // 脚本运行时的签名（env.runtimes[<runtime>] 是这样一个函数；ffmpeg 那一类的签名另见 tools/audio-decode.mjs）：
 //   async ({ entry, input }) => string | Uint8Array
 //     entry   清单里登记的入口，相对角色部分的目录（例如 scripts/denoise.mjs）。运行时在包目录里运行它。
@@ -70,7 +70,7 @@ export function missingScriptRuntimes(env, scripts, feature) {
 export function assertScriptRuntimes(env, scripts, feature) {
   const [first] = missingScriptRuntimes(env, scripts, feature);
   if (first !== undefined) {
-    throw new VoicePackError('runtime_missing', `运行环境没有提供运行时 ${first.runtime}：包里的脚本 ${first.entry} 要用它，${feature} 功能不能运行，其他功能照常`, { details: first });
+    throw new VoicePackError('runtime_missing', `The runtime environment does not provide the runtime ${first.runtime}: script ${first.entry} in the pack needs it, so the ${feature} feature cannot run; other features work as usual`, { details: first });
   }
 }
 
@@ -87,7 +87,7 @@ export function audioForScript(clip) {
  * @param {{ feature: string, hook: 'text' | 'audio', unit: object }} call
  */
 export async function runScript(env, pack, script, { feature, hook, unit }) {
-  if (!Object.hasOwn(ALLOWED, hook)) throw new TypeError(`钩子必须是 ${HOOKS.join(' 或 ')}，收到 ${JSON.stringify(hook)}`);
+  if (!Object.hasOwn(ALLOWED, hook)) throw new TypeError(`The hook must be ${HOOKS.join(' or ')}, got ${JSON.stringify(hook)}`);
   const runtime = requireRuntime(env, script.runtime);
   const where = { entry: script.entry, runtime: script.runtime, hook, feature };
   const request = { protocol: SCRIPT_PROTOCOL, feature, hook, pack: { id: pack.manifest.id, name: pack.manifest.name, version: pack.manifest.version }, unit };
@@ -97,35 +97,35 @@ export async function runScript(env, pack, script, { feature, hook, unit }) {
     stdout = await runtime({ entry: script.entry, input: JSON.stringify(request) });
   } catch (cause) {
     if (isVoicePackError(cause)) throw cause;
-    throw new VoicePackError('script_failed', `包里的脚本 ${script.entry}（${script.runtime}，${hook} 钩子）没有跑成：${cause?.message ?? cause}`, { details: where, cause });
+    throw new VoicePackError('script_failed', `Script ${script.entry} in the pack (${script.runtime}, ${hook} hook) failed to run: ${cause?.message ?? cause}`, { details: where, cause });
   }
-  const invalid = (reason, message, extra = {}) => new VoicePackError('script_output_invalid', `脚本 ${script.entry}（${hook} 钩子）的输出不合约定：${message}`, { details: { ...where, reason, ...extra } });
+  const invalid = (reason, message, extra = {}) => new VoicePackError('script_output_invalid', `The output of script ${script.entry} (${hook} hook) does not meet the contract: ${message}`, { details: { ...where, reason, ...extra } });
 
   const raw = typeof stdout === 'string' ? stdout : stdout instanceof Uint8Array ? decoder.decode(stdout) : null;
-  if (raw === null) throw invalid('not_json', '运行时要返回字符串或字节');
+  if (raw === null) throw invalid('not_json', 'the runtime must return a string or bytes');
   if (raw.trim() === '') return {};
   let output;
   try {
     output = JSON.parse(raw);
   } catch {
-    throw invalid('not_json', '不是 JSON');
+    throw invalid('not_json', 'the output is not JSON');
   }
-  if (!isPlainObject(output)) throw invalid('not_object', '要是一个 JSON 对象（什么都不改就输出 {}）');
+  if (!isPlainObject(output)) throw invalid('not_object', 'the output must be a JSON object (output {} to change nothing)');
   for (const key of Object.keys(output)) {
-    if (!ALLOWED[hook].includes(key)) throw invalid('unknown_key', `${hook} 钩子不认识键 ${JSON.stringify(key)}（认得：${ALLOWED[hook].join('、')}）`, { key });
+    if (!ALLOWED[hook].includes(key)) throw invalid('unknown_key', `the ${hook} hook does not know the key ${JSON.stringify(key)} (known: ${ALLOWED[hook].join(', ')})`, { key });
   }
-  if (hook === 'text' && 'text' in output && (typeof output.text !== 'string' || output.text.trim() === '')) throw invalid('text_invalid', 'text 要是非空字符串');
+  if (hook === 'text' && 'text' in output && (typeof output.text !== 'string' || output.text.trim() === '')) throw invalid('text_invalid', 'text must be a non-empty string');
   if (hook === 'audio') {
-    if ('mimeType' in output && (typeof output.mimeType !== 'string' || !/^audio\//i.test(output.mimeType))) throw invalid('mime_invalid', 'mimeType 要是 audio/ 开头的类型');
+    if ('mimeType' in output && (typeof output.mimeType !== 'string' || !/^audio\//i.test(output.mimeType))) throw invalid('mime_invalid', 'mimeType must be a type starting with audio/');
     if ('audio' in output) {
       try {
         const bytes = fromBase64(output.audio);
         assertAudioClip({ bytes, mimeType: output.mimeType ?? 'audio/wav' });
       } catch {
-        throw invalid('audio_invalid', 'audio 要是非空的 Base64 字符串');
+        throw invalid('audio_invalid', 'audio must be a non-empty Base64 string');
       }
     } else if ('mimeType' in output) {
-      throw invalid('audio_invalid', '只给了 mimeType 没给 audio');
+      throw invalid('audio_invalid', 'mimeType was given without audio');
     }
   }
   return output;

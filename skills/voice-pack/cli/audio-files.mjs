@@ -60,9 +60,9 @@ export function readMediaFile(ctx, argument) {
 function readWithMime(ctx, argument, mimeType, allowed) {
   if (mimeType === undefined) {
     const extension = path.extname(argument).slice(1).toLowerCase();
-    throw new VoicePackError('audio_input_invalid', `${argument} 的后缀 .${extension} 认不出是什么音频（能用的：${allowed.join('、')}）`, { details: { file: argument, reason: 'extension' } });
+    throw new VoicePackError('audio_input_invalid', `The extension .${extension} of ${argument} is not recognized as an audio format (usable: ${allowed.join(', ')})`, { details: { file: argument, reason: 'extension' } });
   }
   const bytes = readBytes(ctx, argument);
-  if (bytes.length === 0) throw new VoicePackError('audio_input_invalid', `${argument} 是空文件`, { details: { file: argument, reason: 'empty' } });
+  if (bytes.length === 0) throw new VoicePackError('audio_input_invalid', `${argument} is an empty file`, { details: { file: argument, reason: 'empty' } });
   return { bytes, mimeType };
 }

@@ -36,7 +36,7 @@ const ascii = (bytes, at) => String.fromCharCode(bytes[at], bytes[at + 1], bytes
 // no_data_chunk（有 fmt 没有 data）、data_before_fmt（走到 data 时还没有 fmt：fmt 排在后面，或者根本没有）、
 // fmt_too_short、bad_channels_or_rate、block_align_mismatch
 function invalid(problem, message) {
-  return new VoicePackError('wav_invalid', `WAV 文件头有问题：${message}`, { details: { problem } });
+  return new VoicePackError('wav_invalid', `Bad WAV header: ${message}`, { details: { problem } });
 }
 
 /** 开头是不是 RIFF/WAVE（只看文件头，不保证后面的块都合法）。 */
@@ -45,7 +45,7 @@ export function isWav(bytes) {
 }
 
 function readFormat(view, bytes, at, size) {
-  if (size < 16) throw invalid('fmt_too_short', `fmt 块只有 ${size} 字节，至少要 16`);
+  if (size < 16) throw invalid('fmt_too_short', `The fmt chunk is only ${size} bytes; it needs at least 16`);
   const tag = view.getUint16(at, true);
   const fmt = {
     format: tag,
@@ -55,7 +55,7 @@ function readFormat(view, bytes, at, size) {
     bitsPerSample: view.getUint16(at + 14, true),
   };
   if (tag === FORMAT_EXTENSIBLE) {
-    if (size < 40) throw invalid('fmt_too_short', `EXTENSIBLE 的 fmt 块只有 ${size} 字节，至少要 40`);
+    if (size < 40) throw invalid('fmt_too_short', `The EXTENSIBLE fmt chunk is only ${size} bytes; it needs at least 40`);
     fmt.format = GUID_TAIL.every((b, i) => bytes[at + 26 + i] === b) ? view.getUint16(at + 24, true) : -1; // -1：不是标准子格式
   }
   return fmt;
@@ -64,15 +64,15 @@ function readFormat(view, bytes, at, size) {
 /** 文件头里的格式过一遍检查，返回编码名和每帧的字节数；不合格抛错。wavInfo 和 parseWav 共用，所以两个对同一份字节给同一个结论。 */
 function checkFormat(fmt) {
   const { channels, sampleRate, bitsPerSample, format } = fmt;
-  if (channels < 1 || sampleRate < 1) throw invalid('bad_channels_or_rate', `声道数 ${channels}、采样率 ${sampleRate} 不合理`);
+  if (channels < 1 || sampleRate < 1) throw invalid('bad_channels_or_rate', `Channel count ${channels} or sample rate ${sampleRate} is not valid`);
   const encoding = ENCODINGS[`${format}/${bitsPerSample}`];
   if (!encoding) {
     // 合法但不在自己解的范围里，交给 ffmpeg。details：format 是格式标记（EXTENSIBLE 是子格式的标记，非标准子格式是 -1），其余同 fmt 块
-    throw new VoicePackError('wav_unsupported', `WAV 的编码自己不会解：格式标记 ${format}，${bitsPerSample} 位`, { details: { format, bitsPerSample, channels, sampleRate } });
+    throw new VoicePackError('wav_unsupported', `This WAV encoding cannot be decoded here: format tag ${format}, ${bitsPerSample} bits`, { details: { format, bitsPerSample, channels, sampleRate } });
   }
   const bytesPerSample = bitsPerSample / 8;
   const frameSize = channels * bytesPerSample;
-  if (fmt.blockAlign !== frameSize) throw invalid('block_align_mismatch', `blockAlign 是 ${fmt.blockAlign}，按声道数和位数应为 ${frameSize}`);
+  if (fmt.blockAlign !== frameSize) throw invalid('block_align_mismatch', `blockAlign is ${fmt.blockAlign}; from the channel count and bit depth it should be ${frameSize}`);
   return { encoding, bytesPerSample, frameSize };
 }
 
@@ -125,8 +125,8 @@ function readSamples(fmt, view, start, size) {
 
 /** 往下走块，找到 fmt 和 data：返回 { view, fmt, start, size }（data 的起点和长度，长度已按文件实际剩下的截过）。文件头坏了抛 wav_invalid。 */
 function locate(bytes) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('parseWav 和 wavInfo 需要 Uint8Array（Buffer 也行）');
-  if (!isWav(bytes)) throw invalid('no_riff_header', '开头没有 RIFF/WAVE');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('parseWav and wavInfo need a Uint8Array (a Buffer also works)');
+  if (!isWav(bytes)) throw invalid('no_riff_header', 'The file does not start with RIFF/WAVE');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let fmt = null;
   let at = 12;
@@ -137,12 +137,12 @@ function locate(bytes) {
     const size = Math.min(declared, bytes.length - body);
     if (id === 'fmt ') fmt = readFormat(view, bytes, body, size);
     else if (id === 'data') {
-      if (!fmt) throw invalid('data_before_fmt', 'data 块之前没有 fmt 块（fmt 排在 data 后面，或者根本没有）');
+      if (!fmt) throw invalid('data_before_fmt', 'There is no fmt chunk before the data chunk (fmt comes after data, or is missing)');
       return { view, fmt, start: body, size };
     }
     at = body + declared + (declared & 1);
   }
-  throw fmt ? invalid('no_data_chunk', '没有 data 块') : invalid('no_fmt_chunk', '没有 fmt 块');
+  throw fmt ? invalid('no_data_chunk', 'There is no data chunk') : invalid('no_fmt_chunk', 'There is no fmt chunk');
 }
 
 /**
@@ -196,17 +196,17 @@ export function wavFileBytes(frames, channels, encoding = 'pcm16', extensible = 
  */
 export function encodeWav({ sampleRate, samples }, { encoding = 'pcm16', extensible = false } = {}) {
   const bytesPerSample = BYTES[encoding];
-  if (!bytesPerSample) throw new TypeError(`encoding 必须是 ${Object.keys(BYTES).join('、')} 之一，收到 ${JSON.stringify(encoding)}`);
-  if (!Number.isInteger(sampleRate) || sampleRate < 1) throw new TypeError(`sampleRate 必须是正整数，收到 ${sampleRate}`);
+  if (!bytesPerSample) throw new TypeError(`encoding must be one of ${Object.keys(BYTES).join(', ')}; got ${JSON.stringify(encoding)}`);
+  if (!Number.isInteger(sampleRate) || sampleRate < 1) throw new TypeError(`sampleRate must be a positive integer; got ${sampleRate}`);
   if (!Array.isArray(samples) || samples.length < 1 || samples.some((s) => s.length !== samples[0].length)) {
-    throw new TypeError('samples 必须是至少一个声道的数组，每个声道长度相同');
+    throw new TypeError('samples must be an array of at least one channel, all channels the same length');
   }
   const channels = samples.length;
   const frames = samples[0].length;
   const dataSize = frames * channels * bytesPerSample;
   const fmtSize = extensible ? 40 : 16;
   const total = wavFileBytes(frames, channels, encoding, extensible);
-  if (total - 8 > RIFF_SIZE_MAX) throw new RangeError('音频太长，装不进一个 WAV（4 GiB）');
+  if (total - 8 > RIFF_SIZE_MAX) throw new RangeError('The audio is too long to fit in one WAV (4 GiB)');
   const out = new Uint8Array(total);
   const view = new DataView(out.buffer);
   const put = (at, text) => [...text].forEach((ch, i) => (out[at + i] = ch.charCodeAt(0)));

@@ -4,7 +4,7 @@
 // 基础部分做包的句子合段（lib/make-pack-sentences.mjs，句子的文字接成段的文字）、提示标注推逐字文本（lib/make-pack-input.mjs，去掉提示的地方），
 // 配音把几句、几段接成一个请求（lib/dub.mjs 的 joinSpoken，lib/pause-in-request.mjs 的停顿写法和两段之间放的字），提示和正文之间空不空格（lib/opening-cue.mjs 的 cueThenText、
 // lib/dub.mjs 的 cueAfter，用的是下面的 SPACED_WORD、LATIN_CLOSING，cueAfter 还用 lastWrittenChar）；
-// 协议核心的预览卡片去掉卡片那一句的台本标记（spoken-words.mjs，去掉标记的地方）。卡片要用，所以放在核心层。
+// 协议核心的预览卡片去掉试听句的台本标记（spoken-words.mjs，去掉标记的地方）。卡片要用，所以放在核心层。
 //
 //   writtenWithoutSpaceBetween(before, after)  接的地方本来不空格：前一截的结尾（隔着收尾的引号、括号、省略号、破折号，CLOSING）或者后一截的开头
 //                                              （隔着开头的这些，OPENING）是汉字、假名或它们的全角标点（WRITTEN_WITHOUT_SPACES）。谚文不算：韩文和英文一样加一个空格。

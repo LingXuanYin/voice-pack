@@ -36,11 +36,11 @@ export async function describeFiles(files, part, givenProtocol = PROTOCOL_VERSIO
   assertFileSet(files);
   // 协议版本写得不合格、或者这一版库读不了的：不在这里报，交给后面写清单时的检查（manifest_invalid、protocol_unsupported）；这里两套基础部分目录名都躲开
   const protocol = isReadableProtocol(givenProtocol) ? givenProtocol : undefined;
-  if (!PART_KINDS.includes(part)) throw new TypeError(`part 要是 role、base、protocol 之一，收到 ${JSON.stringify(part)}`);
+  if (!PART_KINDS.includes(part)) throw new TypeError(`part must be one of role, base, protocol, got ${JSON.stringify(part)}`);
   if (part === 'role' && protocol !== undefined) {
     const foreign = foreignBaseDirectory(files.keys(), protocol);
     if (foreign !== null) {
-      throw new VoicePackError('protocol_name_mismatch', `${foreign}/ 是基础部分的目录名，但不是协议 ${protocol} 用的名字：这个协议里基础部分叫 ${baseDirectoryOf(protocol)}。要封的是协议 ${protocol} 的角色部分，就把它改名；它是别的协议版本的包，就在 fields 里写那个协议版本`, { details: { item: 'base_directory', protocol, path: foreign, expected: baseDirectoryOf(protocol), actual: foreign } });
+      throw new VoicePackError('protocol_name_mismatch', `${foreign}/ is the directory name of a base part, but it is not the name protocol ${protocol} uses: in this protocol the base part is called ${baseDirectoryOf(protocol)}. If you are sealing the role part of protocol ${protocol}, rename it; if it is a pack of another protocol version, write that protocol version in fields`, { details: { item: 'base_directory', protocol, path: foreign, expected: baseDirectoryOf(protocol), actual: foreign } });
     }
   }
   const paths = [...files.keys()].filter((path) => isManagedPath(path, part, protocol)).sort(compareUtf8);
@@ -57,7 +57,7 @@ export async function describeFiles(files, part, givenProtocol = PROTOCOL_VERSIO
  */
 export async function sealPart(files, fields) {
   assertFileSet(files);
-  if (fields === null || typeof fields !== 'object') throw new TypeError('fields 必须是对象');
+  if (fields === null || typeof fields !== 'object') throw new TypeError('fields must be an object');
   const merged = { protocol: PROTOCOL_VERSION, ...fields };
   const listed = await describeFiles(files, fields.part, merged.protocol);
   merged.files = listed;

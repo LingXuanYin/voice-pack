@@ -10,7 +10,7 @@
 //                           sentences 为真是其中有长录音要切成句子（句子不标 synthetic、没有 annotatedText，语言是 input.language）
 //
 // 查的是 makePack 在花钱之前只看输入就查得出的那几项，次序和报的错都一样（各项的规则在各自的模块里，这里不抄）。makePack 里它们分在两处（lib/make-pack.mjs 的 makePack）：
-// 读输入、读上一版、定版本号在最前面；点名的默认段、设定的 referenceTag、试装、卡片那一句在取音频、筛片段、并句子之后，规划之前。这里不取音频、不筛片段，照这个次序查：
+// 读输入、读上一版、定版本号在最前面；点名的默认段、设定的 referenceTag、试装、试听句在取音频、筛片段、并句子之后，规划之前。这里不取音频、不筛片段，照这个次序查：
 //   输入和选项的写法（lib/make-pack-input.mjs；点名的默认段可能是要切出来的段，这里不查它在不在；句子标得一不一样，连要切出来的句子一起查）、
 //   读上一版（lib/pack-version.mjs）、--retag、--drop、版本号；
 //   设定合成的开头的提示不能太长（lib/make-pack-input.mjs 的 checkSetupOpeningCues：给的超了报错，沿用上一版的不报）；
@@ -22,7 +22,7 @@
 //   设定的 referenceTag（lib/make-pack-tags.mjs 的 assertReferenceTagsKnown）：切出来的段不带标签（lib/long-recording.mjs），所以对着素材给的和上一版的标签查就是准的；
 //     这里还没筛片段，筛掉的段（解不开、重复的音频）上的标签照算，要到 makePack 筛完才报；
 //   试装（lib/make-pack-assemble.mjs 的 preflight：清单的规矩），占位的参考是一小段静音（PLACEHOLDER）；
-//   卡片试听那一句配不配得成一个请求（lib/make-pack-card-line.mjs 的 assertCardLineSpeakable：和参考是哪段无关）。
+//   试听句配不配得成一个请求（lib/make-pack-card-line.mjs 的 assertCardLineSpeakable：和参考是哪段无关）。
 // makePack 在规划之前加了只看输入就查得出的检查，这里跟着加。不改 input，不调能力（读上一版的外部资源要 fetch）。
 //
 // 抛出的错误：和 makePack 在这几步报的一样，原样往上抛：make_pack_input_invalid（field 是 retag、defaultSegment、setups[0]、setups[0].referenceTag、cardLine、sampleLines[0]、segments[0].synthetic……；
@@ -47,9 +47,9 @@ const PLACEHOLDER = Object.freeze({ id: 'precheck', format: 'wav', audio: { byte
  */
 function assertPrefixesFree(idPrefixes, taken) {
   idPrefixes.forEach((prefix, index) => {
-    if (idPrefixes.indexOf(prefix) !== index) throw invalid(`idPrefixes[${index}]`, `前缀 ${JSON.stringify(prefix)} 给了两次：两段录音切出来的段名会重，换一个前缀`);
+    if (idPrefixes.indexOf(prefix) !== index) throw invalid(`idPrefixes[${index}]`, `prefix ${JSON.stringify(prefix)} is given twice: the segment names cut from the two recordings would collide; use another prefix`);
     const clash = [...taken].find((id) => id.startsWith(`${prefix}-`) && /^[0-9]+$/.test(id.slice(prefix.length + 1)));
-    if (clash !== undefined) throw invalid(`idPrefixes[${index}]`, `要切出来的段名是 ${prefix}-001 这样的，已经有一段叫 ${JSON.stringify(clash)}，会重名：换一个前缀`, { segment: clash });
+    if (clash !== undefined) throw invalid(`idPrefixes[${index}]`, `the segment names to be cut look like ${prefix}-001, and a segment named ${JSON.stringify(clash)} already exists, so the names would collide: use another prefix`, { segment: clash });
   });
 }
 

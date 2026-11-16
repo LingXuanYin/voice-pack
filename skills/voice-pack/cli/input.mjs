@@ -32,7 +32,7 @@ export function assertFresh(target) {
   } catch {
     // 查不了：让真的写的时候报
   }
-  if (exists) throw new VoicePackError('file_exists', `${target} 已经存在，不覆盖：换一个新的名字，或者先自己挪走旧的`, { details: { file: String(target) } });
+  if (exists) throw new VoicePackError('file_exists', `${target} already exists and will not be overwritten: choose a new name, or move the old one away first`, { details: { file: String(target) } });
 }
 
 /** 读输入的全部字节：参数是路径（相对 ctx.cwd）或 `-`（标准输入）。 */
@@ -41,7 +41,7 @@ export function readBytes(ctx, argument) {
     return new Uint8Array(argument === '-' ? fs.readFileSync(0) : fs.readFileSync(path.resolve(ctx.cwd, argument)));
   } catch (cause) {
     const reason = cause?.code ?? 'unknown';
-    throw new VoicePackError('file_unreadable', `读不了输入 ${argument}（${reason}）`, { details: { file: argument, reason } });
+    throw new VoicePackError('file_unreadable', `Cannot read input ${argument} (${reason})`, { details: { file: argument, reason } });
   }
 }
 
@@ -51,7 +51,7 @@ export function readText(ctx, argument) {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
-    throw new VoicePackError('input_not_text', `${argument} 不是 UTF-8 的文字（先转成 UTF-8）`, { details: { file: argument } });
+    throw new VoicePackError('input_not_text', `${argument} is not UTF-8 text (convert it to UTF-8 first)`, { details: { file: argument } });
   }
 }
 
@@ -72,22 +72,22 @@ export function parseArgs(args, flags = {}) {
       continue;
     }
     const name = arg.slice(2);
-    if (!Object.hasOwn(flags, name)) return { problem: `不认识的选项 ${arg}` };
+    if (!Object.hasOwn(flags, name)) return { problem: `Unknown option ${arg}` };
     if (flags[name] === 'boolean') {
       options[name] = true;
       continue;
     }
     if (flags[name] === 'strings') {
       const value = args[++i];
-      if (value === undefined) return { problem: `选项 ${arg} 后面要跟一个值` };
+      if (value === undefined) return { problem: `Option ${arg} needs a value after it` };
       options[name] = [...(options[name] ?? []), value];
       continue;
     }
     const value = args[++i];
-    if (value === undefined) return { problem: `选项 ${arg} 后面要跟一个值` };
+    if (value === undefined) return { problem: `Option ${arg} needs a value after it` };
     if (flags[name] === 'number') {
       const number = Number(value);
-      if (value.trim() === '' || !Number.isFinite(number)) return { problem: `选项 ${arg} 要的是数字，收到 ${value}` };
+      if (value.trim() === '' || !Number.isFinite(number)) return { problem: `Option ${arg} needs a number, got ${value}` };
       options[name] = number;
     } else options[name] = value;
   }
@@ -96,6 +96,6 @@ export function parseArgs(args, flags = {}) {
 
 /** 用法有问题：把用法和问题写到标准错误，返回退出码 2。 */
 export function usageProblem(ctx, usage, problem) {
-  ctx.stderr(`用法：node cli.mjs ${usage}\n${problem ? `${problem}\n` : ''}`);
+  ctx.stderr(`Usage: node cli.mjs ${usage}\n${problem ? `${problem}\n` : ''}`);
   return 2;
 }

@@ -2,7 +2,7 @@
 //
 // 音频按内容判断格式，不只看扩展名。
 //
-// 允许的格式（理由见 protocol/FORMAT.md「音频」）：
+// 允许的格式（理由见 protocol/FORMAT.md「Audio check」）：
 //   wav   RIFF/WAVE（PCM、浮点等，不限编码）
 //   mp3   MPEG 音频（第一、二、三层；常见的是第三层）
 //   flac  FLAC
@@ -20,7 +20,7 @@
 //   audio_disguised           扩展名说是音频，内容不是（或是另一种音频）；或者内容是音频，扩展名却不是音频。
 //                             details: { path, claimed（扩展名，没有就是空串）, actual（认出的格式，认不出是 null） }
 //   audio_format_not_allowed  扩展名是认得的音频格式，但不在允许的格式里。details: { path, extension }
-// 清单里标明是音频的文件（参考段、留出录音、卡片试听那一句）传 designated: true：扩展名也必须是允许的音频扩展名。
+// 清单里标明是音频的文件（参考段、留出录音、试听句）传 designated: true：扩展名也必须是允许的音频扩展名。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 
@@ -226,7 +226,7 @@ function sniffM4a(b) {
  *   另带 channels、sampleRate 之类认得出的信息（不保证每种格式都有）
  */
 export function sniffAudio(bytes) {
-  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes 必须是 Uint8Array');
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
   if (bytes.length < 4) return null;
   const magic = ascii(bytes, 0, 4);
   if (magic === 'RIFF') return sniffWav(bytes);
@@ -248,7 +248,7 @@ function extensionOf(path) {
  * 这个文件的扩展名和内容对得上吗？对得上（或者它根本不是音频、也没被说成是音频）给 null，否则给一个问题。
  * @param {string} path 包里的路径（只用最后一段的扩展名）
  * @param {Uint8Array} bytes 文件内容
- * @param {{ designated?: boolean }} [options] designated：清单里标明这个文件是音频（参考段、留出录音、卡片试听那一句）
+ * @param {{ designated?: boolean }} [options] designated：清单里标明这个文件是音频（参考段、留出录音、试听句）
  * @returns {null | { code: 'audio_disguised' | 'audio_format_not_allowed', message: string, details: object }}
  */
 export function audioProblem(path, bytes, options = {}) {
@@ -258,8 +258,8 @@ export function audioProblem(path, bytes, options = {}) {
   const disguised = (actual) => ({
     code: 'audio_disguised',
     message: actual === null
-      ? `${path} 的扩展名是 .${extension}，内容却不是允许的音频（${AUDIO_FORMATS.join('、')}）`
-      : `${path} 的扩展名是${extension ? ` .${extension}` : '空的'}，内容是 ${actual}`,
+      ? `${path} has the extension .${extension}, but its content is not an allowed audio format (${AUDIO_FORMATS.join(', ')})`
+      : `${path} has ${extension ? `the extension .${extension}` : 'an empty extension'}, but its content is ${actual}`,
     details: { path, claimed: extension, actual },
   });
   if (expected !== null) {
@@ -267,7 +267,7 @@ export function audioProblem(path, bytes, options = {}) {
     return sniffed.format === expected ? null : disguised(sniffed.format);
   }
   if (OTHER_AUDIO_EXTENSIONS.has(extension)) {
-    return { code: 'audio_format_not_allowed', message: `${path} 是 .${extension}，不在允许的音频格式里（${AUDIO_FORMATS.join('、')}）`, details: { path, extension } };
+    return { code: 'audio_format_not_allowed', message: `${path} is .${extension}, which is not among the allowed audio formats (${AUDIO_FORMATS.join(', ')})`, details: { path, extension } };
   }
   if (sniffed !== null) return disguised(sniffed.format);
   if (options.designated) return disguised(null);

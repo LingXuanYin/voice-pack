@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 统一的数据错误：音色包库（核心层、流程层、各适配器）里，数据的问题（用户输入、命令行参数、文件、网络、能力返回的东西不对）
-// 都抛这一种，调用方按 code 区分。调用方的代码用错了接口（参数类型不对之类）是程序员的错，抛 TypeError，不在这里：规矩见 protocol/README.md「错误」。
+// 都抛这一种，调用方按 code 区分。调用方的代码用错了接口（参数类型不对之类）是程序员的错，抛 TypeError，不在这里：规矩见 protocol/README.md「Errors」。
 //
 // code 是小写字母、数字、下划线组成的字符串，例如 `capability_missing`。
 // 每个模块各自加自己的 code，写在抛出的地方并注明含义和 details 里放什么；
@@ -22,7 +22,7 @@ export class VoicePackError extends Error {
    */
   constructor(code, message, options = {}) {
     if (typeof code !== 'string' || !CODE_RE.test(code)) {
-      throw new TypeError(`VoicePackError 的 code 必须是小写字母、数字、下划线组成的字符串（例如 capability_missing），收到 ${JSON.stringify(code)}`);
+      throw new TypeError(`The code of a VoicePackError must be a string of lowercase letters, digits and underscores (for example capability_missing), got ${JSON.stringify(code)}`);
     }
     const { details, cause } = options ?? {};
     super(message === undefined ? code : String(message), cause === undefined ? undefined : { cause });
