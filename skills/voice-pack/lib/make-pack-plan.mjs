@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 规划（流程层，不花钱）：不花钱的几步（筛片段、查重、量音质、试装）做完以后，算各项能力最多要调几次、有几段素材能用。
-// 费用是在这里算出来给人看的：命令行和 app 在第一次调所需能力之前把它交给用户确认（options.onPlan），dryRun 也返回它。
+// 费用是在这里算出来给人看的：命令行和调用方在第一次调所需能力之前把它交给用户确认（options.onPlan），dryRun 也返回它。
 //
 //   buildPlan(env, items, settings, materialOptions, { pinned, cardLine })   返回 plan（cardLine：给了试听句，合成多算一次）：
 //     { segments: { input, usable, withoutText, unused: { 原因: 段数 }, carried? },

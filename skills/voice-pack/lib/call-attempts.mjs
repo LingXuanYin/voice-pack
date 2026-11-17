@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写、挑默认段、标提示标注和试合成、长录音的转写、命令行和用这个库的 app（含 app 听设计试听）都用它
+// 一段录音的一次能力调用最多试几次、暂时出错等多久再来（流程层）：这条规则只在这里写一份，做包的转写、挑默认段、标提示标注和试合成、长录音的转写、命令行和用这个库的调用方（含调用方听设计试听）都用它
 // （它先是给转写写的，后来听音频的几种调用也用它，所以名字不再只说转写）。规则一处写，调用方 import，不各抄一份（同 capability-calls.mjs 的 isServiceError）。
 //
 // 规则：
-//   - 每段最多试 MAX_ATTEMPTS（3）次。暂时出错（details.transient，lib/capability-calls.mjs 的 isServiceError）和 app 听设计试听时
-//     「转写里整句找不到」（在 app 里判断）都从这 3 次里出，不是各 3 次。
+//   - 每段最多试 MAX_ATTEMPTS（3）次。暂时出错（details.transient，lib/capability-calls.mjs 的 isServiceError）和调用方听设计试听时
+//     「转写里整句找不到」（在调用方里判断）都从这 3 次里出，不是各 3 次。
 //   - 暂时出错就再来：第 2 次之前等 RETRY_DELAYS_MS[0]（5 秒），第 3 次之前等 RETRY_DELAYS_MS[1]（15 秒）；最后一次失败以后不再等。
 //     3 次都暂时出错：转写的这一段没转成，做包把它记成 transcription_failed，用不上，页面照实说「稍后再做一次」（最后一次的错是照暂时出错报的被拦下的除外：记成 transcription_blocked，见下一条）；挑默认段、标提示标注的那一次没听成，记成 not_heard，照实说；
 //     试合成的这一条合成不出来，记在 trial.failed 里，不进评测，照实说。
@@ -15,10 +15,10 @@
 //     问满了、最后一次的错还是被拦下的，转写记成被拦下（transcription_blocked），不说「稍后再做一次」：那是调用方的事（lib/make-pack-transcribe.mjs、lib/long-recording.mjs）。
 //     回答不是固定格式（例如 annotation_answer_invalid）不是错误，是能力返回了一个读不懂的回答：记成作废，同一段录音再问还是一样，不重试。回答没正常结束或是空的（能力标 details.unusable，lib/capability-calls.mjs 的 isUnusableAnswer；标提示标注记成 annotation_answer_unusable）也一样，只有标提示标注回答是空的算暂时出错，再问（lib/segment-annotation.mjs）。
 //   - 多听的上限写进「确认费用」：N 段要调，最多 N 次，另外最多再加 extraAttempts(N)（2N）次，用户同意的是这个总数，实际调用不超过它
-//     （plan.extraCalls，lib/make-pack-plan.mjs；app 记进用户同意的计划里）。
+//     （plan.extraCalls，lib/make-pack-plan.mjs；调用方记进用户同意的计划里）。
 //
 // 谁用它（用法都是：调用方自己调能力，把「调一次」包成 ask 交给 callWithRetries）：
-//   转写（automatic-speech-recognition）   lib/make-pack-transcribe.mjs、lib/long-recording.mjs、app 听试听
+//   转写（automatic-speech-recognition）   lib/make-pack-transcribe.mjs、lib/long-recording.mjs、调用方听试听
 //   挑默认段（audio-text-to-text）          lib/default-pick.mjs 的 pickByListening（options.attempts），lib/make-pack-pick.mjs 给它 MAX_ATTEMPTS
 //   标提示标注（audio-text-to-text）        lib/segment-annotation.mjs 的 annotateSegment（options.attempts，一段听一次），lib/make-pack-annotation.mjs 的 annotateReferences 给它 MAX_ATTEMPTS
 //   量停顿（automatic-speech-recognition） lib/point-measure.mjs 的 measurePoints：每块一次，规则同转写
@@ -44,8 +44,8 @@
 //
 // callWithRetries(ask, options)：
 //   ask()               返回一次调用的结果（能力的返回，原样交回），或者抛错
-//   options.attempts    这一段还剩几次可用（1 以上的整数），默认 MAX_ATTEMPTS；之前已经用掉几次的（app 对缺整句的段再听），传剩下的；1 就是不重试（只调一次）。不是 1 以上的整数是用法错误（TypeError）
-//   options.wait        (毫秒) => Promise：等待。默认真的计时器；app 传一个按「取消」就停的，测试传一个记下要等多久、马上返回的。它抛错就原样往上抛
+//   options.attempts    这一段还剩几次可用（1 以上的整数），默认 MAX_ATTEMPTS；之前已经用掉几次的（调用方对缺整句的段再听），传剩下的；1 就是不重试（只调一次）。不是 1 以上的整数是用法错误（TypeError）
+//   options.wait        (毫秒) => Promise：等待。默认真的计时器；调用方传一个按「取消」就停的，测试传一个记下要等多久、马上返回的。它抛错就原样往上抛
 //   options.delaysMs    每次重试之前等多久的表，默认 RETRY_DELAYS_MS；第 k 次重试用第 k 项，不够长就用最后一项（测试把它改小）
 //   options.onRetry     ({ attempt, waitMs, error }) => void：决定重试以后、等之前调一次。attempt 是接下来这一次是这一轮的第几次
 // 返回：{ result, attempts } 或 { error, attempts }，attempts 是这一轮一共用了几次（一个失败带着 details.attempts 的，算它自己说的次数，见 spent）。
@@ -57,7 +57,7 @@
 import { VoicePackError } from '../protocol/lib/errors.mjs';
 import { isServiceError } from './capability-calls.mjs';
 
-/** 每段最多试几次。暂时出错和 app 对缺整句的段再听，都从这里出。 */
+/** 每段最多试几次。暂时出错和调用方对缺整句的段再听，都从这里出。 */
 export const MAX_ATTEMPTS = 3;
 
 /** 第 2 次、第 3 次之前各等多久（毫秒）：5 秒、15 秒（为什么见文件头）。 */
@@ -73,7 +73,7 @@ const callsOf = (error) => (Number.isInteger(error?.details?.attempts) && error.
 
 /**
  * 把一个暂时出错的失败标成「这是 attempts 次调用换来的」，返回一个新的错（同一个 code、同一句话，details 多一项 attempts，原来的错在 cause 里，不改动它）。
- * 做包别的地方已经替这一段用完了次数，再把这个失败原样交回来（app 回放 4a 听试听时的结果）：callWithRetries 看到它就知道这一段没有次数了。
+ * 做包别的地方已经替这一段用完了次数，再把这个失败原样交回来（调用方回放 4a 听试听时的结果）：callWithRetries 看到它就知道这一段没有次数了。
  */
 export function spent(error, attempts) {
   return new VoicePackError(error.code, error.message, { details: { ...(error.details ?? {}), attempts }, cause: error });

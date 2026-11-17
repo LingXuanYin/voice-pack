@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 声音的语言（流程层，纯数据）：显示名（中文、English）和 BCP 47 标签（zh、en）的互相转换，以及认不出名字时按文字认。
-// 老声音（音色包出现以前的）存的语言是显示名，音色包的清单要求每段参考都有标签；老声音的转换规则（lib/legacy-voice.mjs）和 app 都调这里，对照只写这一份。
-// 这一份不引别的模块：app 的每个页面都要读声音的语言，所以它要小；转换规则里配音指引和场景那部分（要读词表）只有社区和迁移才用，在 lib/legacy-voice.mjs。
+// 调用方存的语言常常是显示名，音色包的清单要求每段参考都有标签；显示名和标签的对照只写这一份。
+// 这一份不引别的模块，所以它要小：只要读声音的语言的地方，不用为它带上词表。
 //
 //   languageTagOf(name, text)   显示名（或本来就是标签）-> BCP 47 标签；名字认不出按文字系统认，再认不出给 und
 //   languageLabelOf(tag)        BCP 47 标签 -> 显示名；没有显示名的语言原样给标签，und 给空串
@@ -16,7 +16,7 @@
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 
-/** 这几个语言的显示名（用这个库的 app 里，声音的语言就是这样显示的）。 */
+/** 这几个语言的显示名（调用方显示声音的语言时用的名字）。 */
 const LABELS = { zh: '中文', ja: '日本語', ko: '한국어', en: 'English' };
 /** 显示名和英文名（音色库按英文名列语言）-> 标签，键是小写的：写法的大小写不论。 */
 const TAG_OF_NAME = new Map([...Object.entries(LABELS).map(([tag, name]) => [name.toLowerCase(), tag]), ['chinese', 'zh'], ['japanese', 'ja'], ['korean', 'ko']]);

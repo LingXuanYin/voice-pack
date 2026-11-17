@@ -14,7 +14,7 @@
 //
 // ---------------------------------------------------------------- 怎么调
 //   目标      整体响度（BS.1770-4 的集成响度，同 tools/audio-quality.mjs）默认 REFERENCE_LOUDNESS_LUFS = −20 LUFS。
-//             参考音频的目标响度整个产品里只有这一个数：app 的克隆页把参考归一到 −20 LUFS，做包也统一到它，克隆出来的声音导出成包、
+//             参考音频的目标响度整个产品里只有这一个数：调用方的克隆流程把参考归一到 −20 LUFS，做包也统一到它，克隆出来的声音导出成包、
 //             再补素材，前后的参考响度才对得上。−23 LUFS 是广播节目的响度标准，不是克隆参考的要求
 //   上限      采样峰值（所有声道里绝对值最大的采样）不超过 PEAK_CEILING_DBFS = −1 dBFS。采样峰值，不是真峰值：不做过采样
 //   增益      目标减原来的响度。降增益不受峰值限制（降了峰值只会更低）。加增益会让峰值超过上限的（峰值比响度高 19 dB 以上的录音：
@@ -92,7 +92,7 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { checkedAudio, integratedLoudness } from './audio-quality.mjs';
 
-/** 参考音频的目标响度（LUFS）：产品里只有这一个数，做包（lib/make-pack-loudness.mjs）和 app 的克隆页都用它。 */
+/** 参考音频的目标响度（LUFS）：产品里只有这一个数，做包（lib/make-pack-loudness.mjs）和调用方的克隆流程都用它。 */
 export const REFERENCE_LOUDNESS_LUFS = -20;
 /** 采样峰值的上限（dBFS）。 */
 export const PEAK_CEILING_DBFS = -1;

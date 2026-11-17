@@ -14,7 +14,7 @@
 // 字段都取自条目（lib/make-pack-input.mjs 说条目是什么，各步的文件头说它们各写了哪些字段）；role 是 reference、holdout、unused、candidate（dryRun：还没挑）或
 // dropped（发新版本去掉的），dryRun 里上一版带来的段，role 就是它在上一版里的角色。annotation 是这一段标提示标注的结果（只有这一版新补的参考段有，写法见 lib/make-pack-annotation.mjs）。
 // 语言和音色基底标签（规则和来源的取值在 lib/make-pack-tags.mjs 的文件头）：参考段写 { language, languageSource, tag, tagSource, renamedFrom? }（加了序号的 renamedFrom 是原名），
-// 留出录音写 { language, languageSource }，没用上的段、dryRun 里还没挑的段都不写。字段名和清单同名，用这个库的 app 照这几个名字读，改名要当成不兼容的改动。
+// 留出录音写 { language, languageSource }，没用上的段、dryRun 里还没挑的段都不写。字段名和清单同名，用这个库的调用方照这几个名字读，改名要当成不兼容的改动。
 //
 // writtenFromScript 是素材给了台本原文、逐字稿里照台本写的几截 [{ heard, written }]，scriptTextUnused 是给了台本原文、一截都没照它写（lib/make-pack-transcribe.mjs 的 writeFromScripts）。
 //

@@ -50,7 +50,7 @@
 //                         manifest        官方适配器的 adapter.json 写坏了
 //                         skeleton        官方适配器的骨架生成器（skeleton.mjs）加载不了、没有导出 generateSkeleton、抛了错，或者返回的形状不对。details.problem 说明哪里不对
 //   adapter_not_found   给的是名字，adapters/ 里没有这个官方适配器（或者要生成骨架的种类没有生成器）。details: { name, available }。
-//                       名字是退役的官方适配器（下面的 RETIRED）时，说明里写它现在在哪、怎么用路径接进来，details 多一个 retired: true。
+//                       说明里写了怎么用路径接自己的适配器（--adapter <目录>、--adapter-option <键>=<值>）。
 //                       适配器的工厂调 use(名字) 时，名字不是现有的官方适配器（写法不对的，例如带路径，也算）是这个错：名字可能是适配器从命令行参数里转来的。
 //                       use 的名字根本不是字符串，是写适配器的人用错了接口：抛 TypeError，外面包成 adapter_invalid 的 factory_failed。
 // 另外适配器工厂自己抛的错原样往上（它们的 code 写在各自适配器的文件头）。
@@ -70,18 +70,6 @@ const SKELETON_FILE = 'skeleton.mjs';
 const MODULE_KIND = 'module';
 const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const OPTION_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
-
-// 退役的官方适配器：1.x 里在 adapters/ 下，2.0.0 起搬出去了。照老文档写它的名字、简写或专有参数的人，
-// 报错时要知道适配器现在由平台自己提供、怎么用路径接进来（--adapter <目录>）；报错不点名任何产品。只用来写报错，不加载任何东西；名字、简写、参数只在这里写。
-const RETIRED = [
-  {
-    name: 'cohub',
-    flags: ['--cohub', '--space'],
-    moved: 'This adapter and its options are no longer part of voice-pack since 2.0.0: the platform provides its own adapter',
-    how: 'Attach it by path: --adapter <adapter directory>; pass the parameters it needs with --adapter-option <key>=<value> (see that adapter\'s notes for the keys)',
-  },
-];
-const retiredNamed = (name) => RETIRED.find((entry) => entry.name === name);
 
 // ---------------------------------------------------------------- 官方适配器
 
@@ -187,9 +175,6 @@ export function takeAdapterArguments(args) {
       if (value === undefined) return fail(`${arg} must be followed by a value`);
       const { adapter, key } = declared.get(arg);
       sets.push({ flag: arg, owner: adapter, key, value, position: requests.length });
-    } else if (RETIRED.some((entry) => entry.flags.includes(arg))) {
-      const entry = RETIRED.find((item) => item.flags.includes(arg));
-      return fail(`${arg} is an option of a retired official adapter. ${entry.moved}. ${entry.how}`);
     } else {
       rest.push(arg);
     }
@@ -246,13 +231,12 @@ const stem = (file) => path.basename(file, path.extname(file));
 /** 给的是名字还是路径：名字是小写字母、数字、连字符，不含路径分隔符和点。 */
 const isOfficialName = (spec) => NAME_RE.test(spec);
 
-function notFound(name, official, { shown = name, hint = `Your own adapter must be given as the path of a file or directory, for example --adapter ./${name}` } = {}) {
+function notFound(name, official, { shown = name, hint = `An adapter that is not one of these is attached by path: --adapter <adapter directory or file>, for example --adapter ./${name}; pass the parameters it needs with --adapter-option <key>=<value> (see that adapter's notes for the keys)` } = {}) {
   const available = official.map((adapter) => adapter.name);
-  const retired = retiredNamed(name);
   return new VoicePackError(
     'adapter_not_found',
-    `There is no official adapter named ${shown} (available: ${available.join(', ') || 'none'}). ${retired ? `${retired.moved}. ${retired.how}` : hint}`,
-    { details: { name, available, ...(retired ? { retired: true } : {}) } },
+    `There is no official adapter named ${shown} (available: ${available.join(', ') || 'none'}). ${hint}`,
+    { details: { name, available } },
   );
 }
 

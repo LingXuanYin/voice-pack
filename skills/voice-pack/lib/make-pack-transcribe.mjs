@@ -12,7 +12,7 @@
 //   settleText(items)                       转写以后，给每个还能用的片段定文本是哪来的（textSource），还是没有文本的淘汰（no_text）
 //   writeFromScripts(items)                 标完提示标注以后：素材给了台本原文（scriptText）、逐字稿是转写来的中文段，读音一样的几截写成台本的写法（lib/script-writing.mjs），见函数的说明
 //
-// 暂时出错的段在这一步里自己再试：每段最多转写 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，挑默认段、标提示标注、命令行和 app 用的是同一份）；
+// 暂时出错的段在这一步里自己再试：每段最多转写 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，挑默认段、标提示标注、命令行和调用方用的是同一份）；
 // 最多多调几次在规划里（plan.extraCalls，lib/make-pack-plan.mjs），花钱之前已经说清楚。`wait` 是等待函数（makePack 的 options.retryWait），不给就真的等。
 //
 // 读条目的：unused、previous、text、givenLanguage（素材给的语言：知道就交给转写）；写条目的：text、textSource（'caller' 调用方给的、'transcription' 转写来的、'previous' 上一版带来的）、

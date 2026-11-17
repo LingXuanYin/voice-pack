@@ -2,7 +2,7 @@
 //
 // 还原度报告的读法（流程层）：把 measureFidelity、redoNotHeard 出的报告变成「要显示什么」的结构。
 // 读法的正本是 lib/fidelity.mjs 文件头「How to read this report」（读法本身是文字，写在那一处）；这里是它的程序：分档、哪几个数不是分数、
-// 作废、没听成和量不到各算几条，都在 readReport 里决定一次。命令行（cli/fidelity-report.mjs）和 app 都从它的返回值显示，
+// 作废、没听成和量不到各算几条，都在 readReport 里决定一次。命令行（cli/fidelity-report.mjs）和调用方都从它的返回值显示，
 // 不各写一份阈值和规则。显示的措辞（中文句子、英文翻译、排版）是各自的事，这里只给数、档和说明的键。
 // 导出的 whereOf(ask)：一问里的哪里像、哪里不像。旧报告（问法分开之前）的 differences 读成哪里不像，哪里像为 null。
 //
@@ -28,7 +28,7 @@ export const QUESTION_CALIBRATION = Object.freeze({
   failedCriteria: Object.freeze(['Q2', 'Q3']),
 });
 
-/** 判成同一人的比例落在哪一档，每一档的名字（中文，命令行直接用；app 按档的键翻译）。 */
+/** 判成同一人的比例落在哪一档，每一档的名字（中文，命令行直接用；调用方按档的键翻译）。 */
 export const SAME_SPEAKER_TIERS = Object.freeze({
   not_enough: 'too few trials, no conclusion',
   same: 'judged the same person',
@@ -39,7 +39,7 @@ export const SAME_SPEAKER_TIERS = Object.freeze({
 });
 
 /**
- * 读法每一点的显示用语（中文）。键是稳定的，app 按键配英文（有一条测试核对键和 {…} 都对得上）；正文里的 {minTrials}、{same}、{notSame}
+ * 读法每一点的显示用语（中文）。键是稳定的，调用方按键配英文（有一条测试核对键和 {…} 都对得上）；正文里的 {minTrials}、{same}、{notSame}
  * 是 READING 里的数，显示前用 fillReading 填，所以数字在代码里只有 READING 一处。
  * point 是这条对应 lib/fidelity.mjs 文件头「How to read this report」的第几点（0 是开头那句「不设门槛」）；文件头的每一点至少有一条，
  * 这一点要保持：文件头加了一点，这里也要加。

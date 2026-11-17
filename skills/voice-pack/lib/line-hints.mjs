@@ -43,7 +43,7 @@
 //                             记在 directions 里，recognized 为 true；一个词也没有的认不出，也拿掉，如实记着 recognized 为 false，
 //                             调用方可以告诉用户。结构规则认出的（（认真地说））两种选法下读法一样（一个词也没有，recognized 为 false）。只给明确拿到配音台本的调用方用：变声（lib/convert.mjs）、
 //                             做包时判断文本能不能原样配音（lib/make-pack-pick.mjs）；agent 配音（lib/dub.mjs）用 cuesInPlace，认法和这里一样。
-//            app 生成和别的读正文的地方用默认的 'keep'。选项由 lib/reference-pick.mjs 的 pickReferences 原样传下来；这条规则只在这里写。
+//            调用方生成和别的读正文的地方用默认的 'keep'。选项由 lib/reference-pick.mjs 的 pickReferences 原样传下来；这条规则只在这里写。
 //   上限     不设上限：一行里认几处都认（两种选法一样；不算舞台提示的括号不计数）。每一段只带它前面自己那一段的提示（见「段带的」），
 //            每个提示只在一段里，所以几万处提示的一行，内存和输出跟提示数成线性。
 //   范围     readDirections 读出的每一段的情绪、风格、语速（pieces[i].hints、speed）：一个提示管从它出现的地方，到这一行结束，或者下一个同类的提示出现为止；换一行就清掉，换声音也清掉。
