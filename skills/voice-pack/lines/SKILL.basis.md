@@ -5,15 +5,17 @@ Text moved out of `SKILL.md`, word for word. In the doc, `[^bN]` marks the place
 ## b1
 
 at: Lines: what a character says > Work it out from first principles
+after: A line you could have written without reading the material is not done: go back to step 1.
 
 ```text
-Source: requirement, said on 2026-11-17, original words "infer directly from first principles what this person would say in this scene".
+ Source: requirement, said on 2026-11-17, original words "infer directly from first principles what this person would say in this scene".
 ```
 
 ## b2
 
 at: Lines: what a character says > Check it
+after: You are done when everything you wrote passes all four.
 
 ```text
-Source: proposed on 2026-11-17 and agreed the same day: four rules of a guide to writing a story's opening, rewritten for words said out loud. How lines written by them sound has not been listened to yet.
+ Source: proposed on 2026-11-17 and agreed the same day: four rules of a guide to writing a story's opening, rewritten for words said out loud. How lines written by them sound has not been listened to yet.
 ```

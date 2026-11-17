@@ -22,15 +22,11 @@ A ship's cook, proud of his soup, who has fed this crew for twenty years.
 - A portrait: "I'm the cook on this ship, twenty years now, and my soup is the best on the sea."
 - A moment: "Bowl. No, the big one. And blow on it first, it's still bubbling."
 
-Then write the words. A line you could have written without reading the material is not done: go back to step 1.
-
-[^b1]
+Then write the words. A line you could have written without reading the material is not done: go back to step 1.[^b1]
 
 ## Check it
 
-Read what you wrote against each check, rewrite what fails, and read it again. You are done when everything you wrote passes all four.
-
-[^b2]
+Read what you wrote against each check, rewrite what fails, and read it again. You are done when everything you wrote passes all four.[^b2]
 
 ### 1. Keep the secret
 
