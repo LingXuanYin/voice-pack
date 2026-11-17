@@ -2,7 +2,7 @@
 //
 // 提示还缺什么素材（流程层，纯数据）：做包做完以后，对着做出来的参考集和留出录音，列出「再补什么素材会更好」。
 // 建议参考够多、够长，覆盖会说的几种语言。
-// 每一条提示都是一条规则，输入是普通数据，不碰音频、不用模型、没有随机，所以每条都能拿数据直接测（lib/make-pack-report.mjs 调它，app 也可以）。
+// 每一条提示都是一条规则，输入是普通数据，不碰音频、不用模型、没有随机，所以每条都能拿数据直接测（lib/make-pack-report.mjs 调它，调用方也可以）。
 //
 //   suggestMaterial(material) -> hints
 //
@@ -48,8 +48,8 @@
 // guidanceGaps(guidance) -> string[]
 //   配音指引（Markdown）里没填的项，次序同模板：「这个人是谁」的身份、性格、在意什么、对不同的人、情绪上来时，「换语言时怎么说」的名字、自称、口头禅。
 //   一项算没填：这一节里没有这一项那一行（「- <项名>：」），或者冒号后面是空的，或者它的内容是「缺」（后面可以跟括号里的说明），或者按「；」分开的某一种语言写的是「<语言标签> 缺」，
-//   这时写成「名字（en）」。这两节都没有的（旧式的指引）、不是字符串的：[]（缺节由做包的输入检查报，lib/make-pack-input.mjs）。
-//   direction_tags_missing      没有音色标签：社区里按音色标签搜不到这个包。details: {}
+//   这时写成「名字（en）」。这两节都没有的（旧式的指引，或者只写了别的节）、不是字符串的：[]（两节都是可选的，没有的节不提醒、不拦）。
+//   direction_tags_missing      没有音色标签：按音色标签搜不到这个包。details: {}
 //   card_line_failed            试听句没配成：清单里没有它，卡片放默认段。说为什么，怎么补（发新版本，带上这一句）。details: { code }（没配成的错误码）。
 //                               没取回的（错误标了 details.unretrieved：合成那头做完了、计过费，只是结果没取回来，vocab/capability-signatures.md「General conventions」）另外说：
 //                               这一次没有再调、没有再计费；照适配器给的 details.retrieve 手动取回（网址不打印），取回来的音频现在还不能交给做包放进包里；照提示重配会再计一次费。
@@ -236,9 +236,9 @@ export function suggestMaterial(material) {
     add(`unused_${reason}`, `${entries.length} ${entries.length === 1 ? 'segment' : 'segments'}: ${unusedAdvice(reason, entries)}.`, { count: entries.length, ids: entries.map((entry) => entry.id) });
   }
 
-  if (!guidance) add('guidance_missing', 'No dubbing guidance: a pack must sound like the person not only in timbre but also in how they speak. Write a few lines on tone, rhythm, catchphrases and how the person speaks in different scenes (write only the effect you want, not the instruction syntax of any model); the agent follows them when dubbing. The sections 这个人是谁 (who this person is) and 换语言时怎么说 (what to say when the language changes) are required; for an item you have no basis for, write "缺" (references/make-pack.md「The five sections of the dubbing guidance」).');
+  if (!guidance) add('guidance_missing', 'No dubbing guidance: a pack must sound like the person not only in timbre but also in how they speak. Write a few lines on tone, rhythm, catchphrases and how the person speaks in different scenes (write only the effect you want, not the instruction syntax of any model); the agent follows them when dubbing. The sections 这个人是谁 (who this person is) and 换语言时怎么说 (what to say when the language changes) are optional; when you write one, write "缺" for an item you have no basis for (references/make-pack.md「The five sections of the dubbing guidance」).');
   if (guidance && gaps.length > 0) add('guidance_gaps', `${gaps.length} dubbing guidance ${gaps.length === 1 ? 'item is' : 'items are'} not filled in (written "缺" or not written): ${gaps.join(', ')}. If the user is present, ask about these items and add the answers to the guidance (for a new pack made from an existing pack, hand the answers to the session that wrote the guidance, references/clean-room.md step 2), then issue a new version (--previous <pack directory of this version> --guidance <the completed guidance>); leave "缺" for what cannot be asked and do not invent it, and when handing over the pack tell the user which items are still missing (references/make-pack.md「The five sections of the dubbing guidance」).`, { items: gaps });
-  if (!direction) add('direction_tags_missing', 'No voice tags: the pack cannot be found in the community by voice tag. Pick a few from the design vocabulary (gender, age, pitch, accent, timbre, speed, emotion).');
+  if (!direction) add('direction_tags_missing', 'No voice tags: the pack cannot be found by voice tag. Pick a few from the design vocabulary (gender, age, pitch, accent, timbre, speed, emotion).');
   if (cardLine !== null) hints.push(...cardLineHints(cardLine));
   return hints;
 }
@@ -278,7 +278,7 @@ function cardLineHints(cardLine) {
     const where = cardLine.onCard === null ? 'does not fit on the preview card of the share file (too large, or this format cannot be cut), and the card carries the default segment' : `is longer than the preview card of the share file can hold, and the card carries only the first ${seconds === null ? 'part' : `${Number(seconds.toFixed(1))} s`}`;
     add('card_line_trimmed', `The recording of the audition line ${where}. ${REVOICE}.`, { seconds });
   } else if (cardLine.status === 'none') {
-    add('card_line_missing', `No audition line was given, and the preview card carries the recording of the default segment of the main language (only as a fallback). Write an audition line from the character's profile and materials (references/character-voice.md「Audition line」), then ${FILL_IN}.`);
+    add('card_line_missing', `No audition line was given, and the preview card carries the recording of the default segment of the main language (only as a fallback). Write an audition line (what the voice needs from it: references/character-voice.md「Audition line」), then ${FILL_IN}.`);
   }
   const change = cardLine.modelChange;
   if (cardLine.status === 'voiced' && isPlainObject(change)) {

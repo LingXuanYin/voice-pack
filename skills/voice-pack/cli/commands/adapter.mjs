@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // adapter 命令：做自己的适配器。new 生成一个骨架，check 检查它。适配器的约定、命令怎么用，只写在 adapters/README.md「Making your own adapter」；这里只管读文件、写文件，把结果变成输出和退出码。
-// 骨架怎么生成在 lib/adapter-skeleton.mjs，检查的规则在 lib/adapter-check.mjs（两个都是纯函数，app 也能直接用），加载适配器走 cli/adapters.mjs（统一的入口）。
+// 骨架怎么生成在 lib/adapter-skeleton.mjs，检查的规则在 lib/adapter-check.mjs（两个都是纯函数，调用方也能直接用），加载适配器走 cli/adapters.mjs（统一的入口）。
 //
 //   node cli.mjs adapter new <目录> --capabilities <能力,…> [--kind <种类>] [--json]
 //     生成一个新目录，里面是适配器的骨架：每项能力一个函数（还没有实现，调用会抛 adapter_not_implemented），注释从 vocab/capability-signatures.md 生成。

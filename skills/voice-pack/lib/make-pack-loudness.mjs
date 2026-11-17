@@ -26,7 +26,7 @@
 //   adjustedAudio(decoded, settings)       解码好的采样调到目标响度（含限幅）：{ sampleRate, samples } 进，normalizeLoudness 的结果出；量不出响度的、已经在目标上的，结果里的 audio 就是原样的采样；
 //                                          adjustedClip 用它，标提示标注量停顿（lib/point-measure.mjs）也用它
 //
-// 说明（notes：[{ code, message, details }]）。message 是给人看的中文；details 是它说的那些事实，读的人（app 用两种语言自己写句子）只读 code 和 details，
+// 说明（notes：[{ code, message, details }]）。message 是给人看的中文；details 是它说的那些事实，读的人（调用方用两种语言自己写句子）只读 code 和 details，
 // 不去 steps.loudness 和每段的 loudness 里凑；数都和那里的是同一些：
 //   loudness_target_not_reached    有几段限幅压到最多还是没调到目标响度。details: { targetLufs, peakCeilingDbfs, limiter, segments }：
 //                                  目标响度、采样峰值上限、限幅器（{ maxDb } 或 null：关着），和没到目标的每一段 { id, beforeLufs, afterLufs, gainDb, limitedDb }

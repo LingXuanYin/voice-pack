@@ -2,7 +2,7 @@
 //
 // 还原度报告写成给人看的文字：fidelity 命令和 make-pack 命令都用它（命令之间不互相引用，所以放在这里，见 cli/input.mjs 的文件头）。
 // 读法的规则（判成同一人的比例分档、有效的不到 5 条不下结论、哪几个数不是分数、作废和没听成和量不到各算几条）只在 lib/fidelity-reading.mjs 的 readReport 里，
-// 这里只管把它的返回值写成文字，不另写一份阈值；报告的形状和读法的说明在 lib/fidelity.mjs 的文件头「How to read this report」。app 有自己的显示，也从 readReport 来。
+// 这里只管把它的返回值写成文字，不另写一份阈值；报告的形状和读法的说明在 lib/fidelity.mjs 的文件头「How to read this report」。调用方有自己的显示，也从 readReport 来。
 //
 //   renderFidelityReport(report, { redone?, redoHint? })  → 文字（末尾带换行）
 //     report     measureFidelity 的结果（lib/fidelity.mjs），或补做以后合并的结果（redoNotHeard）

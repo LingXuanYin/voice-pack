@@ -80,7 +80,7 @@
 //              就是 makePack 的 input.segments 的形状。text 是转写出来的（没转写、转写失败、转写出来是空的，就没有这个字段）；转写被服务商拦下的段不在这里（见 report.segments）；
 //              language 只有在知道语言的时候才有（语言标签；不给音色基底标签 tag，做包在标提示标注那一次让模型起名，起不成用段的 id）；source 的秒数对着原录音的时间轴（分离出来的人声和原录音等长、对齐）。
 //   notes      [{ code, message, details }]，原样放进 makePack 的 input.notes，进做包的报告。message 是给人看的中文；details 是这一条说的那些事实（message 里的数和名字），
-//              读的人（app 用两种语言自己写句子）只读 code 和 details，不去报告的别处凑；没有可说的就是空对象。字段和 hint 的 details 一样写在这里：
+//              读的人（调用方用两种语言自己写句子）只读 code 和 details，不去报告的别处凑；没有可说的就是空对象。字段和 hint 的 details 一样写在这里：
 //                separation_skipped     这次没做分离，输入要是干净的人声（环境没有这项能力，或者调用方说不分离）。details: { reason: 'capability_missing' | 'disabled' }，同 report.separation.reason
 //                no_speech              没有找到说话的部分，没有切出片段。details: {}
 //                cut_not_discernible    录音里分不出哪里是停顿（一直有背景声），只能按长度硬切（只有按能量切才有）。details: {}

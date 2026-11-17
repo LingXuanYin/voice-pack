@@ -90,7 +90,7 @@ function stubFetch(externals) {
  * @param {{ path: string, url: string, data: Uint8Array }[]} [input.externals] 外部资源：不放进包，清单里记 URL、大小、哈希（由 data 算出）
  * @param {object[]} [input.scripts] @param {object[]} [input.enhancers] @param {object} [input.direction] @param {object[]} [input.verification] @param {object} [input.designSource]
  * @param {string} [input.guidance] 配音指引（Markdown），放进生成的 SKILL.md 正文
- * @param {'zh' | 'en'} [input.textLanguage='zh'] 生成 SKILL.md 骨架用的语言（调用方按作者的语言给，例如 app 给作者做包时用的界面语言；规则见 skill-md.mjs 的 buildRoleSkillMd）。files 里带了 SKILL.md 就用不上，值错了照样抛 TypeError
+ * @param {'zh' | 'en'} [input.textLanguage='zh'] 生成 SKILL.md 骨架用的语言（调用方按作者的语言给，例如作者做包时用的界面语言；规则见 skill-md.mjs 的 buildRoleSkillMd）。files 里带了 SKILL.md 就用不上，值错了照样抛 TypeError
  * @param {string[]} [input.sampleLines] 示例台词，原样写进清单的 sampleLines（规则见 protocol/FORMAT.md 4.4 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
  * @param {object[]} [input.setups] 几套设定，原样写进清单的 setups（规则见 protocol/FORMAT.md 4.4 节和 4.5 节；不写或写空数组，清单里就没有这个字段；写得不合格，做不出包）
  * @param {number} [input.expressiveness] 这个声音的起伏（全局值，0 到 100 的整数），原样写进清单的 expressiveness（规则见 protocol/FORMAT.md 4.4 节）

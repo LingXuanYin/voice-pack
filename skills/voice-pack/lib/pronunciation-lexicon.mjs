@@ -12,7 +12,7 @@
 //   singleCharacterTerms(lexicon)、isSingleCharacterTerm(term)、singleCharacterNote(terms)、lexiconNotes(input)   只写一个字的词条和它的提醒（下面「只写一个字的词条」；lexiconNotes 是做包用的）
 //
 // 包里的读音词表放在角色部分的根上，文件名是 LEXICON_FILE（lexicon.pls）。清单没有专门的字段：它和别的包内文件一样列在 files 里，
-// 由检查核对哈希；这个名字是约定，包的读取、做包、app 导入导出都认它。
+// 由检查核对哈希；这个名字是约定，包的读取、做包、调用方导入导出都认它。
 //
 // ---------------------------------------------------------------- 为什么自己写解析器
 // 浏览器有 DOMParser，Node 没有，库又不许引第三方依赖，所以这里只认 PLS 需要的那一小部分 XML。读不懂的就报错（lexicon_invalid），

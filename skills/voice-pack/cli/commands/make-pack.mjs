@@ -135,7 +135,7 @@
 //                       包做好、写到 --output 以后，再打一份分享文件（.voicepack.zip）到这里，里面带预览卡片（index.html）。文件必须还不存在，检查在花钱之前做；--dry-run 时不要。
 //                       卡片上「在 X 里打开」的产品名和两个入口（打开、做一个你自己的）取自接进来的适配器给的 previewCard（形状和合并见 adapters/README.md 和 cli/adapters.mjs），
 //                       不用自己给；没有适配器给，卡片上就没有产品名和入口（想自己给，用核心层的 pack 命令的 --product-name、--open-link、--make-link）。
-//                       和 app 导出一样，这一步不验签、不做互相校验：只是把刚做好的包打成分享文件；要在分发之前核对，用 check 命令查这个分享文件。
+//                       和调用方导出一样，这一步不验签、不做互相校验：只是把刚做好的包打成分享文件；要在分发之前核对，用 check 命令查这个分享文件。
 //                       适配器给的链接不是 http、https 的地址时，包已经写到 --output 了，分享文件没有打出来（card_link_invalid）：别的都不用重做，修好链接用核心层的 pack 重打。
 //   --json              标准输出是一份 JSON：{ packId?, version?, output?, evaluation?, shareFile?, recordings?, duplicateCheck?, report }（dry-run 是 { plan, recordings?, duplicateCheck?, report }）。
 //                       shareFile 是 { file, bytes, sha256, card }（card 是预览卡片上的 { productName, open, make }，适配器没给就是 null），给了 --share-file 才有。
@@ -433,7 +433,7 @@ function ownBaseVersion() {
 
 /**
  * 把做好的包打成分享文件写到 file（已存在就拒绝，file_exists）。预览卡片的产品名和入口用 previewCard（适配器给的，没有就是 undefined：卡片上没有）。
- * 不验签、不做互相校验：和 app 导出一样，只是把刚做好、库自检过的包打成分享文件。
+ * 不验签、不做互相校验：和调用方导出一样，只是把刚做好、库自检过的包打成分享文件。
  * @throws {VoicePackError} card_link_invalid（适配器给的链接不是 http、https 的地址）、file_exists、file_unwritable，以及 buildShareFile 的别的错
  */
 async function writeShare(file, packFiles, previewCard) {

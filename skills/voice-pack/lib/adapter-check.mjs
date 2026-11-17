@@ -2,7 +2,7 @@
 //
 // 适配器的检查（流程层）：纯函数，只用平台自带的 API，浏览器、Node、Bun 都能跑。收的是一个适配器工厂返回的对象
 // （或者一个运行环境：形状是它的子集），不碰文件、不起进程、不加载模块——「怎么加载适配器」是命令行层的事（cli/adapters.mjs），
-// `node cli.mjs adapter check` 只是在外面包一层。app 的测试可以直接调这里的函数，去验 app 自己组装的环境。
+// `node cli.mjs adapter check` 只是在外面包一层。调用方的测试可以直接调这里的函数，去验调用方自己组装的环境。
 // 适配器的约定（工厂的签名、返回的形状、出错的约定、模型名从哪来）只写在 adapters/README.md，这里只实现检查，不重述。
 //
 //   checkAdapterShape(adapter)                  只看容器和类型：是对象、键都认识、capabilities 和 runtimes 是对象、fetch 是函数、billing、limits、previewCard 和 models 的写法。
@@ -68,7 +68,7 @@
 // 和别的合成能力一样（mimeType 对得上字节、解得开、长度大于 0、model 有没有）。这一项会真的花钱（一次设计请求），所以也算进调用之前的费用说明（planLiveCalls 的 calls）。
 //
 // 要音频输入的能力（voice-cloning、两项变声、转写、音频问答、说话人比对、分离、说话区间检测）用 options.voice：调用方给的一段人声。命令行上给的是基础部分附带的那段
-// （lib/adapter-check-voice.wav，5–8 秒，一个人念一句话，逐字文本在旁边的 .json 里），这里不读文件（纯函数，app 的测试也直接调）。时长取自解码后的长度，VAD 的区间不能超出它。
+// （lib/adapter-check-voice.wav，5–8 秒，一个人念一句话，逐字文本在旁边的 .json 里），这里不读文件（纯函数，调用方的测试也直接调）。时长取自解码后的长度，VAD 的区间不能超出它。
 // 旧的 1 秒正弦音已经不用：有的模型的克隆参考至少要 3 秒，正弦音又不是人声（历史见 2.0.5 的更新记录，在 2.7.0 发布的 CHANGELOG.md 里）。
 //
 // @capability text-to-speech
@@ -106,7 +106,7 @@ export const LIMIT_KEYS = Object.freeze(['maxChars', 'minChars', 'maxPromptToken
 /** previewCard 里认的键，和 links 里认的键（形状同核心层 buildShareFile 的 card 选项）。 */
 export const PREVIEW_CARD_KEYS = Object.freeze(['productName', 'links']);
 export const PREVIEW_LINK_KEYS = Object.freeze(['open', 'make']);
-/** 只是声明的能力的名单（核心层 protocol/lib/env.mjs 的那一份，原样再导出：app 的测试可以只从这里取，不用另找）。 */
+/** 只是声明的能力的名单（核心层 protocol/lib/env.mjs 的那一份，原样再导出：调用方的测试可以只从这里取，不用另找）。 */
 export { DECLARED_CAPABILITIES };
 /** 真调用跳过一项能力的原因，planLiveCalls 的 skipped[].reason 和 checkAdapterLive 的 results[].reason 取这里的一个。每个的意思写在文件头。 */
 export const SKIP_REASONS = Object.freeze(['declaration', 'no_signature', 'not_wired', 'unknown', 'not_callable', 'not_provided']);

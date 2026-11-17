@@ -64,7 +64,6 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { VoicePackError, isVoicePackError } from '../protocol/lib/errors.mjs';
 import { isSemver } from '../protocol/lib/version.mjs';
-import { guidanceSection, WRITER_SECTIONS } from '../protocol/lib/guidance-sections.mjs';
 import { resolveTextLanguage } from '../protocol/lib/skill-md.mjs';
 import { assertAudioClip } from '../protocol/lib/audio-clip.mjs';
 import { loudnessOptions } from '../tools/loudness-normalize.mjs';
@@ -196,12 +195,6 @@ function readSampleLines(lines) {
     const got = line === null ? 'null' : Array.isArray(line) ? 'an array' : typeof line === 'object' ? 'an object' : JSON.stringify(line);
     throw invalid(`sampleLines[${index}]`, `entry ${index + 1} must be a string (one sample line), got ${got}${copied ? ': each item of the design vocabulary (vocab/design-sample-lines.json) is a { text, feel, kind } object, and those lines only show the tone; sample lines are sentences written for this character (see the part of references/make-pack.md about sample lines)' : ''}`);
   });
-}
-
-/** 给了配音指引就要有这两节，一行都没有（标题下面是空的）也算没写；每项都写「缺」算写了（references/make-pack.md「The five sections of the dubbing guidance」）。 */
-function assertWriterSections(guidance) {
-  const missing = WRITER_SECTIONS.filter((name) => !guidanceSection(guidance, name));
-  if (missing.length > 0) throw invalid('guidance', `the dubbing guidance is missing ${missing.length === 1 ? 'a section' : 'sections'}: ${missing.map((name) => `"### ${name}"`).join(', ')} (or it has no lines at all). Write "缺" (missing) for an item with no basis; do not make things up (references/make-pack.md「The five sections of the dubbing guidance」)`, { missing });
 }
 
 /** 试听句的语言（input.cardLineLanguage，语言标签）：要和 cardLine 一起给。 */
@@ -416,7 +409,6 @@ export function readInput(input, previous, { moreSegments = false, moreSentences
   if (input.sampleLines !== undefined) readSampleLines(input.sampleLines);
   if (input.cardLine !== undefined && typeof input.cardLine !== 'string') throw invalid('cardLine', 'must be a string: the text of the audition line (length and whether blank text is allowed are checked by the manifest check before any money is spent; whether it can be dubbed as one request is checked by lib/make-pack-card-line.mjs before any money is spent)');
   if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', 'must be a string (the Markdown body of the dubbing guidance)');
-  if (typeof input.guidance === 'string' && input.guidance.trim() !== '') assertWriterSections(input.guidance);
   readCardLineLanguage(input);
   if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', 'must be a Map<path, Uint8Array>');
 

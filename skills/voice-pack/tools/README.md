@@ -1,6 +1,6 @@
 # Official small tools
 
-Small tools that only compute and use no model. In the agent environment, dubbing, making a pack, and the app all use them.
+Small tools that only compute and use no model. In the agent environment, dubbing, making a pack, and the callers that embed this library all use them.
 
 | Tool | File | Command | Authoritative source for rules and notes |
 |---|---|---|---|

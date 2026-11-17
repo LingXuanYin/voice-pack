@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 合成请求的上限，基础部分自己定的那几条（流程层）。
-// 环境声明的 maxChars（合成能力一次最多多少个字，适配器的 limits.maxChars，app 的 contract）最少是多少：配音按 maxChars 切请求、往请求开头补提示（lib/dub.mjs 第 5、7a 步），
+// 环境声明的 maxChars（合成能力一次最多多少个字，适配器的 limits.maxChars，调用方的 contract）最少是多少：配音按 maxChars 切请求、往请求开头补提示（lib/dub.mjs 第 5、7a 步），
 // 切出来的一个请求至少要留得下这么多字；做包把它交给配音配试听句（lib/make-pack-input.mjs），适配器检查核适配器声明的 limits（lib/adapter-check.mjs）：都按这一个数查，不各写一份。
 // 配音默认一个请求要念多少字（软上限）、这个字怎么数，也只写在这里：配音切请求（lib/dub.mjs 第 5、5a、5b、5c 步）和 dub --dry-run 汇总里的字数（cli/commands/dub.mjs）都用 spokenLength。
 //

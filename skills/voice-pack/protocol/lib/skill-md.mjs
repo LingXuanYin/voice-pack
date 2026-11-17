@@ -398,7 +398,7 @@ export function resolveTextLanguage(value) {
   return value;
 }
 
-/** 一句话两种写法里选一种，和 app 的 t('中文', 'English') 是一个意思：中文、英文写在一起，改一边，另一边就在旁边。 */
+/** 一句话两种写法里选一种，和常见的 t('中文', 'English') 是一个意思：中文、英文写在一起，改一边，另一边就在旁边。 */
 const picker = (language) => (zh, en) => (language === 'en' ? en : zh);
 /** 英文的个数：1 用单数。 */
 const plural = (count, word) => `${count} ${count === 1 ? word : `${word}s`}`;
@@ -620,7 +620,7 @@ export function extractGuidance(text) {
  * 做新包先生成净室输入、交给新会话去写、再做包并查重）。基础部分命令行的命令和选项不写在这里：只指到基础部分的 SKILL.md，用法只在那里写一份。
  * 破例只有一个：音色基底标签那一条写配音换参考的选项（REFERENCE_TAG_FLAG），为什么见 playSteps 的注释。
  * 同样的输入生成同样的文字（LF 换行，末尾一个换行）。
- * 语言：options.textLanguage 是 'zh'（不给就是它）或 'en'，由调用方按作者的语言给（例如 app 给作者做包时用的界面语言），不给就是中文。
+ * 语言：options.textLanguage 是 'zh'（不给就是它）或 'en'，由调用方按作者的语言给（例如作者做包时用的界面语言），不给就是中文。
  * 两种语言的版面一样：同样的节、同样的步骤、同样的命令和文件名；只有标题和说明的语言不同，英文的 frontmatter 也只有英文。
  * 例外只有一处，也是协议的一部分：「## 配音指引」这一行（GUIDANCE_HEADING）所有语言都原样写，不翻译，读指引的程序（extractGuidance、基础部分 1.0.0 起的读法）认的就是这一整行，
  * 所以任何语言的包，任何版本的基础部分读回来的指引都一样，不用给英文的包定更高的基础部分最低版本。随之两条：

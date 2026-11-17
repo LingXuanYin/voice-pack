@@ -40,11 +40,11 @@
 //   补做：planRedo 算要补做哪几项、各要调用多少次；redoNotHeard 只对没听成的那几项重新调用，合并成一份新报告，形状同上。
 //   每一项的含义见各函数的说明；怎么读这些数，见下面「How to read this report」。库只给数，不设门槛，也不替人下「像不像」的结论。
 //
-// 显示报告（命令行、app）：lib/fidelity-reading.mjs 的 readReport(report) 把报告变成「要显示什么」的结构（每一组和总体的比值，判成同一人的次数、条数和档，
+// 显示报告（命令行、调用方）：lib/fidelity-reading.mjs 的 readReport(report) 把报告变成「要显示什么」的结构（每一组和总体的比值，判成同一人的次数、条数和档，
 //   能不能下结论，作废、没听成、量不到各几条，模型说出来的区别原话，补做要调几次），READING_NOTES 是读法每一点的显示用语。
-//   读法的规则只在那里程序化一次：命令行（cli/fidelity-report.mjs 的 renderFidelityReport）和 app 都从它显示，不各写一份阈值。
+//   读法的规则只在那里程序化一次：命令行（cli/fidelity-report.mjs 的 renderFidelityReport）和调用方都从它显示，不各写一份阈值。
 //
-// How to read this report (the reading is written only here; the places that display the report, the command line and the app, follow it, and the program for its rules is lib/fidelity-reading.mjs. The reading was calibrated on public corpora; the calibration record is not released with the base part, and what is written below are the numbers in that record;
+// How to read this report (the reading is written only here; the places that display the report, the command line and the caller, follow it, and the program for its rules is lib/fidelity-reading.mjs. The reading was calibrated on public corpora; the calibration record is not released with the base part, and what is written below are the numbers in that record;
 //   the numbers of points 1, 5, 7 and 8 are from the run of 2026-11-01: blind listening with the current question (BLIND_PROMPT), group K twice, group M once, clones once;
 //   older numbers (2026-10-14, 2026-10-19, the old question and the old prompt) are carried only where it says "old record"):
 //   The reading sets no threshold: a pack with a low score can still be published, and no score is hidden. The three tiers below are only a way of reading and block nothing.
