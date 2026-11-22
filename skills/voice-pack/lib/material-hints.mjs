@@ -78,7 +78,7 @@
 import { DEFAULTS, plannedHoldouts } from './pack-material.mjs';
 import { languagePair, referenceSources } from './cross-language.mjs';
 import { languageKey } from '../protocol/lib/manifest.mjs';
-import { guidanceSection } from '../protocol/lib/guidance-sections.mjs';
+import { GAP, itemValues } from './guidance-items.mjs';
 
 export const THRESHOLDS = Object.freeze({
   /** 读还原度的读法要求的有效留出录音条数（lib/fidelity.mjs 文件头）。 */
@@ -166,20 +166,13 @@ function readMaterial(material) {
 }
 
 const WRITER_ITEMS = Object.freeze({ 这个人是谁: ['身份', '性格', '在意什么', '对不同的人', '情绪上来时'], 换语言时怎么说: ['名字', '自称', '口头禅'] });
-const ITEM_LINE = /^\s*-\s*([^：:]+?)\s*[：:]\s*(.*)$/u;
-const GAP = /^(?:([A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*)\s+)?缺\s*(?:[（(].*)?$/u;
 
-/** 配音指引里没填的项（文件头 guidanceGaps）。 */
+/** 配音指引里没填的项（文件头 guidanceGaps）。项怎么读在 lib/guidance-items.mjs（和配音认名字用同一处）。 */
 export function guidanceGaps(guidance) {
   const gaps = [];
   for (const [section, items] of Object.entries(WRITER_ITEMS)) {
-    const body = guidanceSection(guidance, section);
-    if (body === undefined) continue;
-    const values = new Map();
-    for (const line of body.split(/\r?\n/u)) {
-      const match = ITEM_LINE.exec(line);
-      if (match !== null && items.includes(match[1]) && !values.has(match[1])) values.set(match[1], match[2].trim());
-    }
+    const values = itemValues(guidance, section);
+    if (values === undefined) continue;
     for (const item of items) {
       const value = values.get(item);
       if (value === undefined || value === '' || GAP.test(value)) { gaps.push(item); continue; }

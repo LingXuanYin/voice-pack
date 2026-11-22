@@ -483,6 +483,8 @@ const samePacks = (was, now) => was.length > 0 && was.length === now.length
 const turnsOf = (scene) => JSON.stringify((scene?.turns ?? []).map((turn) => [turn.speaker, turn.text, turn.openingCue ?? null]));
 /** 一场戏每个说话人用的参考段。 */
 const speakersOf = (scene) => JSON.stringify((scene?.speakers ?? []).map((speaker) => [speaker.pack, speaker.pick?.segmentId ?? speaker.segmentId, speaker.languageMarks ?? null]));
+/** 一场戏每个说话人参考上写的名字（scene.speakers[i].referenceName，lib/dub.mjs 第 7c 步）。 */
+const referenceNamesOf = (scene) => JSON.stringify((scene?.speakers ?? []).map((speaker) => speaker.referenceName ?? null));
 
 /**
  * 上一次的一句（before，dub.json 里的）和这一次的一句（unit，规划里的）是不是同一个请求（文件头「沿用」）。withPick 为 false 时不比参考段（一场戏只比每一轮）。
@@ -499,7 +501,8 @@ function sameRequest(before, unit, { previous, current, withPick }) {
   if (JSON.stringify(before.openingCue ?? null) !== JSON.stringify(unit.openingCue ?? null)) return false;
   if (JSON.stringify(before.languageMarks ?? null) !== JSON.stringify(unit.languageMarks ?? null)) return false; // 跨语言的请求写的语言和名字（lib/dub.mjs 第 7c 步）：不一样就是另一个请求
   if ((before.referenceName ?? null) !== (unit.referenceName ?? null)) return false; // 同语言的参考文字开头写的名字（lib/dub.mjs 第 7c 步）：这一版以前配的没记，是另一个请求
-  if (isScene(unit)) return turnsOf(before.scene) === turnsOf(unit.scene) && (!withPick || speakersOf(before.scene) === speakersOf(unit.scene));
+  // 一场戏每个说话人参考上的名字不管比不比参考段都比：名字变了，参考文字就变了，是另一个请求
+  if (isScene(unit)) return turnsOf(before.scene) === turnsOf(unit.scene) && referenceNamesOf(before.scene) === referenceNamesOf(unit.scene) && (!withPick || speakersOf(before.scene) === speakersOf(unit.scene));
   return !withPick || before.pick?.segmentId === unit.pick.segmentId;
 }
 
