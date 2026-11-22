@@ -196,7 +196,7 @@
 //      一个请求只带一个值：值不同的行不并进同一个请求（第 5a 步一场戏看它，规则在 lib/scene-in-request.mjs；第 5b 步短句并段也看它；第 5c 步同一个包同一章里的行值一样：一项自己是一章，一个包只用一套设定）。
 //      重跑时换了值（设定的也算，换了新版本的包），是新的请求，不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //      ref_text（两种调用一样）：参考段有提示标注（清单里的 annotatedText，逐字稿加上方括号提示的整句）就交它，模型就知道这段参考是怎么说的；没有就交逐字稿 text（lib/reference-pick.mjs 的 refTextOf）。
-//        同语言、台词开头是这个包的名字的，开头再写这个名字（第 7c 步）。
+//        同语言、台词开头的第一个方括号是这个包认的名字的，开头再写这个名字（第 7c 步）。
 //      text：unit.spoken（提示都在原位，并进请求的停顿写成了量过的写法，第 5c 步）；前面加开头的提示（第 7a 步）；
 //      只声明了 phoneme-in-text 的，用上的拼音音素在这里换成 <phoneme> 标签（applyPhonemes，<speak> 包着，提示里面不换；整句转义，句子里的尖括号标签也转义了，见第 4 步）。
 //      声明了 phoneme-markers 的，音素标签第 4 步已经在 spoken 里，这里不再换。
@@ -213,7 +213,7 @@
 //      告诉写台本的人照说明在台本里写具体的（用词、语气词写进台词，读音不同的常用字写成读那个音的字，声调、尾音、节奏的变化在发生的那几个字前面写一个短提示），指到 models/scene3.md「What to write」「Cross-language and accent」。
 //      加在哪个请求上：每个请求一条，写在它的最前面。一个请求是一个 unit：一行一个请求的一段，或者并起来的几句（5b、5c）。这条提示是这个请求从台本的哪一句开始（unit.line，
 //      第 1、2 步拆出来的一句：两处停顿、换行、章节、换声音之间的一截），按那一句算的：那一项的调用方给的（项的 labels），那个包的设定。
-//      那一句开头是台本自己写的提示（方括号的，或者舞台说明换成的，例如一行开头的（小声）），这个请求不加：照台本。同一句被第 5 步切开的后几段，也照这一句的开头算。
+//      那一句开头是台本自己写的提示（方括号的，或者舞台说明换成的，例如一行开头的（小声）），这个请求不加：照台本。开头的角色名不是提示：第一个方括号是这个包认的名字（第 7c 步）或者名字对的，跳过它再看，加的提示写在名字后面（lib/opening-cue.mjs 的 nameAtHead）；不认的名字照旧算台本写的提示。同一句被第 5 步切开的后几段，也照这一句的开头算。
 //      照台本的只是写了提示的那一行：同一章里接在后面、自己没写提示的一行，前面要并进的那个请求里已经有台本写的提示（开头的，或者哪一行行首、句中写的）就不并（第 5c 步），
 //      另起一个请求，加设定的提示；那个请求从头到尾都是设定的提示，照旧并。「那个请求」按上限切开之前的那一串算（第 5c 步）：一行的台本提示被上限切进前一个请求时，
 //      偶尔多一个切点。第 5b 步（minChars）并短句是例外：太短的一行照旧并到下一行，下一行不另加设定的提示。
@@ -231,7 +231,7 @@
 //      报告：unit.openingCue（一场戏是 unit.scene.turns[i].openingCue）{ cue, added, parts }：cue 是合成的提示；added 是加了没有（false：那一句开头台本自己写了提示）；
 //      parts 是用上的每一项 { value, from }，from 是 'caller'（调用方给的）或 'setup'（设定的）。
 //   7c 角色名和语言提示：台本规定每行以角色的名字开头（models/scene3.md「Put the character name first」）。
-//      一行被切成几个请求的（长停顿切开、放不下切开），后面的请求开头重复这一行开头的第一个方括号（第一个方括号就是名字；旧台本第一个是情绪的，也照样重复），算开头写了提示，不再加设定的开头的提示（第 7a 步）。
+//      一行被切成几个请求的（长停顿切开、放不下切开），后面的请求开头重复这一行开头的第一个方括号（第一个方括号就是名字；旧台本第一个是情绪的，也照样重复）。重复的是这个包认的名字或者名字对的，照这一行的第一个请求加开头的提示，写在名字后面；重复的是别的，算开头写了提示，不再加（第 7a 步）。
 //      跨语言的请求（第 3a 步比出来的：参考段不是这一行的语言，给了 allowCrossLanguage）：行开头写名字对 [参考语言里的名字|台词语言里的名字]（lib/cross-language.mjs 的 namePairOf）。发给模型的是：
 //        text      [Harry Potter][说戏]台词 [language: zh]    名字对只留参考语言里的名字，结尾写台词的语言。一个请求一处，一场戏写在最后一轮的末尾
 //        ref_text  [哈利·波特]标注全文 [language: en]         开头写台词语言里的名字，结尾写参考的语言。一场戏每个跨语言的说话人各写各的
@@ -239,9 +239,13 @@
 //      跨语言的行开头没写名字对：报 dub_cross_language_unnamed，花钱之前停（规划也报），只看这一次要合成的段。
 //      languageMarks: false：不要求名字对，不加两边的语言提示，台本怎么写就怎么发（要带参考那种语言的口音时用；做包自己的试合成也这样：量的是声音本身）。
 //      同语言的请求不写语言提示，不看名字对；台本写了名字对的，发的是参考语言里的名字。
-//      同语言的一行一个请求，台词开头是这个包的名字（[包名]，清单的 name）的，参考的文字开头也写这个名字：[沈迟][calm]门响我就听见了。两边对称：只在台词开头写名字、
-//      参考上不写时，配音的模型有时把整句配得比参考低几个半音到一个八度（读数在 models/scene3.md「Put the character name first」）。开头是说戏、别的名字的不写；一场戏的不写；
-//      languageMarks: false 的不写（台本怎么写就怎么发）。报告：unit.referenceName 是写上的名字，没写就没有这一项。重跑时不一样的不沿用（cli/commands/dub.mjs 文件头「沿用」）。
+//      同语言的一行一个请求，台词开头的第一个方括号是这个包认的名字的，参考的文字开头也写这个名字：[沈迟][calm]门响我就听见了。两边对称：只在台词开头写名字、
+//      参考上不写时，配音的模型有时把整句配得比参考低几个半音到一个八度（读数在 models/scene3.md「Put the character name first」）。认的名字：清单的 name，加上配音指引「换语言时怎么说」
+//      「名字」项列的每种语言的全名（lib/guidance-items.mjs 的 namesOf，「缺」的不认，namesOfPack）。开头是说戏、别的名字的不写，报 reference_name_missing（见下面「说明」）；
+//      开头是 name、而「名字」项这门语言列的是另一个名字的，参考的名字照第一句的，报 reference_name_not_full（一场戏也报）；languageMarks: false 的不写（台本怎么写就怎么发）。
+//      一场戏（几个包轮流说，合并成一个请求）：每个说话人的参考开头写他第一轮的名字（认得的才写）；后面各轮认得却不一样的报 reference_name_inconsistent，不认得的报 reference_name_missing，列那一轮（见下面「说明」）。
+//      并成一个请求的几句（第 5c 步）：参考取请求开头那一句的名字；每一句的开头都看，同样出三种提醒，列那一句。
+//      报告：unit.referenceName 是写上的名字，没写就没有这一项；一场戏的写在 scene.speakers[i].referenceName。重跑时不一样的不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //      报告：unit.languageMarks { language, referenceLanguage, referenceName }（referenceName 是 null：没写名字对，languageMarks: false 时不记整项）；一场戏的 unit.languageMarks 只有 language，参考那半在 scene.speakers[i].languageMarks。重跑时不一样的不沿用（cli/commands/dub.mjs 文件头「沿用」）。
 //   7b 语速（设定，见上面「设定」）：unit.speed 不是 null、也不是 1 的段，合成以后（包里脚本的 audio 钩子之后）变速，规则同第 8 步和拼接：lib/mix.mjs 的 changeSpeed（ffmpeg 的 atempo，
 //      保持音高），上下限是 SPEED_LIMITS，要的倍数超出了按最近的那一头变；交出去的音频是 ffmpeg 给的 WAV。一场戏整场变（一场里的语速都一样，scene-in-request 在语速变的地方切开）。
@@ -361,6 +365,13 @@
 //   long_cues                台本里一处提示（方括号写的、舞台说明换成的，第 2 步）超过 lib/cue-length.mjs 的 MAX_CUE_WORDS 个词。只提醒，不改字，照原样发。
 //                            details: { cues: [{ line, cue, words }], limit }：line 同 lines[i].index（从 0 起），cue 是那一处提示（连方括号），words 是数出来几个词，按出现的次序；
 //                            message 引前几处，说一处提示写两三个词，指到 models/scene3.md「What to write」
+//   reference_name_missing   同语言的请求，台词开头的第一个方括号不是这个包认的名字（说戏、别的名字），这一句不给参考定名字（第 7c 步）。只提醒，不改字、不拦。
+//                            details: { lines: [{ line, opening }], names, pack }：line 同 lines[i].index（从 0 起；一行被停顿切开的几段记第一段），opening 是开头的那个方括号，names 是这个包认的名字，pack 是包 ID。
+//                            message 开头点名是哪个包（包名，一个包也点名）。没有方括号开头的、名字对的不记（名字对是跨语言的写法，第 7c 步）
+//   reference_name_not_full  同语言的请求，台词开头是包的 name，而「名字」项给这一句的语言列的是另一个名字（第 7c 步）：参考的名字照第一句的，提醒这门语言的全名。只提醒。
+//                            details: { lines: [{ line, opening, language, name }], pack }：language 是这一句的语言（主语言，如 en），name 是「名字」项这门语言列的全名，pack 是包 ID；message 开头点名包
+//   reference_name_inconsistent  同一个说话人（或并成一个请求的几句）开头认得的名字，和参考上取的不一样（第 7c 步）。只提醒，不改字、不拦。
+//                            details: { pack, name, lines: [{ line, opening }] }：name 是参考上取的名字，lines 是那几句；pack 是包 ID；message 开头点名是哪个包
 //
 // 抛出的错误（VoicePackError；code 小写下划线，details 里放什么在抛出处写明）：
 //   dub_input_invalid        输入不合约定：台本不是字符串或数组、项没有 text、给了说明（options.instructions、项的 instructions，已拿掉，第 7a 步；details.field 是 instructions 或 script[i].instructions）、项的 speed 不是正数、expressiveness（options.expressiveness 或项的，不是 0 到 100 的整数；details.field 是 expressiveness 或 script[i].expressiveness）不对、only 或 maxChars 或 maxSpokenChars 或 concurrency 或 speed
@@ -406,7 +417,8 @@ import { assertScriptRuntimes, missingScriptRuntimes, scriptsWithoutFeature, run
 import { readAudioResult, summarizeOffer, summarizeUse } from './enhancers.mjs';
 import { isServiceError, isTextRejected, isUnretrieved, summarizeError, pool, reportedModel } from './capability-calls.mjs';
 import { requestsOf, pauseWriting, DEFAULT_MAX_PAUSE_IN_REQUEST_MS } from './pause-in-request.mjs';
-import { cueThenText, openingCueOf, opensWithCue, withOpeningCue } from './opening-cue.mjs';
+import { namesOfPack, referenceNameNotes } from './reference-names.mjs';
+import { cueThenText, nameAtHead, openingCueOf, opensWithCue, withOpeningCue } from './opening-cue.mjs';
 import { sceneRuns, mostPicked, isScene, TOO_LONG_FOR_ONE_REQUEST } from './scene-in-request.mjs';
 import { checkPausesFit, changeSpeed, SPEED_LIMITS } from './mix.mjs';
 import { speakerSimilarity, isNoSpeechError, NO_SPEECH_LABEL, NOT_HEARD_LABEL, UNMEASURABLE_LABEL } from './fidelity.mjs';
@@ -1174,17 +1186,23 @@ function moodOf(line, setupLabels) {
  * @returns {{ opening: { cue: string, added: boolean, parts: object } | null, skipped: object[] }}
  * @throws {VoicePackError} dub_input_invalid（details: { field: 'openingCue', line, cue, words, limit }）
  */
-function openingOf(line, setup) {
+function openingOf(line, setup, names) {
   const setupItems = setup === null ? {} : pickItems(setup.labels);
   const composed = openingCueOf(pickItems(line.labels), setupItems);
-  const added = !opensWithCue(line.text);
+  const added = !opensWithCue(line.text, names);
   const words = composed.cue === null ? 0 : cueWords(composed.cue);
   if (added && words > MAX_OPENING_CUE_WORDS) {
     const from = Object.entries(composed.parts).map(([item, part]) => `${OPENING_ITEM_NAMES[item]} from ${part.from === 'caller' ? 'the caller' : 'the setup'}`).join(', ');
     throw new VoicePackError('dub_input_invalid', `The opening cue ${composed.cue} of line ${line.index + 1} counts ${words} words, over the limit of ${MAX_OPENING_CUE_WORDS} words (${from}; two Chinese characters or kana count as one word). For emotion and style use the short words of the tag vocabulary (vocab/cues.json): shorten what the caller gave; for what the setup gave, override it with the same item from the caller (on the command line a shorter --emotion or --style), or use no setup (command line --no-setup), or change the setup in the pack`, { details: { field: 'openingCue', line: line.index, cue: composed.cue, words, limit: MAX_OPENING_CUE_WORDS } });
   }
-  return { opening: composed.cue === null ? null : { cue: composed.cue, added, parts: composed.parts }, skipped: added ? composed.skipped : [] };
+  const opening = composed.cue === null ? null : { cue: composed.cue, added, parts: composed.parts };
+  if (opening !== null) NAMES.set(opening, names);
+  return { opening, skipped: added ? composed.skipped : [] };
 }
+/** 开头的提示（unit.openingCue、一轮的 openingCue）-> 那个包认的名字：提示写在开头的名字后面（lib/opening-cue.mjs 的 nameAtHead）。只在这一次运行里用，不进报告。 */
+const NAMES = new WeakMap();
+/** 一段文字加上开头的提示（第 7a 步）：不加的原样；开头是这个包认的名字的，写在名字后面。 */
+const withOpening = (text, opening) => withOpeningCue(text, cueToAdd(opening), opening ? NAMES.get(opening) : []);
 /**
  * 开头的提示里取到了、没合进去的一下子的声音（第 7a 步「限长」），写成规划的 notes：同一个包、同一个来处（调用方、设定）、同一项、同一个声音一条 one_shot_style_skipped，lines 是哪几句（从 0 起）。
  * skipped 是 [{ item, value, from, line, pack, setup }]（pack 是那一句的包，setup 是它用的设定）。many 为真（几个包）时 message 开头点名包、details 另有 pack（包 ID）。
@@ -1243,7 +1261,7 @@ const markedReference = (text, marks, name) => (marks !== undefined ? withRefere
 /** 这一段做请求的开头时，开头的提示占几个字（提示加上它和文字之间的空格；不加就是 0）：算进 maxChars（第 7a 步）。 */
 function openingChars(unit) {
   const cue = cueToAdd(unit.openingCue);
-  return cue === null ? 0 : count(withOpeningCue(unit.spoken, cue)) - count(unit.spoken.trimStart());
+  return cue === null ? 0 : count(withOpening(unit.spoken, unit.openingCue)) - count(unit.spoken.trimStart());
 }
 /**
  * 按句子切的时候（第 5 步），一个请求里留给文字的字数：maxChars 减去开头的提示和一个空格（没有上限或者不加提示是 max）。
@@ -1335,7 +1353,7 @@ const emptyEnhancers = (offers) => ({ offered: offers.map(summarizeOffer), used:
  * 停顿怎么写、放不下时切在哪是 lib/pause-in-request.mjs 的；这里只决定哪两段能并、两段之间是哪种边界：
  *   能并：同一章；同一个声音（[voice:] 写的名字，换了就切）；同一个包；同一个参考段；同一个语速；同一条开头的提示（第 7a 步：不一样的并了，后一段的那条就丢了）；包里没有配音脚本；
  *   换了一行时，这一行要加设定的提示（openingCue.added 为 true），前面这一串里（会和它并成一个请求的几段）已经有台本自己写的提示（开头的 added 为 false，或者文字里有提示，
- *   行首、句中都算）的不并：并进去，这一行就接着台本的说法，没有设定的那条了（第 7a 步）。前面从头到尾都是设定的提示的，照旧并；
+ *   行首、句中都算；开头这个包认的名字不算）的不并：并进去，这一行就接着台本的说法，没有设定的那条了（第 7a 步）。前面从头到尾都是设定的提示的，照旧并；
  *   linesApart（调用方给了 scene: false，明说分开）：行和行不并，一行一个请求；
  *   都还要做（不是规划时就记成 failed 的），都不是一场戏。项和项之间是不同的章，不并。并起来要放得进一个请求：两个上限（limits，见 fitsRequest 上面），发出去的字连这个请求开头要加的提示一起算。
  *   边界：同一行里是 sentence；换了一行是 paragraph；两行之间有整行只有停顿的一行（[pause …]，或者读成停顿的舞台说明）是 scene，停顿写在行尾、行首的照 paragraph 算。
@@ -1368,7 +1386,7 @@ function joinIntoRequests(units, { lines, limits, maxPauseMs, hasScripts, pickOf
   // scriptCues[k] 是第 0 到第 k-1 段里有几段是这样的：一串里有没有，O(1) 查
   const CUE_IN_TEXT = new RegExp(CUE_PATTERN, 'u');
   const scriptCues = [0];
-  units.forEach((unit, k) => scriptCues.push(scriptCues[k] + (unit.openingCue?.added === false || CUE_IN_TEXT.test(unit.spoken) ? 1 : 0)));
+  units.forEach((unit, k) => scriptCues.push(scriptCues[k] + (unit.openingCue?.added === false || CUE_IN_TEXT.test(unit.spoken.trimStart().slice(nameAtHead(unit.spoken, NAMES.get(unit.openingCue))?.length ?? 0)) ? 1 : 0)));
   // 第 at 段和后一段之间换了一行、后一段要加设定的提示（第 7a 步），前面这一串（第 head 段到第 at 段，会是同一个请求）里已经有台本自己写的提示：并进去，这一行就接着台本的说法、丢了设定的那一条，
   // 所以不并（这一行另起一个请求，带上设定的提示）。前面从头到尾都是设定的提示，照旧并
   const losesOpening = (at, head) => lastLine(units[at]).paragraph !== firstLine(units[at + 1]).paragraph && units[at + 1].openingCue?.added === true && scriptCues[at + 1] - scriptCues[head] > 0;
@@ -1765,7 +1783,7 @@ const FIRST_BRACKET = /^\s*(\[[^[\]\n]+\])/;
 
 /**
  * 第 7c 步：一行被切成几个请求（长停顿切开、放不下切开），后面的请求开头重复这一行开头的第一个方括号（台本规定每行以角色的名字开头，第一个方括号就是它；跨语言的行是名字对）。
- * 重复了的请求算开头写了提示，不再加设定的开头的提示（和这一行的第一个请求一样，第 7a 步）。这一行开头没有方括号的，什么都不补。
+ * 重复的是这个包认的名字或者名字对的，这个请求照旧加开头的提示（写在名字后面）；重复的是别的（旧台本开头的情绪），算开头写了提示，不再加（和这一行的第一个请求一样，第 7a 步）。这一行开头没有方括号的，什么都不补。
  */
 function repeatOpeningBracket(units, lines) {
   const openingOf = paragraphOpenings(lines);
@@ -1776,7 +1794,7 @@ function repeatOpeningBracket(units, lines) {
   const repeated = (holder, field, bracket) => {
     if (bracket === null || FIRST_BRACKET.exec(holder[field])?.[1] === bracket) return;
     holder[field] = `${bracket}${holder[field].trimStart()}`;
-    if (holder.openingCue?.added === true) holder.openingCue = { ...holder.openingCue, added: false };
+    if (holder.openingCue?.added === true && nameAtHead(bracket, NAMES.get(holder.openingCue)) === null) holder.openingCue = { ...holder.openingCue, added: false };
   };
   for (const unit of units) {
     if (isScene(unit)) for (const turn of unit.scene.turns) repeated(turn, 'text', bracketFor(turn.line, 1));
@@ -1784,16 +1802,87 @@ function repeatOpeningBracket(units, lines) {
   }
 }
 
+function languageAndFull(owner, entries, segmentId) {
+  const segmentLanguage = owner.manifest.reference.segments.find((segment) => segment.id === segmentId)?.language;
+  const language = segmentLanguage === undefined ? undefined : markLanguage(segmentLanguage);
+  return { language, full: language === undefined ? undefined : entries.find((entry) => entry.tag !== undefined && markLanguage(entry.tag) === language) };
+}
+
 /**
- * 第 7c 步：同语言的一行一个请求，台词开头是这个包的名字（[包名]，清单的 name）的，记下 unit.referenceName，发送时参考的文字开头也写它（第 7 步）。
- * 跨语言的（有 languageMarks，名字照名字对写）、一场戏的不记；开头是说戏、别的名字的不记。
+ * 第 7c 步：同语言的请求（一行或并成一个请求的几句）记 unit.referenceName，参考的文字开头也写它（第 7 步）；一场戏记 speaker.referenceName（第一轮认得的名字）。
+ * 跨语言的（languageMarks）不记。返回 { missing, notFull, inconsistent }：每个包一张，键是台本的一行（只记第一段）；inconsistent 再按用的名字分。
  */
-function applyReferenceNames(units, packs) {
+function applyReferenceNames(units, packs, perPack, lines) {
+  const missing = new Map();
+  const notFull = new Map();
+  const inconsistent = new Map();
+  const openingOf = paragraphOpenings(lines);
+  const once = (table, owner, unit, value) => {
+    if (!table.has(owner)) table.set(owner, new Map());
+    const key = lines[unit.line].paragraph;
+    if (!table.get(owner).has(key)) table.get(owner).set(key, { line: unit.line, ...value });
+  };
+  // 参考用的名字 name 和这一句开头的不一样：按包、按 name 记
+  const differing = (owner, name, unit, opening) => {
+    if (!inconsistent.has(owner)) inconsistent.set(owner, new Map());
+    if (!inconsistent.get(owner).has(name)) inconsistent.get(owner).set(name, new Map());
+    const key = lines[unit.line].paragraph;
+    if (!inconsistent.get(owner).get(name).has(key)) inconsistent.get(owner).get(name).set(key, { line: unit.line, opening });
+  };
   for (const unit of units) {
-    if (isScene(unit) || unit.languageMarks !== undefined || unit.status === 'failed') continue;
-    const { name } = ownerOfUnit(packs, unit).manifest;
-    if (unit.spoken.trimStart().startsWith(`[${name}]`)) unit.referenceName = name;
+    if (unit.status === 'failed') continue;
+    if (isScene(unit)) {
+      // 一场戏：每个同语言的说话人取第一轮开头认得的名字；后面各轮不一样的记 inconsistent
+      for (const speaker of unit.scene.speakers) {
+        if (speaker.languageMarks !== undefined) continue;
+        const owner = ownerOfPack(packs, speaker.pack, unit.index);
+        const { label, entries, recognized } = perPack.get(owner).names;
+        const { language, full } = languageAndFull(owner, entries, speaker.pick.segmentId);
+        let used;
+        unit.scene.turns.filter((turn) => turn.speaker === speaker.speaker).forEach((turn, k) => {
+          const opening = FIRST_BRACKET.exec(turn.text)?.[1];
+          if (opening === undefined) return;
+          const name = opening.slice(1, -1);
+          if (recognized.includes(name)) {
+            if (name === label && full !== undefined && full.name !== name) once(notFull, owner, turn, { opening, language, name: full.name });
+            if (k === 0) {
+              speaker.referenceName = name;
+              used = name;
+            } else if (used !== undefined && name !== used) differing(owner, used, turn, opening);
+          } else if (namePairOf(turn.text) === null) once(missing, owner, turn, { opening });
+        });
+      }
+      continue;
+    }
+    if (unit.languageMarks !== undefined) continue;
+    const owner = ownerOfUnit(packs, unit);
+    const { label, entries, recognized } = perPack.get(owner).names;
+    const { language, full } = languageAndFull(owner, entries, unit.pick.segmentId);
+    // 请求开头那一句：参考上的名字
+    const opening = FIRST_BRACKET.exec(unit.spoken)?.[1];
+    if (opening !== undefined) {
+      const name = opening.slice(1, -1);
+      if (recognized.includes(name)) {
+        unit.referenceName = name;
+        if (name === label && full !== undefined && full.name !== name) once(notFull, owner, unit, { opening, language, name: full.name });
+      } else if (namePairOf(unit.spoken) === null) once(missing, owner, unit, { opening });
+    }
+    // 并成一个请求的别的几句（第 5c 步）：每段看一次开头，参考的名字不变
+    const seen = new Set([lines[unit.line].paragraph]);
+    for (const member of unit.joined ?? []) {
+      if (seen.has(lines[member.line].paragraph)) continue;
+      seen.add(lines[member.line].paragraph);
+      const text = openingOf(member.line).text;
+      const memberOpening = FIRST_BRACKET.exec(text)?.[1];
+      if (memberOpening === undefined) continue;
+      const memberName = memberOpening.slice(1, -1);
+      if (recognized.includes(memberName)) {
+        if (unit.referenceName !== undefined && memberName !== unit.referenceName) differing(owner, unit.referenceName, member, memberOpening);
+        if (memberName === label && full !== undefined && full.name !== memberName) once(notFull, owner, member, { opening: memberOpening, language, name: full.name });
+      } else if (namePairOf(text) === null) once(missing, owner, member, { opening: memberOpening });
+    }
   }
+  return { missing, notFull, inconsistent };
 }
 
 /**
@@ -1879,7 +1968,7 @@ async function buildPlan(env, packInput, script, options) {
     // markerOf：写成音素标签的词 -> { alphabet, ph }（声明了 phoneme-markers 才有）：这些词的替换记成音素（lexicon.phonemes），不记成别名
     const markerOf = new Map(rules.filter((rule) => rule.phoneme !== undefined).map((rule) => [rule.term, rule.phoneme]));
     // singleUsed：这个包用上的只写一个字的词条（第 4 步的 lexicon_single_character），按第一次用上的先后
-    perPack.set(pack, { own, picks, wholeLines, moods, setup, rules, markerOf, unapplied, phonemes, usedTerms: new Set(), singleUsed: new Set(), rawGuidance, offers: pack.enhancers('voice-cloning'), scripts });
+    perPack.set(pack, { own, picks, wholeLines, moods, setup, rules, markerOf, unapplied, phonemes, usedTerms: new Set(), singleUsed: new Set(), rawGuidance, names: namesOfPack(pack.manifest, rawGuidance), offers: pack.enhancers('voice-cloning'), scripts });
   }
 
   const applied = new Map(); // 读音词表换了什么：同一个词、同一个读法的次数加起来（几个包的词表里一样的词，读法不同的分开记）
@@ -1910,7 +1999,7 @@ async function buildPlan(env, packInput, script, options) {
       const seen = applied.get(key);
       applied.set(key, seen === undefined ? { ...replacement } : { ...seen, count: seen.count + replacement.count });
     }
-    const { opening, skipped } = openingOf(line, mine.setup);
+    const { opening, skipped } = openingOf(line, mine.setup, mine.names.recognized);
     for (const item of skipped) skippedCues.push({ ...item, line: line.index, pack: owner, setup: mine.setup?.name });
     if (typeof mine.setup?.instructions === 'string' && mine.setup.instructions.trim() !== '') instructed.push({ line: line.index, pack: owner, setup: mine.setup.name, instructions: mine.setup.instructions.trim() });
     const parts = partsOf(replaced.text, partFits(settings, cueToAdd(opening)), hardFits(settings, cueToAdd(opening)));
@@ -2045,7 +2134,7 @@ async function buildPlan(env, packInput, script, options) {
   repeatOpeningBracket(units, lines);
   const wholeLinesOfAll = new Map(packs.flatMap((pack) => [...perPack.get(pack).wholeLines]));
   const unnamed = settings.languageMarks ? applyLanguageMarks(units, { packs, wholeLines: wholeLinesOfAll, lines }) : [];
-  if (settings.languageMarks) applyReferenceNames(units, packs);
+  if (settings.languageMarks) notes.push(...referenceNameNotes(applyReferenceNames(units, packs, perPack, lines), { packs, perPack }));
   // 要用到脚本运行时的包：几个包时只看这次真用到的（没有句子的包，不要它的运行时）
   const inUse = packsInUse(packs, units);
   // 用上的音素从 unapplied 去掉（只有用到的；没用到的仍报着，它是词表里有、这句话里没有）；用上的按词、读法汇总成 lexicon.phonemes（没有用上就没有这一项）
@@ -2194,10 +2283,10 @@ export async function dubScript(env, pack, script, options = {}) {
     if (stopped) return;
     const dialogue = requireCapability(env, 'text-to-dialogue');
     const call = {
-      turns: unit.scene.turns.map((turn, k) => ({ speaker: turn.speaker, text: markedLine(withOpeningCue(turn.text, cueToAdd(turn.openingCue)), k === unit.scene.turns.length - 1 ? unit.languageMarks : undefined) })), // 提示在每一轮的文字里，开头的提示写在这一轮的最前面；一场戏是一个请求，语言提示写在最后一轮的末尾（第 7c 步）
+      turns: unit.scene.turns.map((turn, k) => ({ speaker: turn.speaker, text: markedLine(withOpening(turn.text, turn.openingCue), k === unit.scene.turns.length - 1 ? unit.languageMarks : undefined) })), // 提示在每一轮的文字里，开头的提示写在这一轮的最前面；一场戏是一个请求，语言提示写在最后一轮的末尾（第 7c 步）
       speakers: unit.scene.speakers.map((speaker) => {
         const { segment, clip } = references.get(referenceKey(speaker.pack, speaker.pick.segmentId));
-        return { ref_audio: clip, ref_text: markedReference(refTextOf(segment), speaker.languageMarks) };
+        return { ref_audio: clip, ref_text: markedReference(refTextOf(segment), speaker.languageMarks, speaker.referenceName) };
       }),
       ...(unit.seed === undefined ? {} : { seed: unit.seed }), // 环境收 seed 才有（第 7 步）
       ...(unit.expressiveness === undefined ? {} : { expressiveness: unit.expressiveness }), // 取到了才有：调用方给的，或这一行用的设定、这个声音的全局值固定的（第 7 步）
@@ -2284,7 +2373,7 @@ export async function dubScript(env, pack, script, options = {}) {
     }
     const { segment, clip } = references.get(referenceKey(unit.pack, unit.pick.segmentId));
     // 开头的提示（设定、调用方给的，文件头「设定」）写在最前面；SSML 的拼音音素：发送前在文字上换成标签（只声明了 phoneme-in-text 才有；没有声明、声明的是 phoneme-markers（标签已经在 spoken 里）、或这一句没有用到的，文字原样，提示里面不换）
-    const sentText = applyPhonemes(markedLine(withOpeningCue(spoken, cueToAdd(unit.openingCue)), unit.languageMarks), phonemesOf.get(owner) ?? [], { ssml: false }).text;
+    const sentText = applyPhonemes(markedLine(withOpening(spoken, unit.openingCue), unit.languageMarks), phonemesOf.get(owner) ?? [], { ssml: false }).text;
     const call = { text: sentText, ref_audio: clip, ref_text: markedReference(refTextOf(segment), unit.languageMarks, unit.referenceName), ...(unit.seed === undefined ? {} : { seed: unit.seed }), ...(unit.expressiveness === undefined ? {} : { expressiveness: unit.expressiveness }) }; // seed：环境收 seed 才有；expressiveness：取到了才有，调用方给的或设定固定的（都在第 7 步）
     if (offers.length > 0) call.enhancers = offers;
 

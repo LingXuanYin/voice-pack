@@ -24,6 +24,9 @@
 //   台本里只有提示的一截接到下一句开头（lib/dub.mjs）也是这一条（cueThenText）。
 //   提示先写进文字，SSML 的拼音音素（只声明了 phoneme-in-text 的环境，<speak> 包着，lib/dub.mjs 第 4 步）后换，所以提示在 <speak> 里面的最前面，提示里面不换。音素标签（phoneme-markers）在第 4 步就写进了要说的话，提示里面同样不换。
 // 文字开头是不是已经有一条提示（opensWithCue）：去掉开头的空白，第一个是方括号的提示。lib/dub.mjs 用它认「台本在这一段开头自己写了提示」。
+// 名字不是提示：台本每行以角色名开头（models/scene3.md「Put the character name first」），开头的方括号是这个包认的名字或者名字对（nameAtHead）时，
+//   跳过它再看后面是不是提示；要加的提示写在名字后面（[小雨][sad]你来啦、[Mira Lindqvist][sad] Good morning.），名字仍在最前面。
+//   不认的名字（不是这个包的名字，也不是名字对）照旧当成台本写的提示：不加，第 7c 步另有说明叫写台本的人改成认得的名字。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { CUE_PATTERN } from '../tools/markup.mjs';
@@ -38,6 +41,8 @@ export const OPENING_ITEMS = Object.freeze(['emotion', 'style', 'energy']);
 const ONE_SHOT_STYLES = new Set(cues.oneShot.style);
 
 const OPENS_WITH_CUE = new RegExp(`^\\s*${CUE_PATTERN}`, 'u');
+/** 开头的第一个方括号（和 lib/dub.mjs 第 7c 步认名字时取的一样：一对方括号，里面没有方括号、不换行）。 */
+const HEAD_BRACKET = /^\s*(\[[^[\]\n]+\])/u;
 
 /** 一项给了没有：字符串，去掉两头空白以后不是空的。 */
 const given = (value) => typeof value === 'string' && value.trim() !== '';
@@ -81,8 +86,20 @@ export function openingCueOf(caller, setup) {
   return { cue: items.length === 0 ? null : `[${items.map((item) => phrase(item, parts[item].value)).join(', ')}]`, parts, skipped };
 }
 
-/** 文字开头（去掉空白）是不是一条方括号的提示。 */
-export const opensWithCue = (text) => OPENS_WITH_CUE.test(text);
+/**
+ * 文字开头（去掉空白）的角色名（文件头「名字不是提示」）：第一个方括号里是 names（这个包认的名字，lib/reference-names.mjs 的 recognized）里的一个，
+ * 或者是名字对（[参考语言里的名字|台词语言里的名字]，lib/cross-language.mjs）。返回这个方括号（带括号），不是名字是 null。
+ */
+export function nameAtHead(text, names = []) {
+  const head = HEAD_BRACKET.exec(text)?.[1];
+  return head !== undefined && (head.includes('|') || names.includes(head.slice(1, -1))) ? head : null;
+}
+
+/** 文字开头（去掉空白，再去掉开头的角色名，nameAtHead）是不是一条方括号的提示。 */
+export function opensWithCue(text, names = []) {
+  const name = nameAtHead(text, names);
+  return OPENS_WITH_CUE.test(name === null ? text : text.trimStart().slice(name.length));
+}
 
 /**
  * 一条提示后面接文字（规则见文件头「怎么写进文字」）：文字的第一个字是词和词之间写空格的字（SPACED_WORD），中间留一个空格；别的直接接。
@@ -94,9 +111,11 @@ export function cueThenText(cue, text) {
 }
 
 /**
- * 把提示写在一个请求的文字最前面（规则见文件头「怎么写进文字」）。cue 是 null 就原样返回。
+ * 把提示写在一个请求的文字最前面（规则见文件头「怎么写进文字」）；文字以角色名开头的（nameAtHead，names 是这个包认的名字），写在名字后面。cue 是 null 就原样返回。
  */
-export function withOpeningCue(text, cue) {
+export function withOpeningCue(text, cue, names = []) {
   if (cue === null || cue === undefined) return text;
-  return cueThenText(cue, text.trimStart());
+  const trimmed = text.trimStart();
+  const name = nameAtHead(trimmed, names);
+  return name === null ? cueThenText(cue, trimmed) : `${name}${cueThenText(cue, trimmed.slice(name.length).trimStart())}`;
 }
