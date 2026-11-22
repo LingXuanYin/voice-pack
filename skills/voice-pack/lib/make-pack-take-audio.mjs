@@ -15,6 +15,7 @@
 //            trim 的写法（{ startSec?, endSec? }，至少写一个，至少 0.1 秒）在 lib/make-pack-input.mjs 查，写错了在这之前就报。
 //   切表演段 写了 scriptText（台本原文）、没写起止秒的段，配出来比参考的上限（20 秒）长：不重配，在句末切开用，留够做默认段的长度（规则和数在 lib/cut-at-sentence-end.mjs）。
 //            切了的：条目的 trimmed 是实际切的 { startSec: 0, endSec }，另有 cutAtSentenceEnd: { fromSec, keptSec }（原来多长、留多长）；音频存成 16 位 WAV。
+//            文字是台本念出来的（textSource 'script'，lib/make-pack-input.mjs）的段，文字换成切留下的那几句（keptScript，不转写）；给了 text 的段文字照给的，切了也不动。
 //            不用切（不超过上限）、切不了（一个句末也没有停顿、只有一句），或者解不开的（不是 WAV、环境又没有 ffmpeg：解它只是为了量长度）：原样不动，
 //            音质检查的 duration_long 照旧提醒。写了起止秒的段不切（作者说了要哪几秒）。
 // 两件都做的（带视频轨的文件写了起止秒），先取音轨再切。做了的段存成 16 位 WAV，声道数和采样率照原来的。都不用做的段（包能放的格式、没写起止秒）一个字节都不动。
@@ -30,8 +31,8 @@
 // 不一口气占住线程：解码、切、编 WAV 都是同步的活，段多了浏览器里页面会卡住。每段开始之前、编 WAV 之前看一眼，连续做了 YIELD_AFTER_MS（50）毫秒就让事件循环转一圈
 //   （lib/event-loop.mjs，同筛片段）。结果和次序不变。
 //
-// 读条目的：audio、trim、scriptText、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）、
-// cutAtSentenceEnd（表演段在句末切开了：{ fromSec, keptSec }）；
+// 读条目的：audio、trim、scriptText、textSource、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）、
+// cutAtSentenceEnd（表演段在句末切开了：{ fromSec, keptSec }）、text（台本念出来的段切开了：留下的那几句，见上）；
 // 做不成的写 unused: { reason, details }（筛片段就跳过它；原因的说法在 lib/material-hints.mjs）：
 //   audio_unrecognized  不是包能放的格式，也取不出音轨。details: { mimeType, runtime } 是环境没有 ffmpeg（runtime 是 'ffmpeg'）；
 //                       { mimeType, message } 是 ffmpeg 也解不开（message 是它说的话，打过码，见 tools/audio-decode.mjs）：文件里没有音轨、坏了，或者不是音频的字节
@@ -46,7 +47,7 @@ import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { sha256Hex } from '../protocol/lib/hash.mjs';
 import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
-import { sentenceEndCut, MAX_SECONDS } from './cut-at-sentence-end.mjs';
+import { sentenceEndCut, keptScript, MAX_SECONDS } from './cut-at-sentence-end.mjs';
 import { YIELD_AFTER_MS, nowMs, turnEventLoop } from './event-loop.mjs';
 
 const toMs = (seconds) => Math.round(seconds * 1000) / 1000;
@@ -69,7 +70,7 @@ export function cutNotes(items) {
     const { fromSec, keptSec } = item.cutAtSentenceEnd;
     return {
       code: 'reference_cut_at_sentence_end',
-      message: `${item.id} was dubbed to ${fromSec} seconds, longer than the reference limit of ${MAX_SECONDS} seconds: it is cut at a line end at second ${keptSec} and used, keeping ${keptSec} seconds, not dubbed again; the lines after that are not in the pack, and the verbatim transcript in the pack is what is heard in the cut part`,
+      message: `${item.id} was dubbed to ${fromSec} seconds, longer than the reference limit of ${MAX_SECONDS} seconds: it is cut at a line end at second ${keptSec} and used, keeping ${keptSec} seconds, not dubbed again; the lines after that are not in the pack${item.textSource === 'script' ? ', and its text is the script up to the cut (not transcribed)' : ''}`,
       details: { id: item.id, fromSec, keptSec },
     };
   });
@@ -161,13 +162,15 @@ export async function takeAudio(env, items) {
       }
     }
     let cut;
+    let keptText; // 切留下的台本（前几句）：文字是台本的段才用
     if (actedCandidate) {
       const mono = new Float32Array(frames);
       for (const channel of samples) for (let i = 0; i < frames; i += 1) mono[i] += channel[i] / samples.length;
-      const endSec = sentenceEndCut(mono, sampleRate, item.scriptText);
-      if (endSec !== null) {
-        range = { from: 0, to: Math.min(frames, Math.round(endSec * sampleRate)) };
+      const found = sentenceEndCut(mono, sampleRate, item.scriptText);
+      if (found !== null) {
+        range = { from: 0, to: Math.min(frames, Math.round(found.endSec * sampleRate)) };
         cut = { fromSec: toMs(frames / sampleRate), keptSec: toMs(range.to / sampleRate) };
+        keptText = keptScript(item.scriptText, found.sentences);
       }
     }
     if (!foreign && item.trim === undefined && cut === undefined) {
@@ -177,6 +180,7 @@ export async function takeAudio(env, items) {
     if (await overlaps(item, bytes, range.from, item.trim === undefined ? Infinity : range.to)) return;
     if (item.trim !== undefined || cut !== undefined) item.trimmed = { startSec: toMs(range.from / sampleRate), endSec: toMs(range.to / sampleRate) };
     if (cut !== undefined) item.cutAtSentenceEnd = cut;
+    if (cut !== undefined && item.textSource === 'script') item.text = keptText; // 台本念出来的段：文字是切留下的那几句
     if (foreign) item.convertedFrom = item.audio.mimeType;
     await breathe();
     item.audio = { bytes: encodeWav({ sampleRate, samples: samples.map((channel) => channel.subarray(range.from, range.to)) }, { encoding: 'pcm16' }), mimeType: 'audio/wav' };

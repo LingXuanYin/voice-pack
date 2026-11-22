@@ -25,8 +25,9 @@
 //                       不是包能放的格式的（带视频轨的 mp4、mov、mkv，别的格式），做包用 ffmpeg 取第一路音轨、存成 WAV（lib/make-pack-take-audio.mjs）；外部资源（externalUrl）不取，用不上
 //         text?,        这段录音里说的原话（逐字文本）。可以不给、给空串或 null：就是「没有文本」，环境有 automatic-speech-recognition 时转写，
 //                       没有就不能用（report 里写 no_text）。没有文本的片段当不了参考，也当不了留出录音
-//         scriptText?,  照台本配出来的录音：配它用的台本（带提示、名字都行，去掉了再用）。只对没给 text、转写出来的中文段起作用：转写、挑默认段、标提示标注都照听到的做，
-//                       标完以后逐字稿里和台本读音一样的几截写成台本的写法（lib/make-pack-transcribe.mjs 的 writeFromScripts，规则在 lib/script-writing.mjs）。不是有字的字符串报 make_pack_input_invalid
+//         scriptText?,  照台本配出来的录音：配它用的台本（带提示、名字、停顿、标签、舞台说明都行；念出来的字是去掉它们以后的字，protocol/lib/spoken-words.mjs 的 spokenWords）。
+//                       没给 text、也没给 annotatedText、也没写 trim、台本里没有音素标记，台本念出来有字的，段的文字就是台本念出来的字（textSource 'script'），不转写：转写服务出错也照样做成参考。
+//                       超过 20 秒的，在句末切开，文字是切留下的那几句（lib/make-pack-take-audio.mjs、lib/cut-at-sentence-end.mjs）。给了 text 的，文字照给的。不是有字的字符串报 make_pack_input_invalid
 //         annotatedText?这段的提示标注：逐字文本在说法变化的地方加上方括号提示的整句（提示以外的字和 text 一样，格式见 protocol/FORMAT.md 4.4）。
 //                       给了就照给的（去掉两头空白），这段不再让 audio-text-to-text 标；只有空白、除了提示没有别的字、超过格式的上限，报 make_pack_input_invalid（field 是 segments[2].annotatedText）。
 //                       提示以外的字花钱之前对一遍（规则只写在这里，程序在 lib/make-pack-input.mjs）：去掉方括号提示（tools/markup.mjs 的 CUE_PATTERN），空白不算，
@@ -215,7 +216,7 @@
 //   筛片段（不花钱）   lib/make-pack-screen.mjs      认格式、查重、量音质
 //   句子合段         lib/make-pack-sentences.mjs   长录音的句子先并成段（不花钱，在筛片段之后、规划和转写之前；合好的段再筛一遍，一段转写一次；没有句子就不做）
 //   试装、规划（不花钱） lib/make-pack-assemble.mjs、lib/make-pack-plan.mjs   试装一遍；算各项能力最多调几次（plan）；参考集的段数和包的总大小撞上格式上限就在这里报（assertFitsFormat）；onPlan 和 dryRun 在这里
-//   转写             lib/make-pack-transcribe.mjs  没有文本的片段转写成文本
+//   转写             lib/make-pack-transcribe.mjs  没有文本的片段转写成文本（台本念出来的段有文本，输入时就定了，不转写）
 //   语言和标签        lib/make-pack-tags.mjs        定语言（转写以后）；设定的 referenceTag 花钱之前查、付费以后再查；标完提示标注以后定音色基底标签（撞名加序号）
 //   挑参考           lib/make-pack-pick.mjs        参考集、留出录音、默认段（挑的规则在 lib/pack-material.mjs；请能听音频的模型挑默认段在 lib/default-pick.mjs）
 //   发新版本          lib/pack-version.mjs          读上一版、版本号、和上一版比、变更说明
@@ -234,7 +235,7 @@ import { readPreviousVersion, nextVersion, effectiveOf, versionNotes, assertSome
 import { assertInput, readInput, readOptions, materialOptionsOf, checkSetupOpeningCues } from './make-pack-input.mjs';
 import { takeAudio, cutNotes } from './make-pack-take-audio.mjs';
 import { screen } from './make-pack-screen.mjs';
-import { transcribe, settleText, writeFromScripts } from './make-pack-transcribe.mjs';
+import { transcribe, settleText } from './make-pack-transcribe.mjs';
 import { resolveLanguages, assertReferenceTagsKnown, assertReferenceTagsPlaced, referencedTagsOf, assignTags, carriedTags } from './make-pack-tags.mjs';
 import { mergeSentences } from './make-pack-sentences.mjs';
 import { assertDefaultsUsable, assertSomeUsable, pickMaterial } from './make-pack-pick.mjs';
@@ -327,8 +328,6 @@ export async function makePack(env, input, options = {}) {
   // 标提示标注（调所需能力）：参考集定了才标，每段参考听一次，留出录音不标；放在「什么都没变就不发」之后，不发的版本不花这份钱。
   // 素材没给标签的段，同一次里顺带要一个短名字（用骨架的语言），不另调
   steps.annotation = await annotateReferences(env, items, chosen.references, { concurrency, maxErrorRate, wait: settings.retryWait, nameLanguage: settings.textLanguage, loudness: settings.loudness });
-  // 素材给了台本原文（scriptText）的段：转写、挑默认段、标提示标注都照听到的做完了，这里才把读音一样的几截写成台本的写法（逐字稿和提示标注一起）
-  writeFromScripts(items);
   // 给每段参考定音色基底标签：素材给的、模型给的名字、段名（撞名加序号，只在参考集里）
   assignTags(items, chosen.references);
 

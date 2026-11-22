@@ -9,16 +9,14 @@
 //                                          还缺什么素材（hints）也在这里算：lib/material-hints.mjs 的 suggestMaterial，纯数据。cardLine 是试听句的结果（lib/make-pack-card-line.mjs 的文件头），
 //                                          原样进 report.cardLine，写进包里的另带 audio（清单里的路径）
 //
-// 报告里每一段（reportSegment）：{ id, role, previous?, reason?, details?, hasText, textSource?, writtenFromScript?, scriptTextUnused?, language?, languageSource?, tag?, tagSource?, renamedFrom?, annotation?, quality?, loudness?, source?, convertedFrom?, trim?, cutAtSentenceEnd? }，
+// 报告里每一段（reportSegment）：{ id, role, previous?, reason?, details?, hasText, textSource?, language?, languageSource?, tag?, tagSource?, renamedFrom?, annotation?, quality?, loudness?, source?, convertedFrom?, trim?, cutAtSentenceEnd? }，
 // （convertedFrom 是音频不是包能放的格式、做包取了音轨的段原来的 MIME 类型；trim 是素材写了起止秒、做包实际切的 { startSec, endSec }，条目上的 trimmed；cutAtSentenceEnd 是超长的表演段在句末切开了，{ fromSec, keptSec }；都是 lib/make-pack-take-audio.mjs 写的）
 // 字段都取自条目（lib/make-pack-input.mjs 说条目是什么，各步的文件头说它们各写了哪些字段）；role 是 reference、holdout、unused、candidate（dryRun：还没挑）或
 // dropped（发新版本去掉的），dryRun 里上一版带来的段，role 就是它在上一版里的角色。annotation 是这一段标提示标注的结果（只有这一版新补的参考段有，写法见 lib/make-pack-annotation.mjs）。
 // 语言和音色基底标签（规则和来源的取值在 lib/make-pack-tags.mjs 的文件头）：参考段写 { language, languageSource, tag, tagSource, renamedFrom? }（加了序号的 renamedFrom 是原名），
 // 留出录音写 { language, languageSource }，没用上的段、dryRun 里还没挑的段都不写。字段名和清单同名，用这个库的调用方照这几个名字读，改名要当成不兼容的改动。
 //
-// writtenFromScript 是素材给了台本原文、逐字稿里照台本写的几截 [{ heard, written }]，scriptTextUnused 是给了台本原文、一截都没照它写（lib/make-pack-transcribe.mjs 的 writeFromScripts）。
-//
-// 读条目的：id、previous、unused、text、textSource、writtenFromScript、scriptTextUnused、language、tag、annotation、quality、loudness、source、convertedFrom、trimmed、cutAtSentenceEnd；不写条目。
+// 读条目的：id、previous、unused、text、textSource、language、tag、annotation、quality、loudness、source、convertedFrom、trimmed、cutAtSentenceEnd；不写条目。
 //
 // 抛出的错误：没有。
 //
@@ -43,8 +41,6 @@ function reportSegment(item, role) {
     ...(item.unused === undefined ? {} : { reason: item.unused.reason, ...(item.unused.details === undefined ? {} : { details: item.unused.details }) }),
     hasText: hasWords(item.text),
     ...(item.textSource === undefined ? {} : { textSource: item.textSource }),
-    ...(item.writtenFromScript === undefined ? {} : { writtenFromScript: item.writtenFromScript }),
-    ...(item.scriptTextUnused === true ? { scriptTextUnused: true } : {}),
     ...tagsOf(item, role),
     ...(item.annotation === undefined ? {} : { annotation: item.annotation }),
     ...(item.quality === undefined ? {} : { quality: item.quality }),

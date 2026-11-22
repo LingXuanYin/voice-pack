@@ -72,7 +72,7 @@ export async function annotateReferences(env, items, referenceIds, { concurrency
     // 素材没给标签的段，同一次里顺带要一个名字（不另调）
     const naming = item.givenTag === undefined ? { nameLanguage } : {};
     // 量这段（和听同时，lib/segment-annotation.mjs）：语言知道才带（素材给的，或者转写报的），同 lib/make-pack-transcribe.mjs；
-    const language = item.givenLanguage ?? (isLanguageTag(item.transcribedLanguage) ? item.transcribedLanguage : undefined);
+    const language = item.givenLanguage ?? (isLanguageTag(item.transcribedLanguage) ? item.transcribedLanguage : item.textSource === 'script' && isLanguageTag(item.language?.value) ? item.language.value : undefined);
     const measure = () => measurePoints(env, { audio: item.audio, text: item.text, language }, { concurrency: chunkConcurrency, wait, loudness });
     const result = await annotateSegment(env, { audio: item.audio, text: item.text }, { maxErrorRate, attempts: MAX_ATTEMPTS, wait, onRetry: () => { step.retried += 1; }, measure, ...naming });
     const { model, annotatedText, name, chunks, ...rest } = result;

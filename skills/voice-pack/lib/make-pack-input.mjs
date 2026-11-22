@@ -25,7 +25,11 @@
 //                                    carried 为真是沿用上一版的：超了不报错，返回要记的 notes。makePack 和 lib/make-pack-precheck.mjs 的 precheckInput 都在读完输入、定了这一版的设定以后调它
 //
 // 条目（item）：做包的每一步读、写的是同一组对象，每个步骤模块的文件头写自己读哪些字段、写哪些字段。这里整理出来的字段：
-//   index（在输入里的次序，上一版带来的排在前面）、id、audio、text、annotatedText（素材给的提示标注，没给就没有这个字段）、
+//   index（在输入里的次序，上一版带来的排在前面）、id、audio、
+//   text（逐字文本。没给 text、没给 annotatedText、没写 trim、台本里没有音素标记，台本念出来有字的（scriptText，scriptIsText），text 就是台本念出来的字，textSource 是 'script'，不转写：台本念出来的字
+//     只去掉提示、名字、停顿、标签、舞台说明（protocol/lib/spoken-words.mjs 的 spokenWords），标点照台本；切表演段（lib/make-pack-take-audio.mjs）时它换成切留下的那几句）、
+//   scriptText（素材给的台本，念出来的字，去掉了提示、名字、舞台说明、标签；没给就没有这个字段）、
+//   annotatedText（素材给的提示标注，没给就没有这个字段）、
 //   givenLanguage（素材给的语言：段自己的 language，没有就是输入的 language；都没给是 undefined）、
 //   givenTag（素材给的音色基底标签，去掉了两头空白；没给是 undefined。作者给的和库里给的不分，都是素材给的）、source、externalUrl、
 //   synthetic（布尔值：true 是合成的，克隆出来的，不是这个人录的；没标是 false）；
@@ -74,6 +78,8 @@ import { isLanguageTag, MAX_LANGUAGE_TAG } from './language-tag.mjs';
 import { isBlankText, languageKey } from '../protocol/lib/manifest.mjs';
 import { ANNOTATED_TEXT_MAX, REFERENCE_TAG_MAX } from './manifest-limits.mjs';
 import { CUE_PATTERN } from '../tools/markup.mjs';
+import { spokenWords } from '../protocol/lib/spoken-words.mjs';
+import { hasWords } from './make-pack-transcribe.mjs';
 import { MIN_MAX_CHARS } from './synthesis-limits.mjs';
 import { spaceAfterCue } from '../protocol/lib/word-spacing.mjs';
 import { cueWords, MAX_OPENING_CUE_WORDS } from './cue-length.mjs';
@@ -294,6 +300,18 @@ function readText(segment, annotated, where) {
   return text;
 }
 
+/**
+ * 段的文字是台本念出来的字（不转写）：没给 text（不给、null、空串），没给 annotatedText，没写 trim、台本里没有音素标记，台本念出来的字里有词（spokenWords 去掉提示、名字、舞台说明、标签以后；
+ * 只有提示、念出来没有字的台本不算）。做包（readSegments）和命令行的预检（cli/commands/make-pack.mjs）用这一条：文字是台本的段，不算没有文本。
+ * @param {object} segment 素材里的一段（还没整理的）
+ * @returns {boolean}
+ */
+export function scriptIsText(segment) {
+  const hasText = (typeof segment.text === 'string' && segment.text.trim() !== '') || segment.annotatedText !== undefined;
+  // 写了 trim 的是录音的一段，台本是整段，对不上：照旧转写（切出来的那几秒）。台本里有音素标记的，标记里是发音（拼音之类）不是字：照旧转写
+  return !hasText && segment.trim === undefined && typeof segment.scriptText === 'string' && !/<\|phoneme_(?:start|end)\|>/.test(segment.scriptText) && hasWords(spokenWords(segment.scriptText));
+}
+
 function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
   if (!Array.isArray(segments)) throw invalid('segments', 'must be an array: each item is one recording, already cut');
   if (segments.length === 0 && !allowEmpty) throw invalid('segments', 'at least one segment is required');
@@ -324,13 +342,16 @@ function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0
     }
     const annotated = readAnnotatedText(segment.annotatedText, `${where}.annotatedText`);
     if (segment.scriptText !== undefined && (typeof segment.scriptText !== 'string' || isBlankText(segment.scriptText))) throw invalid(`${where}.scriptText`, 'must be a non-blank string (the original script text used to dub this segment; cues are allowed)');
+    const script = segment.scriptText === undefined ? undefined : spokenWords(segment.scriptText); // 台本念出来的字（去掉提示、名字、舞台说明、标签）
+    const scripted = scriptIsText(segment); // 没给文字的段，台本念出来有字：文字就是台本，不转写（文件头「条目」的 text）
     return {
       index: offset + index,
       id,
       audio: segment.audio,
-      text: readText(segment, annotated, where),
+      text: scripted ? script : readText(segment, annotated, where),
+      ...(scripted ? { textSource: 'script' } : {}),
       ...annotated,
-      ...(segment.scriptText === undefined ? {} : { scriptText: withoutCues(segment.scriptText) }),
+      ...(script === undefined ? {} : { scriptText: script }),
       givenLanguage: readLanguage(segment.language, `${where}.language`) ?? defaultLanguage, // 段自己的盖过输入的
       givenTag: readTag(segment.tag, `${where}.tag`),
       source: readSource(segment.source, `${where}.source`),

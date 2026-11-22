@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 转写（流程层）：没有文本的片段，环境有 automatic-speech-recognition 就转写补上文本（语言也记下）；没有就跳过，这些片段不能用。
+// 台本念出来的段（textSource 'script'，文字是台本，lib/make-pack-input.mjs 定的）有文本，不转写。
 //   @capability automatic-speech-recognition  签名见 vocab/capability-signatures.md
 //
 //   hasWords(text)                          这段文字里有没有一个词（lib/fidelity.mjs 的 tokenizeTranscript：中文按字、英文按词）；一个词都没有，就是「没有文本」
@@ -10,12 +11,11 @@
 //                                             { status: 'done', capability, transcribed, failed, blocked, retried, models }：retried 是这一步为暂时出错多调了几次（照暂时出错报的被拦下也算在内；0 就是一次也没重试），
 //                                             failed 是记成 transcription_failed 的段数，blocked 是记成 transcription_blocked（被服务商拦下）、丢掉的段数（见下）
 //   settleText(items)                       转写以后，给每个还能用的片段定文本是哪来的（textSource），还是没有文本的淘汰（no_text）
-//   writeFromScripts(items)                 标完提示标注以后：素材给了台本原文（scriptText）、逐字稿是转写来的中文段，读音一样的几截写成台本的写法（lib/script-writing.mjs），见函数的说明
 //
 // 暂时出错的段在这一步里自己再试：每段最多转写 3 次，等 5 秒、15 秒（规则的正本是 lib/call-attempts.mjs，挑默认段、标提示标注、命令行和调用方用的是同一份）；
 // 最多多调几次在规划里（plan.extraCalls，lib/make-pack-plan.mjs），花钱之前已经说清楚。`wait` 是等待函数（makePack 的 options.retryWait），不给就真的等。
 //
-// 读条目的：unused、previous、text、givenLanguage（素材给的语言：知道就交给转写）；写条目的：text、textSource（'caller' 调用方给的、'transcription' 转写来的、'previous' 上一版带来的）、
+// 读条目的：unused、previous、text、givenLanguage（素材给的语言：知道就交给转写）；写条目的：text、textSource（'caller' 调用方给的、'script' 台本念出来的（输入时就定了）、'transcription' 转写来的、'previous' 上一版带来的）、
 // transcribedLanguage（转写报的语言，整理成清单的写法）。上一版带过来的段不转写。淘汰的写 unused: { reason, details }：
 //   transcription_failed  试满了次数，转写还是暂时出错（details.transient），最后一次的错不是被拦下（见下一条），这一段用不上：稍后重做一次也许就成。
 //                         details: { error, attempts }（error 是最后一次的错误摘要：code、message、details；attempts 是试了几次）
@@ -36,8 +36,7 @@
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
 import { hasCapability, requireCapability } from '../protocol/lib/env.mjs';
 import { isVoicePackError } from '../protocol/lib/errors.mjs';
-import { normalizeLanguage, primaryLanguage } from './line-hints.mjs';
-import { writtenFromScript, annotationWrittenAs } from './script-writing.mjs';
+import { normalizeLanguage } from './line-hints.mjs';
 import { tokenizeTranscript } from './fidelity.mjs';
 import { summarizeError, badResult, pool, isProviderBlocked } from './capability-calls.mjs';
 import { callWithRetries } from './call-attempts.mjs';
@@ -92,26 +91,5 @@ export function settleText(items) {
     if (item.previous !== undefined) item.textSource = 'previous';
     else if (hasWords(item.text)) item.textSource ??= 'caller';
     else item.unused = { reason: 'no_text', details: item.textSource === 'transcription' ? { transcribed: true } : {} };
-  }
-}
-
-/**
- * 素材给了台本原文（scriptText）、逐字稿是这次转写出来的段：读音一样的几截写成台本的写法（规则在 lib/script-writing.mjs），提示标注照同样的字换。
- * 只对中文的段（主语言 zh）：别的语言没有读音依据，照听到的留着。调用方给了逐字稿的段、上一版带来的段不动。
- * 写条目的：text、annotatedText（换了字的）、writtenFromScript（换了的几截 [{ heard, written }]，报告里有）；给了台本、一截都没换的标 scriptTextUnused。
- * 提示标注去掉方括号和逐字稿对不上（不该有），这一段一个字都不换，同样标 scriptTextUnused。
- */
-export function writeFromScripts(items) {
-  for (const item of items) {
-    if (item.unused !== undefined || item.scriptText === undefined || item.textSource !== 'transcription') continue;
-    const { text, fromScript } = primaryLanguage(item.language?.value ?? '') === 'zh' ? writtenFromScript(item.scriptText, item.text) : { text: item.text, fromScript: [] };
-    const annotated = item.annotatedText === undefined || fromScript.length === 0 ? item.annotatedText : annotationWrittenAs(item.annotatedText, item.text, text);
-    if (fromScript.length === 0 || (item.annotatedText !== undefined && annotated === undefined)) {
-      item.scriptTextUnused = true;
-      continue;
-    }
-    item.text = text;
-    if (annotated !== undefined) item.annotatedText = annotated;
-    item.writtenFromScript = fromScript;
   }
 }

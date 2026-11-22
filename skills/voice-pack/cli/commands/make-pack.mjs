@@ -171,6 +171,9 @@ import { makePack } from '../../lib/make-pack.mjs';
 import { carriesDesignSource } from '../../lib/pack-version.mjs';
 import { precheckInput } from '../../lib/make-pack-precheck.mjs';
 import { hasWords } from '../../lib/make-pack-transcribe.mjs';
+import { scriptIsText } from '../../lib/make-pack-input.mjs';
+import { languageBeforeSpending } from '../../lib/make-pack-tags.mjs';
+import { spokenWords } from '../../protocol/lib/spoken-words.mjs';
 import { CARD_LINE_REASON_WORDS } from '../../lib/material-hints.mjs';
 import { languagePair } from '../../lib/cross-language.mjs';
 import { MAX_ATTEMPTS, RETRY_DELAYS_MS } from '../../lib/call-attempts.mjs';
@@ -464,14 +467,18 @@ const callNote = (capability, plan, cardLine) => (capability === 'voice-cloning'
  * 没给 --language，又有要转写的片段：转写不报语言时（automatic-speech-recognition 返回里的 language 可以没有），拉丁字母的文字（英文、法文……）认不出是哪种语言，
  * 这些段付完转写费才发现用不上（language_unknown）；中文、日文这类非拉丁字母的文字从文字本身就认得出，不受影响。只是提醒，不挡运行。
  * 规则的正本是 lib/make-pack-tags.mjs 的文件头「语言」和 references/make-pack.md 的「Segment tags」；没有要提醒的返回 null。
- * 数的是「没有文本、也没有自己的 language」的片段，和规划里要转写的段数取小的那个（环境没有转写时，规划里要转写的段数是 0，所以不会提醒）。
+ * 数的是「没有文本、也没有自己的 language」的片段（台本念出来的段不转写，不数），和规划里要转写的段数取小的那个（环境没有转写时，规划里要转写的段数是 0，所以不会提醒）。
+ * 台本念出来的段（scriptIsText）另数：不转写，语言只能从台本的字认，拉丁字母的认不出，一定用不上（language_unknown），也提醒。
  */
 function languageNote({ plan, segments, language }) {
   if (language !== undefined) return null;
-  const unlabelled = segments.filter((segment) => (segment.text === undefined || segment.text === '') && !segment.language).length;
+  const unlabelled = segments.filter((segment) => (segment.text === undefined || segment.text === '') && !segment.language && !scriptIsText(segment)).length;
   const count = Math.min(plan.calls['automatic-speech-recognition'], unlabelled);
-  if (count === 0) return null;
-  return `--language was not given, and ${count} ${count === 1 ? 'segment has' : 'segments have'} to be transcribed before the language is known: when the transcription does not report a language, text in Latin script (English, French, ...) cannot be told apart by language, so after the transcription is paid for all of these segments would be unusable because of language_unknown (text in non-Latin scripts such as Chinese and Japanese is not affected). Add --language <language tag>, for example en (references/make-pack.md「Segment tags」)`;
+  const scripted = segments.filter((segment) => !segment.language && scriptIsText(segment) && languageBeforeSpending({ text: spokenWords(segment.scriptText) }) === null).length;
+  const notes = [];
+  if (count > 0) notes.push(`--language was not given, and ${count} ${count === 1 ? 'segment has' : 'segments have'} to be transcribed before the language is known: when the transcription does not report a language, text in Latin script (English, French, ...) cannot be told apart by language, so after the transcription is paid for all of these segments would be unusable because of language_unknown (text in non-Latin scripts such as Chinese and Japanese is not affected). Add --language <language tag>, for example en (references/make-pack.md「Segment tags」)`);
+  if (scripted > 0) notes.push(`--language was not given, and ${scripted} ${scripted === 1 ? 'segment dubbed from its script has' : 'segments dubbed from their scripts have'} words whose language cannot be told (Latin script): such a segment is not transcribed, so it would be unusable because of language_unknown. Add --language <language tag>, for example en, or the segment's own language (references/make-pack.md「Segment tags」)`);
+  return notes.length === 0 ? null : notes.join('\n');
 }
 
 /**
@@ -933,7 +940,7 @@ export async function run(args, ctx) {
   // 长录音和试听要先切段：环境没有转写时，切出来的段都没有逐字文本（切段不转写，--recording、--audition 也不收逐字稿），一段都用不上；素材里也没有一段带着逐字文本、又不是发新版本：
   // 做不出包已经定了。这时不调花钱的分离和 VAD，和 --dry-run 一样按能量切（不调能力），makePack 在规划之后、花钱之前报 make_pack_no_material，details 和 --dry-run 的一样
   const nothingUsable = recordings.length > 0 && options.previous === undefined && !hasCapability(env, 'automatic-speech-recognition')
-    && material.segments.every((segment) => (typeof segment.text !== 'string' || !hasWords(segment.text)) && typeof segment.annotatedText !== 'string'); // 只给了提示标注的段，逐字文本就是它去掉提示的那句
+    && material.segments.every((segment) => (typeof segment.text !== 'string' || !hasWords(segment.text)) && typeof segment.annotatedText !== 'string' && !scriptIsText(segment)); // 只给了提示标注的段，逐字文本就是它去掉提示的那句；给了台本念出来有字的段，文字就是台本
   // 要调花钱的分离、VAD 切段：只看输入就查得出的错（--retag、--setups 的 referenceTag、--card-line、版本号……）先查，查出来一次能力都不调（lib/make-pack-precheck.mjs）。
   // 要切出来的段也交代给它：段名的前缀，和有没有长录音要切成句子（句子不标 synthetic、没有 annotatedText，和素材里的句子一起查）
   if (recordings.length > 0 && !dryRun && !nothingUsable) {
