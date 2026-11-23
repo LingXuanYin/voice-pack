@@ -26,8 +26,8 @@
 //         text?,        这段录音里说的原话（逐字文本）。可以不给、给空串或 null：就是「没有文本」，环境有 automatic-speech-recognition 时转写，
 //                       没有就不能用（report 里写 no_text）。没有文本的片段当不了参考，也当不了留出录音
 //         scriptText?,  照台本配出来的录音：配它用的台本（带提示、名字、停顿、标签、舞台说明都行；念出来的字是去掉它们以后的字，protocol/lib/spoken-words.mjs 的 spokenWords）。
-//                       没给 text、也没给 annotatedText、也没写 trim、台本里没有音素标记，台本念出来有字的，段的文字就是台本念出来的字（textSource 'script'），不转写：转写服务出错也照样做成参考。
-//                       超过 20 秒的，在句末切开，文字是切留下的那几句（lib/make-pack-take-audio.mjs、lib/cut-at-sentence-end.mjs）。给了 text 的，文字照给的。不是有字的字符串报 make_pack_input_invalid
+//                       没给 text、也没给 annotatedText、也没写 trim，台本念出来有字的（带音素标记的也是：标记去掉，里面的音素留着），段的文字就是台本念出来的字（textSource 'script'），不转写：转写服务出错也照样做成参考。
+//                       超过 20 秒的，在句末切开，文字是切留下的那几句（lib/make-pack-take-audio.mjs、lib/cut-at-sentence-end.mjs）。给了 text 的，文字照给的。标注由写台本的一方写（没给 annotatedText 的）：台本的提示放在它后面的字前面，停顿写成 [pause] 留在原处，名字、声音、语言标签、舞台说明去掉（lib/script-annotation.mjs），不听；台本没有提示的，标注就是台本的字。超过 20 秒切开的，标注只留切留下的那几句的提示；留下的几句没有提示的，标注就是留下的字。不是有字的字符串报 make_pack_input_invalid
 //         annotatedText?这段的提示标注：逐字文本在说法变化的地方加上方括号提示的整句（提示以外的字和 text 一样，格式见 protocol/FORMAT.md 4.4）。
 //                       给了就照给的（去掉两头空白），这段不再让 audio-text-to-text 标；只有空白、除了提示没有别的字、超过格式的上限，报 make_pack_input_invalid（field 是 segments[2].annotatedText）。
 //                       提示以外的字花钱之前对一遍（规则只写在这里，程序在 lib/make-pack-input.mjs）：去掉方括号提示（tools/markup.mjs 的 CUE_PATTERN），空白不算，
@@ -220,7 +220,7 @@
 //   语言和标签        lib/make-pack-tags.mjs        定语言（转写以后）；设定的 referenceTag 花钱之前查、付费以后再查；标完提示标注以后定音色基底标签（撞名加序号）
 //   挑参考           lib/make-pack-pick.mjs        参考集、留出录音、默认段（挑的规则在 lib/pack-material.mjs；请能听音频的模型挑默认段在 lib/default-pick.mjs）
 //   发新版本          lib/pack-version.mjs          读上一版、版本号、和上一版比、变更说明
-//   标提示标注        lib/make-pack-annotation.mjs  给这一版新补的每段参考标提示标注（素材给了的照给的；一段的听和拼在 lib/segment-annotation.mjs，量停顿在 lib/point-measure.mjs），素材没给标签的段同一次里要一个名字。
+//   标提示标注        lib/make-pack-annotation.mjs  给这一版新补的每段参考标提示标注（素材给了的照给的；录音段的听和拼在 lib/segment-annotation.mjs，量停顿在 lib/point-measure.mjs；台本段和 synthetic 的段不听不量），素材没给标签的段同一次里要一个名字。
 //                                                  在「什么都没变就不发」之后，不发的版本不花这份钱
 //   调响度           lib/make-pack-loudness.mjs    写进包里的参考和留出录音统一到同一个响度（「调响度」的规则在它的文件头）
 //   装包             lib/make-pack-assemble.mjs    把素材装成角色部分

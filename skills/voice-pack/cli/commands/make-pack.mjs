@@ -19,7 +19,7 @@
 //   素材.json：{ "segments": [ { "id"?, "audio": "audio/a.wav", "text"?, "scriptText"?, "annotatedText"?, "language"?, "tag"?, "source"?, "externalUrl"?, "synthetic"?, "sentence"?, "trim"? } ] }（也可以直接是这个数组）；audio 是路径，相对这个 JSON 所在的目录。
 //   language 是这段的语言，tag 是这段的音色基底标签（「平常」「愤怒」「少年」……，只用来在几段参考之间切换），和清单同名。
 //     不给的，环境有 audio-text-to-text 时，标提示标注那一次顺带让模型起一个短名字（用 --text-language 的语言，不另调）；没有这项能力、这段没标上提示标注、
-//     名字是空白的、素材给了 annotatedText（这段不调模型）的，用段名。同一种语言里撞名的加序号。上一版参考的标签用 --retag 改（见下）。
+//     名字是空白的、素材给了 annotatedText、或者提示标注是从台本来的（这段不调模型）的，用段名。同一种语言里撞名的加序号。上一版参考的标签用 --retag 改（见下）。
 //     旧写法的 labels 不收：报 make_pack_input_invalid（field 是那一段的 labels），改写成 language、tag。
 //   annotatedText 是这段的提示标注（逐字稿加上方括号提示的整句，提示以外的字和 text 一样）：给了就照给的，这段不再让模型标。
 //     提示以外的字和 text 对不上，花钱之前报 make_pack_input_invalid；只给它不给 text，text 就是去掉提示的那句，这段不转写（规则在 lib/make-pack.mjs 文件头「输入」）。
@@ -590,7 +590,11 @@ const NOT_ANNOTATED_WHY = {
 /** 标提示标注那一步，给人看（steps.annotation，写法见 lib/make-pack-annotation.mjs）：标上了几段、丢了几条提示、哪几段没标上和为什么。 */
 function describeAnnotation(step) {
   if (step === undefined) return [];
-  const given = step.given > 0 ? `${step.given} ${step.given === 1 ? 'segment uses' : 'segments use'} the cue annotation given in the material` : '';
+  const fromScript = step.fromScript ?? 0; // 台本带的提示标注（不调模型），也算在 given 里
+  const materialGiven = step.given - fromScript;
+  const materialText = materialGiven > 0 ? `${materialGiven} ${materialGiven === 1 ? 'segment uses' : 'segments use'} the cue annotation given in the material` : '';
+  const scriptText = fromScript > 0 ? `${fromScript} ${fromScript === 1 ? 'segment has its' : 'segments have their'} cue annotation taken from the script` : '';
+  const given = [materialText, scriptText].filter((part) => part !== '').join('; ');
   if (step.status === 'not_needed') return given === '' ? [] : [`Cue annotation: ${given}, no model called`];
   const missed = step.notAnnotated.length > 0 ? `${step.notAnnotated.length} ${step.notAnnotated.length === 1 ? 'segment' : 'segments'} not annotated, only the verbatim transcript is stored: ${step.notAnnotated.map((entry) => `${entry.id} (${NOT_ANNOTATED_WHY[entry.reason] ?? entry.reason})`).join(', ')}` : '';
   if (step.status === 'skipped') return [`Cue annotation: not done, the environment does not have ${step.capability}, ${[given, missed].filter((part) => part !== '').join('; ')}`];
@@ -610,7 +614,7 @@ function describeAnnotation(step) {
 function annotationNote(annotation) {
   if (annotation === undefined) return '';
   if (annotation.status === 'annotated') return ` cue annotation: ${annotation.cues} ${annotation.cues === 1 ? 'cue' : 'cues'}${annotation.droppedCues === undefined ? '' : ` (${annotation.droppedCues} dropped)`}`;
-  if (annotation.status === 'given') return ' cue annotation: given in the material';
+  if (annotation.status === 'given') return annotation.source === 'script' ? ' cue annotation: taken from the script' : ' cue annotation: given in the material';
   if (annotation.status === 'no_cues') return ' cue annotation: no cues (no change in the way of speaking)';
   const why = annotation.status === 'not_heard' ? 'not_heard' : annotation.reason; // 作废的原因，或者 capability_missing
   return ` cue annotation: not annotated (${NOT_ANNOTATED_WHY[why] ?? why})`;

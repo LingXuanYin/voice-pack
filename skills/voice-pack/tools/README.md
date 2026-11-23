@@ -4,7 +4,7 @@ Small tools that only compute and use no model. In the agent environment, dubbin
 
 | Tool | File | Command | Authoritative source for rules and notes |
 |---|---|---|---|
-| Script markup parsing | `markup.mjs` | `markup` | File header: syntax, shape of the output |
+| Script markup parsing | `markup.mjs` | `markup` | File header: syntax, shape of the output. Also exports `PAUSE_VOICE_PATTERN` (the pause and voice markers alone, without cues), which tells a marker from a cue in a script (used by `lib/script-annotation.mjs`) |
 | Sentence splitting | `sentences.mjs` | `sentences` | File header: rules and trade-offs |
 | Audio decoding | `audio-decode.mjs`, `wav.mjs` | via `quality` | `audio-decode.mjs` file header: how it decodes, the signature of the ffmpeg runtime; `wav.mjs` file header: how far WAV is decoded, and `wavInfo` for when you only want to know the length and format (it reads only the file header, not the sample values) |
 | Audio quality check | `audio-quality.mjs` | `quality` | File header: what is measured, the thresholds and their basis, the shape of the verdict |

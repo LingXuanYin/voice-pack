@@ -86,6 +86,8 @@ const VOICE_RE = new RegExp('\\[voice:([^\\]\\[]*)\\]', 'gi');
 // 所有标记和提示合成一个正则的源码，给必须绕开它们的代码用（读音词表：lib/pronunciation-lexicon.mjs 的 applyLexicon、applyPhonemes）；用 new RegExp(MARKER_PATTERN, 'gi') 建正则。
 // 正则在这个文件里只有一份，写法改了，这里跟着变。
 export const MARKER_PATTERN = [PAUSE_RE.source, VOICE_RE.source, CUE_PATTERN].join('|');
+// 只有停顿和声音的标记（不含提示）：认出来的方括号就是标记，去掉；剩下的方括号是提示（lib/script-annotation.mjs 用它分）。
+export const PAUSE_VOICE_PATTERN = [PAUSE_RE.source, VOICE_RE.source].join('|');
 
 // 下面几个是文件头「尖括号标签」的词素（写在协议核心的 protocol/lib/script-markup.mjs）拼起来的写法，只写在这里。
 /**

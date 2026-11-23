@@ -26,10 +26,10 @@
 //
 // 条目（item）：做包的每一步读、写的是同一组对象，每个步骤模块的文件头写自己读哪些字段、写哪些字段。这里整理出来的字段：
 //   index（在输入里的次序，上一版带来的排在前面）、id、audio、
-//   text（逐字文本。没给 text、没给 annotatedText、没写 trim、台本里没有音素标记，台本念出来有字的（scriptText，scriptIsText），text 就是台本念出来的字，textSource 是 'script'，不转写：台本念出来的字
+//   text（逐字文本。没给 text、没给 annotatedText、没写 trim，台本念出来有字的（scriptText，scriptIsText），text 就是台本念出来的字，textSource 是 'script'，不转写：台本念出来的字
 //     只去掉提示、名字、停顿、标签、舞台说明（protocol/lib/spoken-words.mjs 的 spokenWords），标点照台本；切表演段（lib/make-pack-take-audio.mjs）时它换成切留下的那几句）、
 //   scriptText（素材给的台本，念出来的字，去掉了提示、名字、舞台说明、标签；没给就没有这个字段）、
-//   annotatedText（素材给的提示标注，没给就没有这个字段）、
+//   annotatedText（素材给的提示标注，没给就没有这个字段；文字是台本的段，它是台本写的提示和停顿，台本没写就等于文字，annotationSource 是 'script'，lib/script-annotation.mjs）、
 //   givenLanguage（素材给的语言：段自己的 language，没有就是输入的 language；都没给是 undefined）、
 //   givenTag（素材给的音色基底标签，去掉了两头空白；没给是 undefined。作者给的和库里给的不分，都是素材给的）、source、externalUrl、
 //   synthetic（布尔值：true 是合成的，克隆出来的，不是这个人录的；没标是 false）；
@@ -84,6 +84,8 @@ import { MIN_MAX_CHARS } from './synthesis-limits.mjs';
 import { spaceAfterCue } from '../protocol/lib/word-spacing.mjs';
 import { cueWords, MAX_OPENING_CUE_WORDS } from './cue-length.mjs';
 import { openingCueOf } from './opening-cue.mjs';
+import { namesOfPack } from './reference-names.mjs';
+import { scriptAnnotationOf } from './script-annotation.mjs';
 
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** 起止秒（trim）至少切多长（秒）：短到起点、终点落在同一个采样上，就切不出东西（文件头「trim」）。 */
@@ -301,18 +303,18 @@ function readText(segment, annotated, where) {
 }
 
 /**
- * 段的文字是台本念出来的字（不转写）：没给 text（不给、null、空串），没给 annotatedText，没写 trim、台本里没有音素标记，台本念出来的字里有词（spokenWords 去掉提示、名字、舞台说明、标签以后；
+ * 段的文字是台本念出来的字（不转写）：没给 text（不给、null、空串），没给 annotatedText，没写 trim，台本念出来的字里有词（spokenWords 去掉提示、名字、舞台说明、标签以后，音素标记留里面的音素；
  * 只有提示、念出来没有字的台本不算）。做包（readSegments）和命令行的预检（cli/commands/make-pack.mjs）用这一条：文字是台本的段，不算没有文本。
  * @param {object} segment 素材里的一段（还没整理的）
  * @returns {boolean}
  */
 export function scriptIsText(segment) {
   const hasText = (typeof segment.text === 'string' && segment.text.trim() !== '') || segment.annotatedText !== undefined;
-  // 写了 trim 的是录音的一段，台本是整段，对不上：照旧转写（切出来的那几秒）。台本里有音素标记的，标记里是发音（拼音之类）不是字：照旧转写
-  return !hasText && segment.trim === undefined && typeof segment.scriptText === 'string' && !/<\|phoneme_(?:start|end)\|>/.test(segment.scriptText) && hasWords(spokenWords(segment.scriptText));
+  // 写了 trim 的是录音的一段，台本是整段，对不上：照旧转写（切出来的那几秒）
+  return !hasText && segment.trim === undefined && typeof segment.scriptText === 'string' && hasWords(spokenWords(segment.scriptText));
 }
 
-function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0, allowEmpty = false } = {}) {
+function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0, allowEmpty = false, names = [] } = {}) {
   if (!Array.isArray(segments)) throw invalid('segments', 'must be an array: each item is one recording, already cut');
   if (segments.length === 0 && !allowEmpty) throw invalid('segments', 'at least one segment is required');
   const seen = new Set(taken);
@@ -344,6 +346,8 @@ function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0
     if (segment.scriptText !== undefined && (typeof segment.scriptText !== 'string' || isBlankText(segment.scriptText))) throw invalid(`${where}.scriptText`, 'must be a non-blank string (the original script text used to dub this segment; cues are allowed)');
     const script = segment.scriptText === undefined ? undefined : spokenWords(segment.scriptText); // 台本念出来的字（去掉提示、名字、舞台说明、标签）
     const scripted = scriptIsText(segment); // 没给文字的段，台本念出来有字：文字就是台本，不转写（文件头「条目」的 text）
+    // 标注由写台本的一方写：台本的提示和停顿（lib/script-annotation.mjs）；台本没写、放不进文字的，标注就是台本的字（放得下才写，放不下就没有标注，也不听）。句子不写：句子按组并段，标注要整组都有或都没有（assertSentenceGroups），全是台本的一组并成段也不听（lib/make-pack-sentences.mjs）
+    const cued = !scripted || segment.sentence !== undefined ? null : scriptAnnotationOf(segment.scriptText, { text: script, names }) ?? ([...script].length <= ANNOTATED_TEXT_MAX ? { annotatedText: script } : null);
     return {
       index: offset + index,
       id,
@@ -351,6 +355,7 @@ function readSegments(segments, defaultLanguage, { taken = new Set(), offset = 0
       text: scripted ? script : readText(segment, annotated, where),
       ...(scripted ? { textSource: 'script' } : {}),
       ...annotated,
+      ...(cued === null ? {} : { annotatedText: cued.annotatedText, annotationSource: 'script' }),
       ...(script === undefined ? {} : { scriptText: script }),
       givenLanguage: readLanguage(segment.language, `${where}.language`) ?? defaultLanguage, // 段自己的盖过输入的
       givenTag: readTag(segment.tag, `${where}.tag`),
@@ -430,6 +435,8 @@ export function readInput(input, previous, { moreSegments = false, moreSentences
   if (input.sampleLines !== undefined) readSampleLines(input.sampleLines);
   if (input.cardLine !== undefined && typeof input.cardLine !== 'string') throw invalid('cardLine', 'must be a string: the text of the audition line (length and whether blank text is allowed are checked by the manifest check before any money is spent; whether it can be dubbed as one request is checked by lib/make-pack-card-line.mjs before any money is spent)');
   if (input.guidance !== undefined && typeof input.guidance !== 'string') throw invalid('guidance', 'must be a string (the Markdown body of the dubbing guidance)');
+  // 这个包认的名字（台本带的提示里，行首的方括号是名字才不算提示，lib/script-annotation.mjs）：名字和配音指引都是输入的，没给的沿用上一版的（同 lib/pack-version.mjs 的 effectiveOf）
+  const names = namesOfPack({ name: input.name ?? previous?.name }, input.guidance ?? previous?.guidance ?? null).recognized;
   readCardLineLanguage(input);
   if (input.files !== undefined && !(input.files instanceof Map)) throw invalid('files', 'must be a Map<path, Uint8Array>');
 
@@ -478,7 +485,7 @@ export function readInput(input, previous, { moreSegments = false, moreSentences
     path: segment.path,
   }));
   const segments = input.segments === undefined && hasPrevious ? [] : input.segments;
-  const fresh = readSegments(segments, defaultLanguage, { taken: previousIds, offset: previousItems.length, allowEmpty: hasPrevious || moreSegments });
+  const fresh = readSegments(segments, defaultLanguage, { taken: previousIds, offset: previousItems.length, allowEmpty: hasPrevious || moreSegments, names });
   assertSentenceGroups(fresh, previousItems.length, { moreSentences, defaultLanguage }); // 可能并进同一段的句子，synthetic、annotatedText 要标得一样
   for (const wanted of moreSegments ? [] : defaultSegments) {
     const isPreviousReference = kept.some((segment) => segment.id === wanted && segment.role === 'reference');

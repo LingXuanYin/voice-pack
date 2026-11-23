@@ -133,6 +133,7 @@ function mergedItem(list) {
     audio: { bytes: composeAudio(list, wavInfo(first.audio.bytes).sampleRate), mimeType: 'audio/wav' },
     text,
     ...(annotated ? { annotatedText: joinText(list.map((m) => m.annotatedText)) } : {}),
+    ...(text !== '' && list.every((m) => m.textSource === 'script') ? { textSource: 'script' } : {}), // 全是台本的句子：段的文字还是台本，不转写、不听
     givenLanguage: first.givenLanguage,
     givenTag: sameTag ? first.givenTag : undefined,
     source: {

@@ -16,6 +16,7 @@
 //   切表演段 写了 scriptText（台本原文）、没写起止秒的段，配出来比参考的上限（20 秒）长：不重配，在句末切开用，留够做默认段的长度（规则和数在 lib/cut-at-sentence-end.mjs）。
 //            切了的：条目的 trimmed 是实际切的 { startSec: 0, endSec }，另有 cutAtSentenceEnd: { fromSec, keptSec }（原来多长、留多长）；音频存成 16 位 WAV。
 //            文字是台本念出来的（textSource 'script'，lib/make-pack-input.mjs）的段，文字换成切留下的那几句（keptScript，不转写）；给了 text 的段文字照给的，切了也不动。
+//            台本带了提示标注的（annotationSource 'script'，lib/script-annotation.mjs）标注跟着只留切留下的那几句的提示（cutScriptAnnotation）；留下的几句没有提示，标注就是留下的字，不听。
 //            不用切（不超过上限）、切不了（一个句末也没有停顿、只有一句），或者解不开的（不是 WAV、环境又没有 ffmpeg：解它只是为了量长度）：原样不动，
 //            音质检查的 duration_long 照旧提醒。写了起止秒的段不切（作者说了要哪几秒）。
 // 两件都做的（带视频轨的文件写了起止秒），先取音轨再切。做了的段存成 16 位 WAV，声道数和采样率照原来的。都不用做的段（包能放的格式、没写起止秒）一个字节都不动。
@@ -31,7 +32,7 @@
 // 不一口气占住线程：解码、切、编 WAV 都是同步的活，段多了浏览器里页面会卡住。每段开始之前、编 WAV 之前看一眼，连续做了 YIELD_AFTER_MS（50）毫秒就让事件循环转一圈
 //   （lib/event-loop.mjs，同筛片段）。结果和次序不变。
 //
-// 读条目的：audio、trim、scriptText、textSource、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）、
+// 读条目的：audio、trim、scriptText、textSource、annotatedText、annotationSource、previous、externalUrl、id；写条目的：audio（取出来、切出来的这段）、convertedFrom（取了音轨的：原来的 MIME 类型）、trimmed（切了的：实际切的 { startSec, endSec }，秒，取到毫秒）、
 // cutAtSentenceEnd（表演段在句末切开了：{ fromSec, keptSec }）、text（台本念出来的段切开了：留下的那几句，见上）；
 // 做不成的写 unused: { reason, details }（筛片段就跳过它；原因的说法在 lib/material-hints.mjs）：
 //   audio_unrecognized  不是包能放的格式，也取不出音轨。details: { mimeType, runtime } 是环境没有 ffmpeg（runtime 是 'ffmpeg'）；
@@ -43,11 +44,13 @@
 // 抛出的错误：没有自己的 code。解码抛的、不是「环境没有 ffmpeg」「解不了」的错，原样往上抛。
 //
 // 模块约定见 protocol/README.md：只用平台自带的 API，浏览器和 Node 都能跑。
+import { ANNOTATED_TEXT_MAX } from './manifest-limits.mjs';
 import { sniffAudio } from '../protocol/lib/audio.mjs';
 import { sha256Hex } from '../protocol/lib/hash.mjs';
 import { decodeAudio, decodeFailureKind } from '../tools/audio-decode.mjs';
 import { encodeWav } from '../tools/wav.mjs';
 import { sentenceEndCut, keptScript, MAX_SECONDS } from './cut-at-sentence-end.mjs';
+import { cutScriptAnnotation } from './script-annotation.mjs';
 import { YIELD_AFTER_MS, nowMs, turnEventLoop } from './event-loop.mjs';
 
 const toMs = (seconds) => Math.round(seconds * 1000) / 1000;
@@ -180,7 +183,21 @@ export async function takeAudio(env, items) {
     if (await overlaps(item, bytes, range.from, item.trim === undefined ? Infinity : range.to)) return;
     if (item.trim !== undefined || cut !== undefined) item.trimmed = { startSec: toMs(range.from / sampleRate), endSec: toMs(range.to / sampleRate) };
     if (cut !== undefined) item.cutAtSentenceEnd = cut;
-    if (cut !== undefined && item.textSource === 'script') item.text = keptText; // 台本念出来的段：文字是切留下的那几句
+    if (cut !== undefined && item.textSource === 'script') {
+      const spokenBefore = item.text;
+      item.text = keptText; // 台本念出来的段：文字是切留下的那几句
+      // 台本带的提示标注只留切留下的那几句的提示；留下的几句没有提示的，标注就是留下的字
+      // （整段台本太长、没写标注的，切短以后放得下了，也写上）
+      const annotated = item.annotationSource === 'script' && spokenBefore.startsWith(keptText) ? cutScriptAnnotation(item.annotatedText, spokenBefore, keptText.length) : null;
+      const written = annotated ?? keptText;
+      if ([...written].length <= ANNOTATED_TEXT_MAX) {
+        item.annotatedText = written;
+        item.annotationSource = 'script';
+      } else {
+        delete item.annotatedText;
+        delete item.annotationSource;
+      }
+    }
     if (foreign) item.convertedFrom = item.audio.mimeType;
     await breathe();
     item.audio = { bytes: encodeWav({ sampleRate, samples: samples.map((channel) => channel.subarray(range.from, range.to)) }, { encoding: 'pcm16' }), mimeType: 'audio/wav' };

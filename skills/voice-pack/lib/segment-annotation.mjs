@@ -4,7 +4,7 @@
 //   @capability audio-text-to-text  听一段录音，按文字指令回答（签名在 vocab/capability-signatures.md）
 // 提示标注是整句带着方括号提示的文字，提示以外的字和逐字稿（text）一样，例如 [normal]啊，瞧瞧这是谁？[laughs]呵呵，[happy]太可爱了吧。
 // 格式见 protocol/FORMAT.md 4.4；配音时它和参考一起交给模型（lib/dub.mjs 的 ref_text），模型就知道这段参考是怎么说的。
-// 做包在挑完参考集以后，每段参考标一次（lib/make-pack-annotation.mjs），对模型问一次；别的程序给参考标提示标注，照这里的写法（一样的问法、回答格式和拼法）。
+// 做包在挑完参考集以后，每段参考标一次（lib/make-pack-annotation.mjs），对模型问一次（只问录音；合成段不问，它的提示标注是写台本的一方写的，lib/script-annotation.mjs）；别的程序给参考标提示标注，照这里的写法（一样的问法、回答格式和拼法）。
 //
 // 怎么问、怎么确认模型听到了：
 //   问：把这段的逐字稿交给模型，但去掉开头 OPENING_WORDS 个词，用省略号占位（lib/fidelity.mjs 的 afterOpening）：去掉的就是收音校验原样比的那几个词，
@@ -286,8 +286,8 @@ export function assembleAnnotation(text, cues, points) {
   return { annotatedText: spliced(text, all), cues: kept.length };
 }
 
-/** 去掉方括号提示（校验用：拼好的提示标注去掉提示，必须和 text 同样去掉提示以后一字不差）。 */
-const withoutBrackets = (text) => text.replace(/\[[^[\]\r\n]*\]/gu, '');
+/** 去掉方括号（提示）：拼好的提示标注去掉它要和 text 一字不差（下面「拼」的校验，台本带的提示标注也照这一条查，lib/script-annotation.mjs）。 */
+export const withoutBrackets = (text) => text.replace(/\[[^[\]\r\n]*\]/gu, '');
 
 /**
  * 问一次，整理成下面两种之一（规则见文件头）：
