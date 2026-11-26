@@ -384,6 +384,12 @@
       "protocol": "3.0",
       "size": 4366069,
       "sha256": "f1f8eeee65905540b1c1b0297bb9789cd05ae95fe2cc2d4c4a58227955b3bd18"
+    },
+    {
+      "version": "3.5.0",
+      "protocol": "3.0",
+      "size": 4366020,
+      "sha256": "7e2e2e1b468e2a27d657354d10802cd84b342048fcb64ed528bce2f32ff69cb0"
     }
   ]
 }
