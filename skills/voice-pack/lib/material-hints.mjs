@@ -15,12 +15,10 @@
 //   guidanceGaps 配音指引里没填的项（字符串数组，默认 []），由 guidanceGaps(配音指引) 算（见下面）
 //   direction   音色标签有没有写（布尔值，默认 true）
 //   designSource 素材是不是设计出来的（布尔值，默认 false）：清单里有 designSource 就是 true（lib/fidelity.mjs 文件头第 10 点）。设计出来的声音、默认音色、
-//               融合出来的声音做包都写设计来源（lib/make-pack.mjs 的 designSource），清单分不出是哪一种，这里三种一样对待。
+//               融合出来的声音以前做包时写过设计来源（lib/make-pack.mjs 的 designSource），清单分不出是哪一种，这里三种一样对待。
 //               是的话不给 no_holdout、holdouts_few：这几种声音都没有真人录音，再合成几句只是多一轮试合成，拖慢做包；
-//               也不给参考段的三条（few_references、short_reference_total、language_single_reference）。这是照设计出来的声音定的：正式的包里参考只有照试听配的那一段
-//               （references/make-pack.md「Making a pack from a designed voice」第 3 步），没有录音可补，照提示去补只能拿这个包自己再克隆几段。
-//               默认音色、融合出来的包（命令行 --audition）参考是试听切出来的，再生成几段试听就补得上，不用克隆这个包；可是看清单分不出它，也就不给这三条。
-//               它的参考少、短，由做包的人看报告自己补（references/make-pack.md「What material is still missing」）。要分开给，得在清单里记下是哪一种声音，那是格式的事。不是的话照旧。
+//               也不给参考段的三条（few_references、short_reference_total、language_single_reference）。这是照设计出来的声音定的：正式的包里参考只有照试听配的那一段，没有录音可补，照提示去补只能拿这个包自己再克隆几段。
+//               融合出来的包（命令行 --audition）不带设计来源，照录音的包给这几条（参考是试听切出来的，再生成几段试听就补得上，references/make-pack.md「What material is still missing」）。不是的话照旧。
 //   noHoldout   布尔值，默认 false：调用方不要留出录音（做包时 holdoutRatio 为 0，命令行 --no-holdout）。是的话也不给 no_holdout、holdouts_few：
 //               不留出是调用方定的，再提醒「没有留出录音」没有用（理由和 designSource 一样）。
 //   cardLine    试听句的情况 { status, error?, halted?, reasons?, onCard?, model?, modelChange? }，不给就不提示试听句的几条（不知道）：status 是做包报告的 cardLine.status
@@ -69,8 +67,7 @@
 //   card_line_trimmed           写进包里的试听句（配成的、沿用的）比预览卡片能放的长：卡片上只放前面一截，或者放不下、改放默认段（onCard 是 null）。
 //                               建议写短一点，发新版本重配。details: { seconds }（卡片上放的秒数；放不下，或者格式不解析时长，是 null）
 //   card_line_missing           没给试听句（cardLine.status 是 none）：设计出来的声音和用录音做的声音都提醒（卡片上该放用包自己的声音配的那一句）。
-//                               卡片上兜底放的都是主语言默认段那段录音：设计出来的声音，交出去的包里默认段是照试听配的那一段，试听不在包里
-//                               （references/make-pack.md「Making a pack from a designed voice」），所以两种声音说的是同一句话。details: {}
+//                               卡片上兜底放的都是主语言默认段那段录音：设计出来的声音，交出去的包里默认段是照试听配的那一段，试听不在包里，所以两种声音说的是同一句话。details: {}
 //   card_line_model_changed     配试听句时适配器换了模型（cardLine.modelChange，adapters/README.md「When the model changes」）：写进包里的这一句是换上的模型配的，
 //                               声音和演法可能和包的声音不一样；原来的模型能用了，发新版本重配。details: { model, from, reason }（model 是换上的，能力没报是 null）
 //
@@ -203,7 +200,7 @@ export function suggestMaterial(material) {
       add('holdouts_few', fewHoldoutsMessage(holdouts.length, missing), { count: holdouts.length, needed: THRESHOLDS.holdoutsToRead, missing });
     }
   }
-  // 设计来源的包参考段的三条都不给：设计出来的参考只有照试听配的那一段，没有录音可补；默认音色、融合出来的分不出来，一样不给（文件头 designSource）
+  // 设计来源的包参考段的三条都不给：设计出来的参考只有照试听配的那一段，没有录音可补；融合出来的包不带设计来源，照常给（文件头 designSource）
   if (!designSource && references.length < THRESHOLDS.minReferences) {
     add('few_references', `Only ${references.length} reference ${references.length === 1 ? 'segment' : 'segments'}; at least ${THRESHOLDS.minReferences} recommended: the default segment is picked from the references, and the more segments there are, the better the most natural one can be found.`, { count: references.length, needed: THRESHOLDS.minReferences });
   }

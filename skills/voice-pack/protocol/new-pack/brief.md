@@ -20,7 +20,7 @@ Write these files from `attributes.json` and put them in `output/` (create the d
 
 For the language, follow `spec/README.md`「Language」.
 
-You do not need to fill in `template/design-source.json`: the design source is supplied by the caller (see `spec/README.md`「Design source」).
+You do not need to fill in `template/design-source.json`: no design source is written for a new pack (see `spec/README.md`「Design source」).
 
 ## Ground rules
 

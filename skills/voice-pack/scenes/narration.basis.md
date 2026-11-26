@@ -17,7 +17,7 @@ at: Narration and long text (including short-video voiceover) > Step by step
 after: ntent at this place: the stronger the cue, the more intense the acting
 
 ```text
- (inference: on the first-page audition one person listened blind; one group heard the difference in strength, and another group with a different seed heard the two versions as about the same; `models/scene3.md`「Readings from the first-page audition」)
+ (inference: on the first-page audition one person listened blind; one group heard the difference in strength, and another group with a different take heard the two versions as about the same; `models/scene3.md`「Readings from the first-page audition」)
 ```
 
 ## b3

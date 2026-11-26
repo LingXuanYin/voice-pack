@@ -53,7 +53,7 @@ voice-pack/
 │   ├── capability-signatures.md  call signatures of the required capabilities: parameters, return values, how audio is passed
 │   ├── design.json         design vocabulary
 │   ├── markup.json         script markup
-│   ├── design-sample-lines.json  the tone and length of sample lines for a designed voice (one set each for zh and en, not to be copied into a pack as they are)
+│   ├── design-sample-lines.json  the tone and length of sample lines (one set each for zh and en, not to be copied into a pack as they are)
 │   └── cues.json           synonyms of stage cues and of emotion and style tags (the notations recognized when reading stage cues)
 ├── lib/                    flow layer programs: dubbing and changing voice with a voice pack (which reference segment each line uses, the pronunciation lexicon, the dubbing guidance, enhancement parts, the scripts in a pack), making a pack (separating, cutting into segments and transcribing a long recording), measuring fidelity, the duplicate check, preparing input for the pack-making agent in a clean room; for the list see lib/README.md
 ├── tools/                  official small tools: script markup parsing, sentence splitting, audio quality checks, cutting a long recording into segments by energy, audio fingerprints (finding "the same recording" for the duplicate check), and so on; they only compute and use no model

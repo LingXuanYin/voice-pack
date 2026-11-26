@@ -15,11 +15,11 @@
 //                                                      不给 allowCrossLanguage: true 就不配，一次能力都不调：outcome 是 failed，error 是配音报的 dub_cross_language（details 里有参考段和两边的语言），
 //                                                      提示是 card_line_cross_language（lib/material-hints.mjs），不是 card_line_failed。给了就照跨语言克隆配，这一句开头要写名字对（lib/dub.mjs 第 7c 步，languageMarks: false 的不要求）。
 //                                                      花钱之前（assertCardLineSpeakable）不查语言：参考是哪几段、什么语言，要做完包才定
-//                                                      seed：环境收 seed（seed-in-request）时，配音每个请求给同一个固定的 seed（lib/dub.mjs 第 7 步），同一个 seed 加同样的请求，测过出同一条，也测过出不一样的（models/scene3.md「Sampling: `seed`」），
+//                                                      seed：环境收 seed（seed-in-request）时，配音每个请求给同一个固定的 seed（lib/dub.mjs 第 7 步），同一个 seed 加同样的请求，测过出同一条，也测过出不一样的（见 models/scene3.md 讲采样的那一节），
 //                                                      出同一条的话，交同样的文字重配就救不回念错的那一句。所以这一次的请求和上一版那一句的一模一样（比法同下面沿用时的比一比：参考、请求的文字（含读音词表、
 //                                                      开头补的提示、读音词表的音素）、语速、起伏，都对得上），就换一个 seed：上一版那一句的 seed 加 1（清单的 cardLine.seed；上一版没记，是 lib/dub.mjs 的 DUB_SEED 加 1），
 //                                                      交给配音的是 only: [0] 加 previousSeed（规则在 lib/dub.mjs 第 7 步「seed」）。不是自动重试：只在调用方交了这一句（明说要重配）时换。
-//                                                      请求不一样（换了文字、换了参考……）照旧用固定的那个。用的 seed 写进清单的 cardLine.seed（protocol/FORMAT.md 4.4）和报告
+//                                                      请求不一样（换了文字、换了参考……）照旧用固定的那个。用的 seed 只写进清单的 cardLine.seed（protocol/FORMAT.md 4.4），报告里不写（agent 读的地方没有 seed）；重配了一条的，报告里写 redone
 //   carriedCardLine(env, previous, made, { previousFiles, externals, limits })   发新版本、这次没给这一句：上一版的那一句沿用过来。返回 { outcome, audio }（同 voiceCardLine），
 //                                                      上一版没有这一句是 null。audio 带着上一版清单里记的 seed（有的话），沿用的版本照旧记着，下一次用同样的请求重配接着加。
 //                                                      规则：试听句做好以后不重配，除非调用方明说要重配（交这一句，voiceCardLine）。上一版有，就原样沿用：
@@ -41,16 +41,16 @@
 //   assertCardLineSpeakable 和比一比（carriedCardLine、voiceCardLine 的「seed」）用的规划只看请求怎么切、请求里有什么，不看参考和这一句是不是一种语言：交给配音的都是 allowCrossLanguage: true
 //
 // 报告里的 cardLine（outcome；lib/make-pack-report.mjs 原样放进 report.cardLine，写法只在这里）：
-//   { status: 'voiced', text, pick: { segmentId, tag, by }, attempts, model?, modelChange?, openingCue?, seed?, seedChange? }   配成了。pick 是配音挑的参考段、它的标签和为什么是它（lib/reference-pick.mjs 的 by），
+//   { status: 'voiced', text, pick: { segmentId, tag, by }, attempts, model?, modelChange?, openingCue?, redone? }   配成了。pick 是配音挑的参考段、它的标签和为什么是它（lib/reference-pick.mjs 的 by），
 //                                                      attempts 是合成调了几次，model 是能力报的模型，modelChange 是适配器这一次换了模型（{ from, reason }，约定在 adapters/README.md「When the model changes」，
 //                                                      没换就没有：写进包里的这一句是换上的模型配的，提示 card_line_model_changed），openingCue 是请求开头补的提示（lib/dub.mjs 第 7a 步，没补就没有）；
-//                                                      seed 是交给合成能力的 seed（环境收 seed 才有），seedChange 是用同样的请求重配、换了 seed：{ from: 上一版的 }（见上 voiceCardLine「seed」，没换就没有）
+//                                                      redone 是 true：用同样的请求重配、换了一条（见上 voiceCardLine「seed」，没换就没有）。交给合成能力的 seed 不在报告里
 //   { status: 'failed', text, error, attempts?, halted? }   没配成：清单里没有 cardLine，包照做。error 是错误的摘要 { code, message, details }（lib/capability-calls.mjs 的 summarizeError）；
 //                                                      error.code 是 dub_cross_language 的，是参考段不是这一句的语言、没给 allowCrossLanguage（上面 voiceCardLine「跨语言」），一次都没调，没有 attempts；
 //                                                      halted 为 true 是能力报凭据被拒（401）或账户停了（details.halted，lib/capability-calls.mjs 的 keepsThrowing）：要使用者先处理，提示是 card_line_halted，
 //                                                      不是普通的 card_line_failed（lib/material-hints.mjs）。合成那头做完了、结果没取回的（error.details.unretrieved，lib/dub.mjs 只记这一段失败）也是 failed：
 //                                                      只调了一次、不再计费，提示 card_line_failed 写明没取回、怎么手动取回（error.details.retrieve），照提示重配会再计一次费
-//   { status: 'carried', text, from, reasons?, seed? }  发新版本沿用上一版的（carriedCardLine）：from 是上一版的版本号；seed 是上一版清单里记的（配它用的，没记就没有）；reasons 是和现在的配法对不上的地方（见上），
+//   { status: 'carried', text, from, reasons? }  发新版本沿用上一版的（carriedCardLine）：from 是上一版的版本号；reasons 是和现在的配法对不上的地方（见上），
 //                                                      都对得上就没有这个字段。有 reasons 提示 card_line_stale（沿用了，但和现在的配法有出入，lib/material-hints.mjs）
 //   没有这一句是 { status: 'none' }
 //   报告里写进包的那两种（voiced、carried）另有 audio：包里的路径（lib/make-pack-report.mjs 从清单取）；
@@ -157,8 +157,7 @@ export async function voiceCardLine(env, made, text, { externals = [], wait, lim
       ...(unit.model === undefined ? {} : { model: unit.model }),
       ...(unit.modelChange === undefined ? {} : { modelChange: unit.modelChange }),
       ...(unit.openingCue === undefined ? {} : { openingCue: unit.openingCue }),
-      ...(unit.seed === undefined ? {} : { seed: unit.seed }), // 环境收 seed 才有（lib/dub.mjs 第 7 步）
-      ...(unit.seedChange === undefined ? {} : { seedChange: unit.seedChange }),
+      ...(unit.seedChange === undefined ? {} : { redone: true }), // 用同样的请求重配、换了一条（lib/dub.mjs 第 7 步「seed」）；seed 本身不进报告（清单的 audio 里有）
       ...(expressiveness === undefined ? {} : { expressiveness }), // 这一句单独取的起伏（做包时明说了才有）
       onCard: onCardOf(unit.audio.bytes),
     },
@@ -236,7 +235,7 @@ export async function carriedCardLine(env, previous, made, { previousFiles, exte
     ...(defaultSegmentFor(previous.manifest, languageBefore) === defaultSegmentFor(made.manifest, languageNow) ? [] : ['default_segment_changed']),
   ];
   return {
-    outcome: { status: 'carried', text, from: previous.version, ...(reasons.length === 0 ? {} : { reasons }), ...(seed === undefined ? {} : { seed }), onCard: onCardOf(bytes) },
+    outcome: { status: 'carried', text, from: previous.version, ...(reasons.length === 0 ? {} : { reasons }), onCard: onCardOf(bytes) },
     audio: { text, bytes, format, ...(seed === undefined ? {} : { seed }), ...(expressiveness === undefined ? {} : { expressiveness }) }, // seed、单独取的起伏跟着这一句走：下一次用同样的请求重配，seed 按它加 1
   };
 }

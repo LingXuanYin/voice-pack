@@ -17,7 +17,7 @@ at: Making a voice pack
 after: use. How fast each clause is spoken is not written into the annotation
 
 ```text
-: for one pack, two versions of the reference annotation that differ only in `[faster]` and `[slower]` gave the same speaking rate and length (the difference smaller than the spread between seeds) and no difference that a model listening in pairs could pick out, so the marks are not written (`CHANGELOG.md`, 3.1.0)
+: for one pack, two versions of the reference annotation that differ only in `[faster]` and `[slower]` gave the same speaking rate and length (the difference smaller than the spread between takes) and no difference that a model listening in pairs could pick out, so the marks are not written (`CHANGELOG.md`, 3.1.0)
 ```
 
 ## b3
@@ -58,7 +58,7 @@ after: siveness」›「How to choose the value」); if one is fixed, do not giv
 ## b7
 
 at: Making a voice pack
-after: om a designed voice" below), and other presets still do not declare it
+after: om a library voice" below), and other presets still do not declare it
 
 ```text
  (source: requirement)
@@ -76,10 +76,10 @@ after: t a name pair before any money is spent (`dub_cross_language_unnamed`)
 ## b9
 
 at: Making a voice pack
-after: as the reference, every line after that will mostly be acted flat too
+after: ice is made into a pack in three steps, going through `make-pack` and `dub` and passing through the acted passage
 
 ```text
- (inference: all that was listened to was one character in the first page of auditions, listened to by one person, `models/scene3.md`「Reference segments」)
+ (requirement, raised by the author on 2026-11-10 in `models/scene3.md`「Good examples」; nobody has listened to one made this way)
 ```
 
 ## b10
@@ -94,17 +94,8 @@ after: o fixed number hard-coded, `models/scene3.md`「How to choose the value�
 ## b11
 
 at: Making a voice pack
-after: nd "angry" cloned from a flat-read audition are mostly still read flat
+after: nd "angry" cloned from a flat-read reference are mostly still read flat
 
 ```text
  (inference: one person listened on the first page, one character, with no dedicated comparison, `models/scene3.md`「Reference segments」)
-```
-
-## b12
-
-at: Making a voice pack
-after: y is also made in these three steps, passing through the acted passage
-
-```text
- (requirement, raised by the author on 2026-11-10 in `models/scene3.md`「Good examples」; nobody has listened to one made this way)
 ```

@@ -111,7 +111,7 @@ at: scene3 > Cues
 at: scene3 > Cues > Put the character name first
 
 ```text
- Readings: 2026-11-12, 3 designed voices (two female, one male), 3 versions each, the acted passage dubbed from the audition (expressiveness 80), 30 seeds per version, 270 clips per group, measured by program (Praat, median fundamental frequency, compared with the reference; two other ways of reading checked it, no octave jump): with the name only on the line, 19 clips 3 or more semitones low, 6 clips 5 or more semitones low (at most 21 semitones low); with the name on both sides, 3 and 0; with the name on neither, 3 and 0. Each group is those 270 clips, in two batches of 135, and the two batches go the same way. Once the acted passage is dubbed low, it is the only reference of the formal pack: dub the audition line with it, and changing the seed, the expressiveness or the reference text, or removing the cue, all stay low (one pack, 28 of 30 times), and so does writing the name on both sides (5 of 5 times). Nobody has listened to whether it is still the same person. Source: measured; that the two sides match is a requirement, raised on 2026-11-10 in the words "The annotation must be symmetric. The character name must also be marked".
+ Readings: 2026-11-12, 3 designed voices (two female, one male), 3 versions each, the acted passage dubbed from the audition (expressiveness 80), 30 takes per version, 270 clips per group, measured by program (Praat, median fundamental frequency, compared with the reference; two other ways of reading checked it, no octave jump): with the name only on the line, 19 clips 3 or more semitones low, 6 clips 5 or more semitones low (at most 21 semitones low); with the name on both sides, 3 and 0; with the name on neither, 3 and 0. Each group is those 270 clips, in two batches of 135, and the two batches go the same way. Once the acted passage is dubbed low, it is the only reference of the formal pack: dub the audition line with it, and changing the take, the expressiveness or the reference text, or removing the cue, all stay low (one pack, 28 of 30 times), and so does writing the name on both sides (5 of 5 times). Nobody has listened to whether it is still the same person. Source: measured; that the two sides match is a requirement, raised on 2026-11-10 in the words "The annotation must be symmetric. The character name must also be marked".
 
 Source: requirement, raised on 2026-11-10 by the author of the "Good examples" below, in the words "all scene3 synthesis must start with [character name] first" and "this requirement must go in the skill". The same day one person listened to the cross-language dubbing of four characters (an English reference speaking Chinese) and compared with and without the name; in the words "much better" (one round); it has not been compared separately for dubbing in a single language.
 
@@ -163,7 +163,7 @@ at: scene3 > Cues > Where a cue is written and how far it reaches
 at: scene3 > Cues > Where a cue is written and how far it reaches
 
 ```text
- This table used to have two more rows, `[fast, rushing]` (reading: in 5 of 6 it was slower instead) and `[slow, drawn out]` (reading: in the line that had it, characters per second dropped for all 3 seeds); the version listened to under "Scope" below had them, kept as a record.
+ This table used to have two more rows, `[fast, rushing]` (reading: in 5 of 6 it was slower instead) and `[slow, drawn out]` (reading: in the line that had it, characters per second dropped for all 3 takes); the version listened to under "Scope" below had them, kept as a record.
 ```
 
 ## b21
@@ -243,7 +243,7 @@ at: scene3 > Cues > What to write
 at: scene3 > Cues > What to write
 
 ```text
- Source: measured, 2026-11-06, measured by program: an English reference (a recorded voice), the same audition line, four cues (`[quietly]`, none, `[calm]`, `[warm, relaxed]`) each dubbed with 3 seeds, 12 clips in all, plus the one that prompted this comparison. In 3 of the 4 `[quietly]` clips the breathiness was clearly heavier (H1-H2 16 to 22 dB, the others 5 to 14; GNE and CPP also lower), loudness about 2.2 LU lower, pitch flatter; none of the other 9 showed it. Reference, audio format, and loudness were all ruled out as causes. With only 3 seeds and about 14 items measured, none survived multiple-comparison correction (corrected p 0.055 to 0.086), so it counts only as a weak reading.
+ Source: measured, 2026-11-06, measured by program: an English reference (a recorded voice), the same audition line, four cues (`[quietly]`, none, `[calm]`, `[warm, relaxed]`) each dubbed with 3 takes, 12 clips in all, plus the one that prompted this comparison. In 3 of the 4 `[quietly]` clips the breathiness was clearly heavier (H1-H2 16 to 22 dB, the others 5 to 14; GNE and CPP also lower), loudness about 2.2 LU lower, pitch flatter; none of the other 9 showed it. Reference, audio format, and loudness were all ruled out as causes. With only 3 takes and about 14 items measured, none survived multiple-comparison correction (corrected p 0.055 to 0.086), so it counts only as a weak reading.
 ```
 
 ## b31
@@ -325,7 +325,7 @@ at: scene3 > Cues > Good examples
 
 ```text
 
-- Source: only three places were deleted ("低声，", `[shaky breath]`, "，坚定"), everything else was left untouched, not a single character; one version of each was dubbed with the same pack and the same seed, and the person listened to both and said the trimmed one was acceptable (80 points), without saying what was wrong with the original. The three were deleted together; what each one does was not listened to separately.
+- Source: only three places were deleted ("低声，", `[shaky breath]`, "，坚定"), everything else was left untouched, not a single character; one version of each was dubbed with the same pack and the same take, and the person listened to both and said the trimmed one was acceptable (80 points), without saying what was wrong with the original. The three were deleted together; what each one does was not listened to separately.
 ```
 
 ## b41
@@ -359,7 +359,7 @@ at: scene3 > Cues > Speed and pauses: conclusions from listening
 
 ```text
 
-Source: one person listened (the author of 「Good examples」 above), two pages on 2026-11-09, each clip listened to once. Two characters, one group each, both voices designed; the reference was the audition that comes straight out of the design step, scene3, seed 1, expressiveness 100. Only these two voices, in Chinese, were listened to; other voices and languages are inference.
+Source: one person listened (the author of 「Good examples」 above), two pages on 2026-11-09, each clip listened to once. Two characters, one group each, both voices designed; the reference was the audition that comes straight out of the design step, scene3, take 1, expressiveness 100. Only these two voices, in Chinese, were listened to; other voices and languages are inference.
 ```
 
 ## b45

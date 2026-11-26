@@ -117,8 +117,8 @@
 //   和 seedChange），接着往上加：那一次的加 1，不退回固定的那一个（退回去，配出来正是想换掉的那一条）。上一次没做成、也不是换了 seed 重配的（这一句从没做成过），
 //   没记 seed 的，照旧用固定的那一个：它要的是做成，不是换一条，和切开的别的几块用同一个 seed。
 //   「这一句」按内容认（要念的话一样，同是一场戏或同不是；几句都对得上的，序号一样的优先）。沿用的句子 seed 跟着文件走（见上面「沿用」），所以「上一次的」就是现在那个文件配的时候用的。
-//   dub.json 这一句记着 seed 和 seedChange: { from }（上一次的），
-//   文字输出在这一句下面写一行「换了 seed」；--dry-run 给同一个 --out 也照这一条算。不是自动重试：只在调用方点名要重配时换，不点名的照旧是固定的 seed。
+//   内部文件（TAKES_FILE，见它的注释）这一句记着 seed 和 seedChange: { from }（上一次的）；dub.json、--json 的输出、文字输出里一个 seed 都没有，
+//   文字输出也不写「换了 seed」（agent 读的文档只讲「--only 重配一条会得到不同的一条」）；--dry-run 给同一个 --out 也照这一条算。不是自动重试：只在调用方点名要重配时换，不点名的照旧是固定的 seed。
 //
 // 没取回：能力报的错标了 details.unretrieved（服务那头已经做完、计过费，只是结果没取回来，例如下载失败；约定见 vocab/capability-signatures.md「General conventions」），
 //   这一句记成 failed，可它不是暂时出错：不放进「失败 N 句……重做」那条 --only 命令（照着跑又计一次费，试听页 23 就是这样多花的），文字输出另起一段「没取回 N 句」，
@@ -127,7 +127,7 @@
 //   之后照输出里的 --only 命令重做别的句子，同一个 --out 里上一次没取回、这一次没点到的一句，照旧记成没取回（status 是 failed，error 照上一次的，连着 details.retrieve；
 //   同一个请求才算，认法同「沿用」），不记成 skipped：记成 skipped，取回的线索就从 dub.json 里丢了，mix 还会叫人 --only 重配、再计一次费。所以那一次还是退出 1，
 //   文字输出照样把它列在「没取回」里。--dry-run 给同一个 --out 也这样标。照旧记着的一句，seed、seedChange 照上一次的（再 --only 它接着往上加，见上面「--only 换 seed」），
-//   文字输出不在它下面写「换了 seed」（这一次没配它）；只是参考段不同才对上的，参考跟着记录走（同「沿用」），一场戏的说话人相似度也按那一场上一次的参考段写。
+//   文字输出不提 seed（这一次没配它）；只是参考段不同才对上的，参考跟着记录走（同「沿用」），一场戏的说话人相似度也按那一场上一次的参考段写。
 //   这一次带了 --only 的，那一段说「用 --only 点到它、或者去掉 --only 再跑这条命令」：照原样再跑那条 --only 命令不重配它，还会把点到的句子再配一次、再计一次费。
 //   dub.json（和 --json 的输出）顶层的 unretrieved 列出这几句的序号（从 1 起，和 --only、文件名、文字输出里的一样，从小到大；照旧记着的也在里面），一眼看得出有几句已经生成、只是没取回；
 //   一句都没有就没有这一项（和其他只在有的时候才写的项一样，没有这种句子的 dub.json 和原来一字不差）。跑完的、没跑完的、出错停下的 dub.json 都照这一条。
@@ -266,6 +266,12 @@ function unappliedReason(item) {
 }
 const REPORT_FILE = 'dub.json';
 /**
+ * 程序自己记账用的内部文件（和 dub.json 同一个目录，给 --only 换 seed 用，文件头「--only 换 seed」）：每一句的 seed、seedChange。
+ * agent 读的地方（dub.json、--json 的输出、文字输出）一个 seed 都没有，文档里也不提它，文件名不带 seed。形状：{ units: [{ index, spoken, file?, seed?, seedChange? }] }，
+ * 只列有 seed 或 seedChange 的句子。和 dub.json 每次一起写（writeReport），读的时候按序号、文件名、要念的话三样都对得上才认（withTakes）。
+ */
+const TAKES_FILE = '.dub-takes.json';
+/**
  * 还没跑完的 dub.json 的 stoppedBy（文件头「沿用」最后一段）：跑着的时候磁盘上就是这一份，跑完换成完整的报告，出错停下换成那个错误；
  * 被打断（进程被杀、命令超时）的，留下的就是它。
  */
@@ -275,11 +281,23 @@ const UNFINISHED = {
   details: {},
 };
 
-/** 写报告：先写同一个目录里的临时文件，再换名盖过去（写到一半被打断，留下的还是上一份完整的）。 */
-function writeReport(file, report) {
+/** 先写同一个目录里的临时文件，再换名盖过去（写到一半被打断，留下的还是上一份完整的）。 */
+function writeFileAtomic(file, text) {
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.tmp`);
-  fs.writeFileSync(temp, `${JSON.stringify(report, null, 2)}\n`);
+  fs.writeFileSync(temp, text);
   fs.renameSync(temp, file);
+}
+
+/**
+ * 写报告：dub.json 只写 agent 读的那一份（publicReport）；内部文件（TAKES_FILE）从同一份报告的句子里来，没有 seed 的就删掉它。
+ * 先写内部文件：万一写到一半被打断，内部文件比报告新一步，下一次 --only 接着往上加，配出来的不是刚才那一条（反过来先写报告，就会配出一样的）。
+ */
+function writeReport(file, report) {
+  const takes = takesOf(report.units);
+  const takesFile = path.join(path.dirname(file), TAKES_FILE);
+  if (takes.length === 0) fs.rmSync(takesFile, { force: true });
+  else writeFileAtomic(takesFile, `${JSON.stringify({ units: takes }, null, 2)}\n`);
+  writeFileAtomic(file, `${JSON.stringify(publicReport(report), null, 2)}\n`);
 }
 
 const pad = (number) => String(number).padStart(3, '0');
@@ -312,11 +330,71 @@ function decorate(units) {
   return units;
 }
 
-/** 报告里的一段：去掉音频字节。 */
+/** 报告里的一段：去掉音频字节（seed、seedChange 留着，写内部文件时用；给 agent 的那一份由 publicReport 去掉）。 */
 function reportUnit(unit) {
   const { audio, ...rest } = unit;
   void audio;
   return rest;
+}
+
+const isSeed = (value) => Number.isSafeInteger(value) && value >= 0;
+/** agent 读的那一段：没有 seed、seedChange（它们只在内部文件里，文件头「--only 换 seed」）。 */
+function publicUnit(unit) {
+  const { seed, seedChange, ...rest } = unit;
+  void seed;
+  void seedChange;
+  return rest;
+}
+/**
+ * agent 读的那一份报告（dub.json、--json 的输出）：每一段去掉 seed、seedChange；顶层的 capabilities 去掉 seed-in-request（那是程序自己的声明，
+ * 它的名字带着 seed，agent 读到的地方一个都不留）。别的原样。
+ */
+function publicReport(report) {
+  const out = Array.isArray(report.units) ? { ...report, units: report.units.map(publicUnit) } : { ...report };
+  if (isPlainRecord(report.capabilities)) {
+    const { 'seed-in-request': declared, ...visible } = report.capabilities;
+    void declared;
+    out.capabilities = visible;
+  }
+  return out;
+}
+/** 内部文件里记的几句：有 seed 或 seedChange 的，记下序号（index）、要念的话（spoken）、文件名（有的话）和这两个数。 */
+function takesOf(units) {
+  return units.filter((unit) => unit.seed !== undefined || unit.seedChange !== undefined).map((unit) => ({
+    index: unit.index,
+    spoken: unit.spoken,
+    ...(unit.file === undefined ? {} : { file: unit.file }),
+    ...(unit.seed === undefined ? {} : { seed: unit.seed }),
+    ...(unit.seedChange === undefined ? {} : { seedChange: unit.seedChange }),
+  }));
+}
+/**
+ * 读上一次的报告时，把内部文件里每一句的 seed、seedChange 并进去（--only 换 seed 要用，不给 agent 看）。认的是同一句：序号、文件名、要念的话都对得上才并
+ * （dub.json 和内部文件不一定是同一步写的，对不上就当没有）。dub.json 里自己带着的 seed（旧版本的报告，seed 写在句子里）照用，不覆盖。内部文件没有、读不了、
+ * 里面的数不是 0 到 2^53−1 的整数，都当没有：那一句照旧（没有记 seed 的，--only 照旧用固定的那个）。
+ */
+function withTakes(previous, out) {
+  if (!isPlainRecord(previous) || !Array.isArray(previous.units)) return previous;
+  let takes = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(out, TAKES_FILE), 'utf8'));
+    if (Array.isArray(parsed?.units)) takes = parsed.units.filter(isPlainRecord);
+  } catch {
+    // 没有内部文件，或者读不了：就是没有记 seed
+  }
+  return {
+    ...previous,
+    units: previous.units.map((unit) => {
+      if (!isPlainRecord(unit)) return unit;
+      const take = takes.find((item) => item.index === unit.index && item.file === unit.file && item.spoken === unit.spoken);
+      if (take === undefined) return unit;
+      return {
+        ...unit,
+        ...(unit.seed === undefined && isSeed(take.seed) ? { seed: take.seed } : {}),
+        ...(unit.seedChange === undefined && isPlainRecord(take.seedChange) && isSeed(take.seedChange.from) ? { seedChange: take.seedChange } : {}),
+      };
+    }),
+  };
 }
 
 /**
@@ -548,7 +626,7 @@ function reuser({ previous, out, minSimilarity, current }) {
  * 是取回它的线索，记成 skipped 就从新的 dub.json 里丢了，mix 还会叫人 --only 重配、再计一次费。previous 是上一次的 dub.json，current 是这一次的包（同 reuser）。
  * 返回 (unit) => 要并进这一句的字段，或者 null；调用方只拿 skipped 的来问（沿用之后还是 skipped 的）。认法同沿用（sameRequest）：先找参考段也一样的，再找只是参考段不同的
  * （参考跟着记录走）；几句都对得上的，序号一样的优先；上一次的一句只给一句。并进来的：status 是 failed，error 照上一次的，seed 是配它那一次用的（上一次没记就不记）；
- * seedChange 照上一次的：再 --only 它接着往上加（seedFinder 认失败记录上的 seedChange）；文字输出不写「换了 seed」，这一次没配它（调用方记下照旧记着的几句，render 的 kept）。
+ * seedChange 照上一次的：再 --only 它接着往上加（seedFinder 认失败记录上的 seedChange）；这一次没配它，文字输出不提 seed。
  */
 function unretrievedFinder({ previous, current }) {
   const pool = (Array.isArray(previous?.units) ? previous.units : []).filter((before) => isPlainRecord(before) && isUnretrievedUnit(before));
@@ -590,7 +668,7 @@ const keptScene = (unit, before) => ({
 });
 
 /**
- * 库的 previousSeed（文件头「--only 换 seed」）：--only 点到的一句，上一次配它用过的 seed：上一次做成了（status 是 ok、文件还在）的，那一次用的；
+ * 库的 previousSeed（文件头「--only 换 seed」）：--only 点到的一句，上一次配它用过的 seed（上一次的报告连同内部文件里记的 seed，见 withTakes）：上一次做成了（status 是 ok、文件还在）的，那一次用的；
  * 上一次是 --only 换了 seed 重配、没成的（status 是 failed，记着 seedChange），那一次发出去的。都没有就是 null（照旧用固定的 seed）。
  * 「这一句」按内容认：要念的话（spoken）一样、同是一场戏或同不是；几句都对得上的，序号一样的优先，再取 seed 最大的。上一次没记 seed（那时的环境不收 seed）的不算。
  */
@@ -673,7 +751,7 @@ function setupLines(report, noSetup) {
 /**
  * 文字输出。noSetup：这一次给了 --no-setup（「设定」一行的说法）。onlyGiven：这一次带了 --only（「没取回」一段的说法跟着变，文件头「没取回」）；kept：照旧记着没取回的几句的序号（unretrievedFinder，这一次没配它们）。
  */
-function render(report, { packArguments, scriptArgument, out, planOnly, redo, onlyGiven, kept, models, noSetup }) {
+function render(report, { packArguments, scriptArgument, out, planOnly, redo, onlyGiven, models, noSetup }) {
   const lines = planOnly ? [summaryText(report, models)] : []; // 文件头「汇总」
   const many = report.packs !== undefined;
   lines.push(many
@@ -742,9 +820,7 @@ function render(report, { packArguments, scriptArgument, out, planOnly, redo, on
     }
     const expressiveness = expressivenessText(report, unit);
     if (expressiveness !== null) lines.push(`     ${expressiveness}`);
-    // --only 重配换了 seed（文件头「--only 换 seed」）：和 JSON 里这一句的 seed、seedChange 对上。沿用的一句、照旧记着没取回的一句（kept）带着上一次的 seedChange，
-    // 这一次没重配它，不写
-    if (unit.seedChange !== undefined && unit.carriedOver !== true && !kept.has(unit.number)) lines.push(`     (seed changed: ${unit.seedChange.from} last time, ${unit.seed} this time. Only a redo with --only changes it; the same seed with the same request has not always given the same audio)`);
+    // 文字输出不写 seed，也不写「换了 seed」这一行：--only 重配一条会得到不同的一条，agent 读的文档只讲这一点（文件头「--only 换 seed」）
     // 停顿、语速和目标时长：和 --json 里这一句的 pauseBeforeMs、pauseAfterMs、speed、targetDuration 说的是一回事（前面的停顿挂在后一句上，以前文字输出里看不到）
     const timing = [
       ...(unit.pauseBeforeMs > 0 ? [`pause before: ${unit.pauseBeforeMs} ms`] : []),
@@ -941,22 +1017,21 @@ export async function run(args, ctx) {
   };
   // 重做提示用的：这次命令行上给的适配器、标签、切句、并发（和 --out、--only 之外的选项一样，照着原样写回去）
   const redo = { adapters: describeRequests(taken.requests), rest: redoFlags(options) };
-  const keptNumbers = new Set(); // 照旧记着没取回的几句的序号（keepUnretrieved 记下）：文字输出不在它们下面写「换了 seed」
-  const render_ = (report, planOnly) => render(report, { packArguments, scriptArgument, out: options.out === undefined ? '' : path.resolve(ctx.cwd, options.out), planOnly, redo, onlyGiven: only !== undefined, kept: keptNumbers, models, noSetup: options['no-setup'] === true });
+  const render_ = (report, planOnly) => render(report, { packArguments, scriptArgument, out: options.out === undefined ? '' : path.resolve(ctx.cwd, options.out), planOnly, redo, onlyGiven: only !== undefined, models, noSetup: options['no-setup'] === true });
 
   // 上一次的报告（--out 里的 dub.json）和这一次的包：沿用按它们认（文件头「沿用」）。--dry-run 给了 --out 也一样，规划里标出能沿用的句子
   const out = options.out === undefined ? null : path.resolve(ctx.cwd, options.out);
   const reportFile = out === null ? null : path.join(out, REPORT_FILE);
   let previous = null;
   try {
-    if (reportFile !== null) previous = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+    if (reportFile !== null) previous = withTakes(JSON.parse(fs.readFileSync(reportFile, 'utf8')), out);
   } catch {
     // 没有上一次的报告，或者读不了：当作第一次
   }
   // 这一次的包（写法同报告顶层的 pack、packs）：沿用时按包 ID 和版本比；出错停下来的那份报告也写上，下一次才认得出是哪个包做的
   const current = { pack: { id: packs[0].manifest.id, version: packs[0].manifest.version }, ...(packs.length > 1 ? { packs: packs.map((pack) => ({ id: pack.manifest.id, version: pack.manifest.version })) } : {}) };
   const reuse = out === null ? undefined : reuser({ previous, out, minSimilarity: options['min-similarity'] ?? null, current });
-  // --only 重配的一句换一个 seed（文件头「--only 换 seed」）：上一次的 seed 从同一个 --out 里的 dub.json 找
+  // --only 重配的一句换一个 seed（文件头「--only 换 seed」）：上一次的 seed 从同一个 --out 里的 dub.json 和内部文件找
   const previousSeed = out === null ? undefined : seedFinder({ previous, out });
   const again = { ...(reuse === undefined ? {} : { reuse }), ...(previousSeed === undefined ? {} : { previousSeed }) };
   // 上一次没取回、这一次 --only 没点到的几句，照旧记成没取回（文件头「没取回」）：在沿用之后（还是 skipped 的才问），返回照旧记着的这几句
@@ -969,7 +1044,6 @@ export async function run(args, ctx) {
       const earlier = unretrievedBefore(unit);
       if (earlier === null) continue;
       Object.assign(unit, earlier);
-      keptNumbers.add(unit.number);
       kept.push(unit);
     }
     return kept;
@@ -983,7 +1057,7 @@ export async function run(args, ctx) {
     const money = billing === null ? null : moneySentence(adapters, callsByCapability(plan, plan.units.filter((unit) => unit.status === 'planned').length));
     const ffmpeg = ffmpegNote(env);
     shown.notes = [...shown.notes, ...(money === null ? [] : [{ code: 'money_estimate', message: money, details: {} }]), ...(ffmpeg === null ? [] : [{ code: 'ffmpeg_missing', message: ffmpeg, details: {} }])];
-    ctx.stdout(ctx.json ? `${JSON.stringify(shown, null, 2)}\n` : render_(shown, true));
+    ctx.stdout(ctx.json ? `${JSON.stringify(publicReport(shown), null, 2)}\n` : render_(shown, true));
     return 0;
   }
 
@@ -1039,6 +1113,6 @@ export async function run(args, ctx) {
   const report = withUnretrieved({ ...result, units: result.units.map(reportUnit) });
   fs.mkdirSync(out, { recursive: true });
   writeReport(reportFile, report);
-  ctx.stdout(ctx.json ? `${JSON.stringify(report, null, 2)}\n` : render_(report, false));
+  ctx.stdout(ctx.json ? `${JSON.stringify(publicReport(report), null, 2)}\n` : render_(report, false));
   return result.ok ? 0 : 1;
 }
