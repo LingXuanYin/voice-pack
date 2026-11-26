@@ -187,7 +187,7 @@
 //      参数 { text, ref_audio, ref_text, enhancers? }。
 //      seed（两种调用一样）：环境声明了 seed-in-request，每个请求都加 seed: DUB_SEED（固定值，不随台本、不随这一次变：切开的几块用的是同一个），记在 unit.seed，
 //      plan.capabilities 里有 'seed-in-request': true；没声明就没有这个键，和以前一字不差。
-//      例外是 only 点到的段（「这一段换一条再配」）：同一个 seed、同样的请求，测过出同一条（试听页 19、20、23 核过逐样本一样），也测到过出两条不一样的（models/scene3.md「Sampling: `seed`」），要换一条就换 seed：调用方给了 previousSeed、
+//      例外是 only 点到的段（「这一段换一条再配」）：同一个 seed、同样的请求，测过出同一条（试听页 19、20、23 核过逐样本一样），也测到过出两条不一样的（models/scene3.md 讲采样的那一节），要换一条就换 seed：调用方给了 previousSeed、
 //      它说这一段上一次配的时候用的是 S，这一次的 seed 就是 S + 1（S 到了 seed 的上限 2^53−1 就是 0），unit.seedChange 记着 { from: S }（这一段这一次没做成，失败的记录里也记着 seed 和 seedChange，
 //      下一次照它接着加）。previousSeed 返回 null（这一段从没做成过）的照旧用 DUB_SEED。
 //      不是自动重试：只有调用方点名重配（only）才换；没点到的、沿用的都不动。规划（planDub）一样算（settleUnits）。

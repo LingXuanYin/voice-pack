@@ -68,7 +68,7 @@ after: number of that segment and its first few words, and the user decides.
 ## b8
 
 at: Dubbing and changing a voice with a pack
-after: edo"; where it does not accept `seed`, each run is generally different
+after: redo it with `--only <index>` (each run gives a different take
 
 ```text
 , inference, not tested

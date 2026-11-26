@@ -16,7 +16,7 @@
 //   CHANGELOG_MAX                              变更说明的长度上限（字符数）：读自清单 schema（lib/manifest-limits.mjs）；做包检查作者给的变更说明用同一个数
 //   effectiveOf(input, direction, previous)    这一版生效的描述（名字、配音指引、音色描述和标签、示例台词、几套设定、设计来源、脚本、增强件、功能声明、对基础部分的要求、其他文件）：
 //                                              这次给了就用这次的，没给就沿用上一版的（规则见下面「上一版的东西怎么跟到新版本里」，设计来源有一处例外）；第一个版本就是输入本身
-//   carriesDesignSource(previousManifest, drop)   这次没给设计来源时，上一版的跟不跟过来（规则见下面「设计来源」）：命令行判 design_source_missing 也用它
+//   carriesDesignSource(previousManifest, drop)   这次没给设计来源时，上一版的跟不跟过来（规则见下面「设计来源」）
 //   versionNotes(previous, input)              发新版本留给报告的说明（report.notes）：现在只有 design_source_dropped（见下面「设计来源」）。第一个版本是空数组
 //   assertSomethingNew(previous, { effective, items, fresh, defaultSegments, tags, cardLine })   花钱之前先看一眼：新补的素材一段都用不上、别的也没改，就不发新版本（抛 make_pack_nothing_changed）
 //   withoutCardLine(previous, changes)、changelogFor(changes, { describeChanges, name })   这一版最后没有试听句（要重配的没配成）：
@@ -268,7 +268,7 @@ export function versionNotes(previous, input) {
   if (!dropsDesignSource(previous, input)) return [];
   return [{
     code: 'design_source_dropped',
-    message: `None of the segments of the previous version (${previous.version}) were kept in this version, and no design source was given: the design source of the previous version is not carried over, so this version has no design source. If the voice of this version came from design (a default voice, a blend), give its design source (command line --design-source <file.json>)`,
+    message: `None of the segments of the previous version (${previous.version}) were kept in this version, so the design source of the previous version is not carried over, and this version has no design source`,
     details: { previous: previous.version },
   }];
 }

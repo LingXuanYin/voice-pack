@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // 录音的底噪和闷当场说清（流程层，不花钱）：用录音做声音时，录音的底噪和闷会原样被克隆进每一句；做包时量出来，满足下面任一条就写一条说明，
-// 说听起来会怎样，给两条更好的路：换一段干净的录音，或者改用设计出来的声音。设计出来的声音不报。
+// 说听起来会怎样，给一条更好的路：换一段干净的录音。有设计来源的（设计出来的声音）不报。
 //
 //   recordingNoiseNote(fresh, { designed })   fresh 是这一版新补的段（lib/make-pack.mjs 筛片段以后的条目），designed 是这一版有设计来源。
 //                                             返回一条说明 { code: 'recording_noisy', message, details }，不用说就是 null
 //
-// 数的是新补的、没被淘汰的、真录音（不是 synthetic）的段；有设计来源（设计出来的声音，做包时写 --design-source）的不数。满足任一条就说：
+// 数的是新补的、没被淘汰的、真录音（不是 synthetic）的段；有设计来源（设计出来的声音，清单里记着它）的不数。满足任一条就说：
 //   底噪   信噪比（音质检查已经量好的 snrDb，tools/audio-quality.mjs：整体响度减最安静的一成窗口的电平，说话比背景高多少 dB）的中位数低于 RECORDING_NOISE_LINE_DB（25 dB）
 //   闷     最低的采样率不高于 NARROW_SAMPLE_RATE（16 kHz）：8 kHz 以上没有声音，克隆出来一定闷，不用量别的
 // 说明里只写满足了的那一条。details: { segments（数了几段）, belowLine（其中信噪比低于线的有几段）, snrDb（中位数）, lineDb, sampleRate? }，sampleRate 只在采样率这一条满足时有。
@@ -41,13 +41,13 @@ export function recordingNoiseNote(fresh, { designed }) {
   const belowLine = measured.filter((item) => item.quality.metrics.snrDb < RECORDING_NOISE_LINE_DB).length;
   const what = measured.length === 1 ? 'this recording' : `this batch of recordings (${measured.length} segments)`;
   const says = [
-    noisy ? `${what} has speech only ${snrDb} dB above the noise (${measured.length === 1 ? '' : 'median; '}a designed voice is 47 dB or more); the noise is cloned into the voice as it is, and every line carries it` : null,
+    noisy ? `${what} has speech only ${snrDb} dB above the noise (${measured.length === 1 ? '' : 'median; '}a synthesized voice is 47 dB or more); the noise is cloned into the voice as it is, and every line carries it` : null,
     narrow ? `${measured.length === 1 ? 'the' : 'the lowest'} sample rate is ${lowest} Hz, with nothing above 8 kHz, so the voice that is made will sound muffled` : null,
   ].filter((part) => part !== null);
   const sentence = says.join('; ');
   return {
     code: 'recording_noisy',
-    message: `${sentence[0].toUpperCase()}${sentence.slice(1)}. Better routes: use a cleaner recording, or use a designed voice (references/make-pack.md「Making a pack from a designed voice」)`,
+    message: `${sentence[0].toUpperCase()}${sentence.slice(1)}. Better route: use a cleaner recording`,
     details: { segments: measured.length, belowLine, snrDb, lineDb: RECORDING_NOISE_LINE_DB, ...(narrow ? { sampleRate: lowest } : {}) },
   };
 }

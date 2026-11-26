@@ -5,7 +5,7 @@
 // 这个命令只管读文件、组装运行环境、把包和报告写出来。
 //
 //   node cli.mjs make-pack [<素材目录|素材.json>] [--recording <文件|目录>] [--audition <文件|目录>] [--no-separate] --output <新目录> --name <名字> [--base-version <x.y.z>]
-//                          [--short-name <英文短名>] [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--design-source <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>] [--card-line <文件.txt> [--allow-cross-language] [--no-language-marks] [--card-line-language <标签>] [--card-line-expressiveness <0 到 100>]] [--expressiveness <0 到 100|none>] [--setups <文件.json>]
+//                          [--short-name <英文短名>] [--language <标签>] [--text-language <zh|en>] [--guidance <文件.md>] [--direction <文件.json>] [--lexicon <文件.pls>] [--sample-lines <文件.json>] [--card-line <文件.txt> [--allow-cross-language] [--no-language-marks] [--card-line-language <标签>] [--card-line-expressiveness <0 到 100>]] [--expressiveness <0 到 100|none>] [--setups <文件.json>]
 //                          [--previous <上一版的包目录> [--version <x.y.z> | --bump patch|minor|major] [--changelog <说明>] [--drop <段名,段名>] [--retag <段名>=<标签>]...] [--default-segment <段名>]...
 //                          [--source-pack <来源包的目录或分享文件>]
 //                          [--protocol <协议核心目录>] [--base <基础部分目录>]
@@ -42,10 +42,9 @@
 //                              环境有 voice-activity-detection 就用它给的说话区间切，没有按能量切。段名是「录音名-三位序号」（talk.wav → talk-001……）。
 //                              前缀用过了就加 -2、-3，加到没用过为止：几段录音的名字转成同一个前缀的，第二个起加；素材里、上一版里（去掉的段也算）已经有「前缀-数字」这样的段名的也加
 //                              （上一版有 talk-001，这一次的 talk.wav 切出来是 talk-2-001）；素材里有没写名字的段（库按次序起 seg-001……）时，seg 也算用过。
-//     --audition <文件|目录>   默认音色、融合出来的试听：同样切开、转写，一部分当参考、一部分当留出录音（makePack 照规则挑），不分离（合成出来的本来就是干净的人声）。
-//                              设计出来的声音不用它：设计的试听只当原料，不进交出去的包，见 references/make-pack.md「Making a pack from a designed voice」。
-//                              设计来源用 --design-source 写进清单；没给就在报告的说明里提醒（design_source_missing）。发新版本没给的，上一版的设计来源照规矩沿用就不提醒，
-//                              不沿用（上一版的段一段都没留下，lib/pack-version.mjs 的 carriesDesignSource）照样提醒。
+//     --audition <文件|目录>   合成出来的试听（如融合出来的）：同样切开、转写，一部分当参考、一部分当留出录音（makePack 照规则挑），不分离（合成出来的本来就是干净的人声）。
+//                              发新版本时，上一版的设计来源照规矩沿用（上一版的段这一版还留着一段，lib/pack-version.mjs 的 carriesDesignSource）；
+//                              一段都没留下就不沿用，报告的说明里有 design_source_dropped。
 //     可以和素材目录、素材.json 一起给，段合在一起。段名不会重复：切出来的段起前缀时避开了素材里和上一版的段名（见上）；素材自己的段名重复、和上一版的段重名，在花钱之前报（下面「说明之前先查」）。转写由 makePack 做（只转写没有文本的段，费用在做包的规划里）；切段这一步不转写。
 //     分离和 VAD 是花钱、耗时的调用，每段录音各一次，不重试：调之前在标准错误里说明（--json 时不说），--dry-run 不调，按能量切，只报段数。
 //     说明之前先查只看输入就查得出的错（素材的段名、--retag、--drop、版本号、--setups 的 referenceTag、--card-line 配不配得成一个请求、清单的规矩、
@@ -56,7 +55,6 @@
 //     命令自己在报告的 notes 里加的说明（[{ code, message, details }]，没有要说的数就是空对象；切段留下的说明见 lib/long-recording.mjs 的文件头，调响度留下的见 lib/make-pack-loudness.mjs 的文件头，
 //     录音的底噪 recording_noisy 见 lib/recording-noise.mjs 的文件头：文字输出时花钱之前也写到标准错误，--json 不写）：
 //       dry_run_energy_cut      --dry-run 没调分离和 VAD，段数是按能量切的结果，真做时有 VAD 就用它。details: {}
-//       design_source_missing   给了 --audition 却没给 --design-source，包里没有设计来源（发新版本、上一版的设计来源沿用过来的不算）。details: {}
 //
 // 选项：
 //   --output <新目录>   把做出来的包写到这里（角色部分，给了 --base 就是完整包）。目录必须还不存在：不往已有的目录里写，也不覆盖上一版。检查在花钱之前做。--dry-run 时不要。
@@ -69,13 +67,13 @@
 //                       只管骨架：「## 配音指引」这一行所有语言都一样，--name、--guidance、--direction 里写的字原样放进包，不翻译（规则的正本是 protocol/FORMAT.md「Language of the skeleton」）。
 //                       发新版本时用这一次给的，不看上一版是什么语言；不给就是中文。
 //   --guidance          配音指引的正文（Markdown 文件），放进 SKILL.md 的最后一节。--direction：{ description?, tags? }，tags 只能从设计词表选。
-//                       --design-source：{ description?, model?, modelVersion?, date?, auditionLines? }，设计出来的声音、默认音色、融合出来的声音做包时写。--lexicon：读音词表（PLS），放进包里的 lexicon.pls。
+//                       --lexicon：读音词表（PLS），放进包里的 lexicon.pls。
 //                       --sample-lines：示例台词，一份 JSON 数组，每项一句台词（字符串；最多 50 条，每条 1–500 个字符，不能只有空白；可以带舞台提示，例如（耳语）），原样写进清单；发新版本不给就沿用上一版的，给空数组就去掉。
 //                         哪一项不是字符串（例如把 vocab/design-sample-lines.json 的对象原样抄进来）花钱之前报 make_pack_input_invalid（field 是 sampleLines[0]）。
 //                       --card-line：试听句，一个文本文件（UTF-8），整个文件是一句台词（去掉两头空白；1–500 个字符，可以带舞台提示）。包做好以后用这个包自己的声音配出来，
 //                         写进清单的 cardLine，分享文件的卡片放它（lib/make-pack-card-line.mjs）；配不成一个请求在花钱之前报 make_pack_input_invalid（field 是 cardLine），
 //                         配了没成包照做、报告里写明。发新版本不给，上一版有这一句就原样沿用，不重配（规则在 lib/make-pack-card-line.mjs 的 carriedCardLine）；要重配就交这一句。
-//                         交的和上一版那一句的请求一样（同样的文字重配），换一个 seed（上一版的加 1，voiceCardLine），文字输出写明换了 seed。
+//                         交的和上一版那一句的请求一样（同样的文字重配），换一个 seed（上一版的加 1，voiceCardLine），文字输出写明这一句是再配的、出了另一条（不写 seed）。
 //                       --allow-cross-language：给这一句挑的参考段不是这一句的语言（参考是日语，这一句是英文）也照配，跨语言克隆，带参考那种语言的口音。
 //                         不给就不配这一句（配音默认不带口音，lib/dub.mjs 第 3a 步），一次都不调，包照做：报告的 cardLine 是 failed（dub_cross_language），
 //                         「还缺什么素材」里是 card_line_cross_language，说怎么办（lib/material-hints.mjs）。不管试合成（量还原度照旧跨语言也配）。没给 --card-line 时它什么都不管。
@@ -168,7 +166,6 @@ import { readDirectory, writeDirectory, writeNewFile } from '../../protocol/cli/
 import { sha256Hex } from '../../protocol/lib/hash.mjs';
 import { buildShareFile } from '../../protocol/lib/share.mjs';
 import { makePack } from '../../lib/make-pack.mjs';
-import { carriesDesignSource } from '../../lib/pack-version.mjs';
 import { precheckInput } from '../../lib/make-pack-precheck.mjs';
 import { hasWords } from '../../lib/make-pack-transcribe.mjs';
 import { scriptIsText } from '../../lib/make-pack-input.mjs';
@@ -192,7 +189,7 @@ import { fixed2, renderFidelityReport } from '../fidelity-report.mjs';
 
 export const summary = 'Make a pack: read a batch of cut recordings, pick the reference set and held-out recordings, give each reference a reference tag and a cue annotation, trial-synthesize, measure fidelity, and point out what material is still missing; can also issue a new version of an existing pack';
 export const usage = `make-pack [<material directory|material.json>] [--recording <file|directory>] [--audition <file|directory>] [--no-separate] --output <new directory> --name <name> [--short-name <English short name>] [--base-version <x.y.z>]
-      [--language <language tag>] [--text-language <zh|en>] [--guidance <file.md>] [--direction <file.json>] [--design-source <file.json>] [--lexicon <file.pls>] [--sample-lines <file.json>] [--card-line <file.txt> [--allow-cross-language] [--no-language-marks] [--card-line-language <language tag>] [--card-line-expressiveness <0 to 100>]] [--expressiveness <0 to 100|none>] [--setups <file.json>]
+      [--language <language tag>] [--text-language <zh|en>] [--guidance <file.md>] [--direction <file.json>] [--lexicon <file.pls>] [--sample-lines <file.json>] [--card-line <file.txt> [--allow-cross-language] [--no-language-marks] [--card-line-language <language tag>] [--card-line-expressiveness <0 to 100>]] [--expressiveness <0 to 100|none>] [--setups <file.json>]
       [--previous <pack directory> [--version <x.y.z> | --bump patch|minor|major] [--changelog <text>] [--drop <segment name,segment name>] [--retag <segment name>=<tag>]...] [--default-segment <segment name>]...
       [--source-pack <source pack directory or share file>] [--protocol <protocol core directory>] [--base <base part directory>] [--environment <name>]
       ${ADAPTER_USAGE}
@@ -202,12 +199,11 @@ export const usage = `make-pack [<material directory|material.json>] [--recordin
 export const help = `The key points (the full text of each option is in the header of cli/commands/make-pack.mjs; the material format, the tags and how to read the report are in references/make-pack.md):
   --default-segment <segment name>  State the default segment explicitly. A pack has one default segment per language: for a pack in several languages you can give it several times, each time naming one segment, and that segment is the default segment of its own language;
                                     only one segment can be named per language. A language you do not name is picked by the rules; when issuing a new version, the previous version's pick is kept.
-  --card-line <file.txt>    The audition line (give it for recorded and designed voices alike): after the pack is made it is dubbed with the pack's own voice. If you do not give it when issuing a new version, the previous version's line is kept as it is, if there is one.
+  --card-line <file.txt>    The audition line (give it for recorded voices and for auditions alike): after the pack is made it is dubbed with the pack's own voice. If you do not give it when issuing a new version, the previous version's line is kept as it is, if there is one.
   --card-line-expressiveness <0 to 100>   Only the audition line dubbed this time uses this expressiveness; everything else follows the defaults. Give it together with --card-line.
   --card-line-language <language tag>   The language of the audition line (zh, fr, ...). Give it when the text does not show which language it is (French and Spanish are both Latin script): the cross-language comparison and the language cues both follow it. Give it together with --card-line.
   --expressiveness <0 to 100|none>        The expressiveness of this voice (global value). If you do not give it when issuing a new version, the previous version's is kept; none removes it.
   --recording, --audition   Hand in long recordings, or auditions of a default voice or a blended voice, directly; the command cuts the segments itself. Separation and VAD are paid calls: check the input first, then explain, before calling them.
-                            An audition from a designed voice is only raw material; do not use --audition for it (references/make-pack.md「Making a pack from a designed voice」).
   --previous <pack directory>       Issue a new version: the previous version's references and held-out recordings are carried over as they are; --drop removes some, --retag changes tags.
   --dry-run                Run only the steps that cost nothing, say how many times each capability is called at most, and do not make a pack. Run it once before the real run.`;
 
@@ -217,7 +213,7 @@ const expressivenessOption = (value) => (value.trim() === 'none' ? null : value.
 /** 命令认的选项（传给 parseArgs 的那份；--json 由 runner 取走，适配器的参数由 takeAdapterArguments 取走，都不在表里）。用法里要都写出来，约定见 cli/input.mjs 文件头。 */
 export const FLAGS = {
   output: 'string', name: 'string', 'short-name': 'string', 'base-version': 'string', language: 'string', 'text-language': 'string',
-  guidance: 'string', direction: 'string', 'design-source': 'string', lexicon: 'string', 'sample-lines': 'string', 'card-line': 'string', 'card-line-expressiveness': 'string', 'card-line-language': 'string', expressiveness: 'string', 'allow-cross-language': 'boolean', 'no-language-marks': 'boolean', setups: 'string',
+  guidance: 'string', direction: 'string', lexicon: 'string', 'sample-lines': 'string', 'card-line': 'string', 'card-line-expressiveness': 'string', 'card-line-language': 'string', expressiveness: 'string', 'allow-cross-language': 'boolean', 'no-language-marks': 'boolean', setups: 'string',
   previous: 'string', version: 'string', bump: 'string', changelog: 'string', drop: 'string', retag: 'strings', 'default-segment': 'strings',
   recording: 'string', audition: 'string', 'no-separate': 'boolean', 'source-pack': 'string',
   protocol: 'string', base: 'string', environment: 'string',
@@ -375,7 +371,7 @@ async function cutRecordings(env, recordings, { separate, dryRun }) {
 }
 
 /** 切段留下的说明，加上命令自己的：几段录音放在一起，说明前面带上录音名；转写不是这里的事，没转写的说明不要。 */
-function cutNotes(cut, { dryRun, designSourceGiven }) {
+function cutNotes(cut, { dryRun }) {
   const several = cut.length > 1;
   const notes = [];
   for (const entry of cut) {
@@ -386,9 +382,6 @@ function cutNotes(cut, { dryRun, designSourceGiven }) {
     }
   }
   if (dryRun && cut.length > 0) notes.push({ code: 'dry_run_energy_cut', message: 'dry-run did not call separation or VAD, so the number of segments is the result of cutting by energy; in a real run, if the environment has VAD it is used to cut and the number may differ', details: {} });
-  if (!designSourceGiven && cut.some((entry) => entry.recording.kind === 'audition')) {
-    notes.push({ code: 'design_source_missing', message: 'This is an audition of a default voice or a blended voice, so a design source should be written when making the pack (--design-source <file.json>: description, model, date); none was given this time, so the pack has no design source', details: {} });
-  }
   return notes;
 }
 
@@ -687,8 +680,8 @@ function describeCardLine(cardLine) {
   if (cardLine.status === 'voiced') {
     // 适配器换了模型（modelChange）：写明换成了哪个、原来要用哪个、为什么（约定见 adapters/README.md「When the model changes」）
     const changed = cardLine.modelChange === undefined ? '' : `; note: the adapter changed the model, this line was dubbed with ${cardLine.model ?? 'the replacement model'}, while ${cardLine.modelChange.from} was meant to be used (${cardLine.modelChange.reason})`;
-    // 用同样的请求重配，换了 seed（seedChange，lib/make-pack-card-line.mjs 的 voiceCardLine「seed」）：同一个 seed、同样的请求，测过出同一条，也测到过出不一样的（models/scene3.md「Sampling: `seed`」）
-    const reseeded = cardLine.seedChange === undefined ? '' : `, the request is the same as the previous version's line, so the seed was changed: the previous version used ${cardLine.seedChange.from}, this time ${cardLine.seed}`;
+    // 用同样的请求重配，换了一条（redone，lib/make-pack-card-line.mjs 的 voiceCardLine「seed」）：同一个 seed、同样的请求，测过出同一条，也测到过出不一样的（见 models/scene3.md 讲采样的那一节）。报告里不写 seed
+    const reseeded = cardLine.redone === true ? `, the request is the same as the previous version's line, so it was spoken again and came out as a different take` : '';
     return [`Audition line: dubbed, written to ${cardLine.audio} (reference segment ${cardLine.pick.segmentId}${cardLine.openingCue?.added ? `, opening cue ${cardLine.openingCue.cue} added` : ''}${cardLine.attempts > 1 ? `, temporary error, synthesized ${cardLine.attempts} times` : ''}${reseeded}${changed}): ${quoted}`];
   }
   if (cardLine.status === 'carried') {
@@ -905,7 +898,6 @@ export async function run(args, ctx) {
     ...(options.language === undefined ? {} : { language: options.language }),
     ...(options.guidance === undefined ? {} : { guidance: readText(ctx, options.guidance) }),
     ...(options.direction === undefined ? {} : { direction: readJson(ctx, options.direction, 'direction') }),
-    ...(options['design-source'] === undefined ? {} : { designSource: readJson(ctx, options['design-source'], 'designSource') }),
     ...(options['sample-lines'] === undefined ? {} : { sampleLines: readJson(ctx, options['sample-lines'], 'sampleLines') }),
     ...(options['card-line'] === undefined ? {} : { cardLine: readText(ctx, options['card-line']) }),
     ...(options['card-line-expressiveness'] === undefined ? {} : { cardLineExpressiveness: expressivenessOption(options['card-line-expressiveness']) }),
@@ -974,9 +966,7 @@ export async function run(args, ctx) {
     }
     cut = await cutRecordings(env, recordings, { separate, dryRun: dryRun || nothingUsable });
   }
-  // 设计来源有着落：给了 --design-source，或者发新版本、上一版的设计来源照规矩沿用（上一版的段这一版还留着，lib/pack-version.mjs 的 carriesDesignSource）
-  const designSourceGiven = options['design-source'] !== undefined || (input.previous !== undefined && carriesDesignSource(manifestOrNull(input.previous), input.drop ?? []));
-  const notes = [...(material.notes ?? []), ...cutNotes(cut, { dryRun, designSourceGiven })];
+  const notes = [...(material.notes ?? []), ...cutNotes(cut, { dryRun })];
   const segments = [...material.segments, ...cut.flatMap((entry) => entry.segments)];
   if (cut.length > 0 && segments.length === 0 && options.previous === undefined) {
     throw invalid(options.recording === undefined ? '--audition' : '--recording', `No segment was cut, so there is no material to make a pack from: ${notes.map((note) => note.message).join('; ')}`);

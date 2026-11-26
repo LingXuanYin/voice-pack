@@ -19,14 +19,13 @@
 //                    tags?      设计词表里的标签（lib/design-vocab.mjs 认的写法，中文名和别名也认），换成规范写法交给做包 agent
 //                    words?     使用者自己的话（至少一个字符，最长 MAX_WORDS 个），原样交给做包 agent：不改写，不补充，不删减（前后的空白也不动）
 //                    language?  语言标签（zh、en、zh-CN……）
-//                    designed?  true：这个声音是设计出来的。它只记在属性里，写作 agent 不因此写设计来源；设计来源由调用方给（见 protocol/new-pack/README.md「Design source」）；默认 false
-//                  别的键一律拒绝：不给任何夹带别的东西的口子。
+//                  别的键一律拒绝（designed 也是：音色包 3.5.0 起不再有设计的声音）：不给任何夹带别的东西的口子。
 //
 // ---------------------------------------------------------------- 输出
 //
 //   files        一个目录的内容 Map<路径, Uint8Array>，只有这几样（命令行层把它写成目录，交给新开的会话或子 agent）：
 //                  BRIEF.md              任务说明（new-pack/brief.md 原样）
-//                  attributes.json       属性：{ name?, tags?, language?, designed, words? }
+//                  attributes.json       属性：{ name?, tags?, language?, words? }
 //                  spec/README.md        抽象规格（new-pack/README.md 原样）
 //                  spec/fields.json      三个字段的格式：清单 schema 里 direction、sampleLines、designSource 的定义，引用的小定义（label、slug、longText……）展开写进去
 //                  template/<文件>       空白模板（new-pack/template/ 里的每个文件原样）
@@ -49,7 +48,7 @@ import { isLanguageTag, MAX_LANGUAGE_TAG } from './language-tag.mjs';
 export const MAX_WORDS = LONG_TEXT_MAX;
 const MAX_NAME = 200;
 
-const KEYS = ['name', 'tags', 'words', 'language', 'designed'];
+const KEYS = ['name', 'tags', 'words', 'language'];
 const TEMPLATE_DIRECTORY = 'new-pack/template/';
 const REQUIRED_TEMPLATES = ['direction.json', 'guidance.md', 'sample-lines.json', 'design-source.json'];
 /** 净室输入里的路径 <- 协议核心里的路径。 */
@@ -70,7 +69,7 @@ function invalid(problems) {
 
 /** 属性检查并整理成要写进 attributes.json 的样子。 */
 function normalizeAttributes(attributes) {
-  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: 'must be an object { name?, tags?, words?, language?, designed? }' }]);
+  if (!isPlainObject(attributes)) throw invalid([{ field: 'attributes', problem: 'must be an object { name?, tags?, words?, language? }' }]);
   const problems = [];
   for (const key of Object.keys(attributes)) if (!KEYS.includes(key)) problems.push({ field: `attributes.${key}`, problem: `unknown key (allowed keys: ${KEYS.join(', ')})` });
 
@@ -88,8 +87,6 @@ function normalizeAttributes(attributes) {
     if (!isLanguageTag(attributes.language)) problems.push({ field: 'attributes.language', problem: `must be a language tag, for example zh, en, zh-CN (at most ${MAX_LANGUAGE_TAG} characters)` });
     else out.language = attributes.language;
   }
-  if (attributes.designed !== undefined && typeof attributes.designed !== 'boolean') problems.push({ field: 'attributes.designed', problem: 'must be true or false' });
-  out.designed = attributes.designed === true;
   if (attributes.words !== undefined) {
     if (typeof attributes.words !== 'string' || attributes.words.trim() === '' || [...attributes.words].length > MAX_WORDS) problems.push({ field: 'attributes.words', problem: `must be a piece of text of 1–${MAX_WORDS} characters (not whitespace only)` });
     else out.words = attributes.words;
@@ -142,7 +139,7 @@ function fieldFormats(protocolCore) {
 
 /**
  * 组装净室输入。规则见文件头。
- * @param {{ protocolCore: Map<string, Uint8Array>, attributes: { tags?: string[], words?: string, language?: string, designed?: boolean } }} input
+ * @param {{ protocolCore: Map<string, Uint8Array>, attributes: { tags?: string[], words?: string, language?: string } }} input
  * @returns {{ files: Map<string, Uint8Array>, attributes: object }}
  * @throws {VoicePackError} clean_room_input_invalid、clean_room_protocol_incomplete
  */

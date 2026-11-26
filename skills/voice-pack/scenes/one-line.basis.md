@@ -98,7 +98,7 @@ at: One line in a dialogue > Steps
 after: ent of this spot: the stronger the cue, the more intensely it is acted
 
 ```text
- (inference: on the first page, one person listened blind; one group heard the difference in strength, and in another group with a different seed the two versions sounded about the same, `models/scene3.md`「Readings from the first-page audition」)
+ (inference: on the first page, one person listened blind; one group heard the difference in strength, and in another group with a different take the two versions sounded about the same, `models/scene3.md`「Readings from the first-page audition」)
 ```
 
 ## b12
@@ -179,7 +179,7 @@ at: One line in a dialogue > Steps
 after: same request the platform states that it tries to give the same result
 
 ```text
-, and a pair was compared by a program and was the same; after changing the seed only this one pair was compared
+, and a pair was compared by a program and was the same; after changing the take only this one pair was compared
 ```
 
 ## b21

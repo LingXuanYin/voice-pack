@@ -60,12 +60,12 @@ await env.capabilities['voice-cloning']({
 
 ### `voice-design`
 
-Designs a voice that did not exist before from a text description, and reads an audition text with it. No reference audio.
+Designs a voice that did not exist before from a text description, and reads an audition text with it. No reference audio. The flows of the base part no longer call this capability; it stays defined because adapters still declare it.
 
 ```js
 await env.capabilities['voice-design']({
   text,                  // string, required: the design audition text, read with the designed voice
-  voice_prompt,          // string, required: a text description of the wanted voice (gender, age, pitch, accent, timbre, ...; how to write it: `../SKILL.md` section 2「Voice design」), not the instruction syntax of any one model
+  voice_prompt,          // string, required: a text description of the wanted voice (gender, age, pitch, accent, timbre, ...), not the instruction syntax of any one model
 })
 // -> { bytes: Uint8Array, mimeType: string, model?: string }
 ```
